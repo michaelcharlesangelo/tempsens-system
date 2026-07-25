@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login"];
@@ -14,7 +14,7 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request: { headers: request.headers } });
           cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
@@ -44,7 +44,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Run on everything except static assets and Next internals.
     "/((?!_next/static|_next/image|favicon.ico|logo.png).*)",
   ],
 };
