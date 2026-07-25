@@ -9,6 +9,7 @@ const FILTERS: { value: JobOrderStatus | "all"; label: string }[] = [
   { value: "draft", label: "Draft" },
   { value: "pending_approval", label: "Pending Approval" },
   { value: "approved", label: "Approved" },
+  { value: "acknowledged", label: "Acknowledged" },
   { value: "in_progress", label: "In Progress" },
   { value: "qc", label: "QC" },
   { value: "completed", label: "Completed" },
@@ -62,7 +63,7 @@ export default function JobOrdersListPage() {
                   <td><a href={`/job-orders/${jo.id}`}>{jo.jo_number}</a></td>
                   <td>{jo.customer_name}</td>
                   <td><span className={`pill pill-${jo.status}`}>{STATUS_LABELS[jo.status]}</span></td>
-                  <td>{jo.due_date ? new Date(jo.due_date).toLocaleDateString() : "-"}</td>
+                  <td>{jo.deadline ? new Date(jo.deadline).toLocaleDateString() : "-"}</td>
                   <td>{new Date(jo.created_at).toLocaleDateString()}</td>
                 </tr>
               ))}
