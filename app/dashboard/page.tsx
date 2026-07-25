@@ -2,20 +2,25 @@
 
 import { useEffect, useState } from "react";
 import NavBar from "@/app/components/NavBar";
-import { JobOrder, STATUS_LABELS } from "@/lib/jobOrders";
+import { JobOrder, STATUS_LABELS, APPROVAL_LAYERS } from "@/lib/jobOrders";
 
 export default function DashboardPage() {
   const [jobOrders, setJobOrders] = useState<JobOrder[] | null>(null);
-  const [profileId, setProfileId] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/profile", { cache: "no-store" }).then((r) => r.json()).then((d) => setProfileId(d.profile?.id));
+    fetch("/api/profile", { cache: "no-store" }).then((r) => r.json()).then((d) => setMyRole(d.profile?.role ?? null));
     fetch("/api/job-orders", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setJobOrders(d.jobOrders ?? []));
   }, []);
 
-  const pendingMyApproval = (jobOrders ?? []).filter((j) => j.status === "pending_approval" && j.approver_id === profileId);
+  const pendingMyApproval = (jobOrders ?? []).filter((j) => {
+    if (j.status !== "pending_approval" || !j.current_approval_layer) return false;
+    if (myRole === "admin") return true;
+    const layer = APPROVAL_LAYERS.find((l) => l.layer === j.current_approval_layer);
+    return layer?.role === myRole;
+  });
   const recent = (jobOrders ?? []).slice(0, 8);
 
   return (
