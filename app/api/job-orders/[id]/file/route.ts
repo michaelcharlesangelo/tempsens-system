@@ -21,9 +21,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const admin = getSupabaseAdminClient();
-  const column = type === "drawing" ? "drawing_url" : "po_attachment_url";
-  const { data: jobOrder } = await admin.from("job_orders").select(column).eq("id", params.id).maybeSingle();
-  const path = jobOrder?.[column as keyof typeof jobOrder] as string | null;
+  const { data: jobOrder } = await admin
+    .from("job_orders")
+    .select("drawing_url, po_attachment_url")
+    .eq("id", params.id)
+    .maybeSingle();
+
+  if (!jobOrder) return NextResponse.json({ error: "Job order not found." }, { status: 404 });
+
+  const path: string | null = type === "drawing" ? jobOrder.drawing_url : jobOrder.po_attachment_url;
 
   if (!path) return NextResponse.json({ error: "No file uploaded." }, { status: 404 });
 
