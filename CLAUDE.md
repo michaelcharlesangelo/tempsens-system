@@ -8,9 +8,9 @@ Next.js 14 (App Router) + Supabase. Manages Job Orders (JOs) through a
 - **No login** on the 6 workflow tabs (Dashboard, Sales Support, Sales
   Manager, Operational Manager, General Manager, Production Manager,
   Warehouse Manager) and Admin — these simulate each role's POV for now,
-  real accounts planned later (see queued Admin > Account tab below).
-  Production/QC floor staff have real username+password login
-  (`production_accounts` table), not yet wired into a scanner UI.
+  real accounts planned later. Production/QC floor staff have real
+  username+password login (`production_accounts` table), not yet wired
+  into a scanner UI.
 - **Supabase schema workflow**: always run `supabase/reset.sql` then
   `supabase/schema.sql` fresh in the Supabase SQL editor before testing
   schema changes — `reset.sql` drops everything first, so `schema.sql`'s
@@ -79,15 +79,15 @@ Next.js 14 (App Router) + Supabase. Manages Job Orders (JOs) through a
   print, no need to open the file and hunt for the browser's print button.
   The `/api/job-orders/[id]/file` route returns `{ url, isPdf }` — use the
   `isPdf` flag rather than re-detecting file type client-side.
-- **`job_order_bom`** now has `actual_qty`, `actual_unit`, `comment`
-  columns (added for the Warehouse Manager rebuild — see queue below).
-  `comment` is written by Production Manager (per-row note) and meant to
-  be visible to Warehouse Manager; `actual_qty`/`actual_unit` are meant to
-  be filled in by Warehouse Manager when preparing material, then
-  reflected back to Production Manager's view. The BOM row PATCH route
-  (`app/api/job-orders/[id]/bom/[rowId]/route.ts`) already accepts
-  `actualQty`, `actualUnit`, `comment` in its body — the Warehouse Manager
-  UI to actually use them isn't built yet.
+- **`job_order_bom`** has `actual_qty`, `actual_unit`, `comment` columns.
+  `comment` is written by Production Manager (per-row note) and visible
+  to Warehouse Manager; `actual_qty`/`actual_unit` are filled in by
+  Warehouse Manager when preparing material, then reflected back on
+  Production Manager's BOM table. The BOM row PATCH route
+  (`app/api/job-orders/[id]/bom/[rowId]/route.ts`) accepts `actualQty`,
+  `actualUnit`, `comment` in its body — the Warehouse Manager UI
+  (`app/warehouse-manager/page.tsx`) uses all three, grouped into per-SO
+  blocks with a single Prepared action per block (see Status: done).
 
 ## Status: done
 
@@ -103,39 +103,25 @@ comment chain across approval layers, Sales Support Edit/Cancel +
 list-shape parity with the approval tabs, Production Manager 3-table
 split (Not Yet Acknowledged / Acknowledged / Ready for Production) with
 Sales column + Drawing view, Admin/Items split (finished vs material item
-codes) with Admin's Items sub-tab made editable.
+codes) with Admin's Items sub-tab made editable. Also done, verified
+working: **Warehouse Manager rebuild** (`app/warehouse-manager/page.tsx`)
+— BOM prep rows grouped into per-SO blocks, Actual Qty/Unit inputs gating
+a single per-block "Prepared" action, a separate Prepared table with an
+Edit button to un-prepare a block without losing entered values, and a
+recap keyed on (item code, SO) pairs sorted A→Z by item code; **Items tab
+redesign** (`app/items/page.tsx`) — single searchable table sourced from
+`job_orders` (JO Date, SO Number, Item Code, Description) with a link
+into each JO's BOM on Production Manager's detail page; **Admin > Account
+tab** (`app/admin/page.tsx`) — Production/QC accounts and Sales people
+moved into one "Account" sub-tab (replacing the old standalone "Sales"
+tab), with an extensible `positions` list (add/delete) and a position
+dropdown per person; **Dashboard "Production" section** — placeholder
+table (Item Code, Description, Qty hardcoded to 0) ahead of real
+production floor tracking.
 
 ## Status: not yet done (queued, in priority order)
 
-1. **Warehouse Manager rebuild** (biggest remaining piece):
-   - Actual Qty + Unit input, filled in before "Prepared" can be clicked
-   - Comment (from Production Manager's BOM row) shown beside Item
-     Description
-   - Group BOM requests **by SO Number as one block** (1 SO can have ~10
-     items) — don't interleave rows from different SOs in the prep list
-   - **One "Prepared" click per SO block** (not per item) — moves the
-     whole block to a new **Prepared** table
-   - Prepared table has an **Edit** button — only way to un-tick/change
-     Actual Qty after Prepared is clicked (can't undo the checkbox
-     directly)
-   - Once Prepared, Actual Qty should reflect on the Production Manager's
-     BOM Actual Qty column (already rendered there, just needs data)
-   - Recap area: add **SO Number** column; recap itself (aggregated
-     totals) should be sorted **alphabetically by item code A→Z** across
-     all SOs, separate from the per-SO grouping of the main list
-2. **Items tab redesign**: single table — Item Codes, JO Date, SO Number,
-   Item Code (short columns), Description (long column), and a clickable
-   link to the JO page with its final BOM. Add a search bar at the top
-   (filter by date / SO number / item code).
-3. **Admin > Account tab**: move Production/QC accounts and Sales people
-   into a new "Account" sub-tab under Admin. Support assigning a role per
-   person (Sales Support, Sales Manager, Operational Manager, Production
-   Manager, Warehouse Manager, Production, QC, Sales, Engineering, etc.)
-   from an extensible list — user should be able to add new position
-   types later.
-4. **Dashboard "Production" section**: simple table listing items, qty 0
-   placeholder for now.
-5. **Complaints redesign**: list view + "+ New Complaint" button. New
+1. **Complaints redesign**: list view + "+ New Complaint" button. New
    complaint flow: choose "Tempsens Indonesia" or "Traded Item" first.
    - Tempsens Indonesia: SO Number field with autocomplete (typing
      "SO-12" suggests SO-121/122/123 from existing JOs); picking one
@@ -143,14 +129,11 @@ codes) with Admin's Items sub-tab made editable.
      Problem Description, photos/PDF attachment.
    - Traded Item: fully manual — SO Number, Customer Name, Item
      Description, Qty, Problem Description, photos/PDF attachment.
-6. Custom calendar widget for Monday-start weeks (low priority — see
+2. Custom calendar widget for Monday-start weeks (low priority — see
    DateField note above for why this needs a custom build, not a CSS fix).
 
 ## Older backlog, not yet started
 
-- Warehouse Manager "Prepared Material" as described above supersedes the
-  earlier simpler version of this ask — implement per item 1 above, not
-  the older toggle-in-place version.
 - Printable filled-BOM sheet for the production floor (once BOM/material
   is ready) — separate from the Drawing print button, which is done.
 - Production Manager "Finish" button → new "Finished" table.
