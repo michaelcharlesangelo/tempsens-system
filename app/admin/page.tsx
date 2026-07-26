@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import TabNav from "@/app/components/TabNav";
 import QrImage from "@/app/components/QrImage";
-import { StationCode, ProductionAccount, SalesPerson, ItemCategory, Position } from "@/lib/jobOrders";
+import { StationCode, ProductionAccount, SalesPerson, BackOfficePerson, ItemCategory, Position } from "@/lib/jobOrders";
 
 type AdminTab = "production" | "account" | "product" | "items";
 
-interface CatalogItem { item_no: string; description: string; category: string | null; }
+interface CatalogItem { item_no: string; description: string; category: string | null; unit: string; }
 
 export default function AdminPage() {
   const [adminTab, setAdminTab] = useState<AdminTab>("production");
@@ -31,6 +31,14 @@ export default function AdminPage() {
   const [editingPasswordId, setEditingPasswordId] = useState<string | null>(null);
   const [passwordDraft, setPasswordDraft] = useState("");
 
+  const [backOffice, setBackOffice] = useState<BackOfficePerson[]>([]);
+  const [newBoName, setNewBoName] = useState("");
+  const [newBoEmail, setNewBoEmail] = useState("");
+  const [newBoPassword, setNewBoPassword] = useState("");
+  const [newBoPositionId, setNewBoPositionId] = useState("");
+  const [editingBoPasswordId, setEditingBoPasswordId] = useState<string | null>(null);
+  const [boPasswordDraft, setBoPasswordDraft] = useState("");
+
   const [positions, setPositions] = useState<Position[]>([]);
   const [newPositionName, setNewPositionName] = useState("");
 
@@ -42,6 +50,7 @@ export default function AdminPage() {
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
   const [editingItemNo, setEditingItemNo] = useState<string | null>(null);
   const [editingItemDesc, setEditingItemDesc] = useState("");
+  const [editingItemUnit, setEditingItemUnit] = useState("");
 
   async function loadStations() {
     setStations((await (await fetch("/api/station-codes", { cache: "no-store" })).json()).stations ?? []);
@@ -55,6 +64,9 @@ export default function AdminPage() {
   async function loadPositions() {
     setPositions((await (await fetch("/api/positions", { cache: "no-store" })).json()).positions ?? []);
   }
+  async function loadBackOffice() {
+    setBackOffice((await (await fetch("/api/back-office", { cache: "no-store" })).json()).people ?? []);
+  }
   async function loadCategories() {
     setCategories((await (await fetch("/api/item-categories", { cache: "no-store" })).json()).categories ?? []);
   }
@@ -63,7 +75,7 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    loadStations(); loadAccounts(); loadSales(); loadCategories(); loadCatalog(); loadPositions();
+    loadStations(); loadAccounts(); loadSales(); loadCategories(); loadCatalog(); loadPositions(); loadBackOffice();
   }, []);
 
   async function addStation() {
@@ -142,6 +154,35 @@ export default function AdminPage() {
     loadPositions();
     loadAccounts();
     loadSales();
+    loadBackOffice();
+  }
+
+  async function addBackOffice() {
+    const res = await fetch("/api/back-office", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newBoName, email: newBoEmail, password: newBoPassword, positionId: newBoPositionId || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMessage(data.error); return; }
+    setNewBoName(""); setNewBoEmail(""); setNewBoPassword(""); setNewBoPositionId("");
+    loadBackOffice();
+  }
+
+  async function setBackOfficePosition(id: string, positionId: string) {
+    await fetch(`/api/back-office/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positionId: positionId || null }),
+    });
+    loadBackOffice();
+  }
+
+  async function saveBackOfficePassword(id: string) {
+    if (!boPasswordDraft) { setEditingBoPasswordId(null); return; }
+    await fetch(`/api/back-office/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: boPasswordDraft }),
+    });
+    setEditingBoPasswordId(null);
+    setBoPasswordDraft("");
+    setMessage("Password updated.");
   }
 
   async function savePassword(id: string) {
@@ -200,7 +241,7 @@ export default function AdminPage() {
   async function saveCatalogItem(itemNo: string) {
     await fetch("/api/item-catalog", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemNo, description: editingItemDesc }),
+      body: JSON.stringify({ itemNo, description: editingItemDesc, unit: editingItemUnit }),
     });
     setEditingItemNo(null);
     loadCatalog();
@@ -318,7 +359,7 @@ export default function AdminPage() {
           </div>
 
           <div className="card">
-            <h2>Sales people</h2>
+            <h2>Sales Person</h2>
             <p className="subtle">Email/password are groundwork for a future login - not required or enforced yet.</p>
             <div className="grid">
               <div className="field"><label>Name</label><input type="text" value={newSalesName} onChange={(e) => setNewSalesName(e.target.value)} /></div>
@@ -355,6 +396,53 @@ export default function AdminPage() {
                           </div>
                         ) : (
                           <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => { setEditingPasswordId(p.id); setPasswordDraft(""); }}>Set password</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="card">
+            <h2>Back Office</h2>
+            <p className="subtle">Admin-assignable position, with name/email/password.</p>
+            <div className="grid">
+              <div className="field"><label>Name</label><input type="text" value={newBoName} onChange={(e) => setNewBoName(e.target.value)} /></div>
+              <div className="field"><label>Email (optional)</label><input type="text" value={newBoEmail} onChange={(e) => setNewBoEmail(e.target.value)} /></div>
+              <div className="field"><label>Password (optional)</label><input type="password" value={newBoPassword} onChange={(e) => setNewBoPassword(e.target.value)} /></div>
+              <div className="field">
+                <label>Position</label>
+                <select value={newBoPositionId} onChange={(e) => setNewBoPositionId(e.target.value)}>
+                  <option value="">Select...</option>
+                  {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <button className="btn secondary" onClick={addBackOffice} disabled={!newBoName.trim()}>Add</button>
+            {backOffice.length > 0 && (
+              <table className="data-table" style={{ marginTop: 14 }}>
+                <thead><tr><th>Name</th><th>Email</th><th>Position</th><th></th></tr></thead>
+                <tbody>
+                  {backOffice.map((p) => (
+                    <tr key={p.id}>
+                      <td>{p.name}</td>
+                      <td>{p.email || "-"}</td>
+                      <td>
+                        <select value={p.position_id ?? ""} onChange={(e) => setBackOfficePosition(p.id, e.target.value)} style={{ maxWidth: 200 }}>
+                          <option value="">Unassigned</option>
+                          {positions.map((pos) => <option key={pos.id} value={pos.id}>{pos.name}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        {editingBoPasswordId === p.id ? (
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <input type="password" placeholder="New password" value={boPasswordDraft} onChange={(e) => setBoPasswordDraft(e.target.value)} style={{ width: 140 }} />
+                            <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => saveBackOfficePassword(p.id)}>Save</button>
+                          </div>
+                        ) : (
+                          <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => { setEditingBoPasswordId(p.id); setBoPasswordDraft(""); }}>Set password</button>
                         )}
                       </td>
                     </tr>
@@ -416,7 +504,7 @@ export default function AdminPage() {
           </p>
           {catalogItems.length === 0 ? <p className="subtle">None yet.</p> : (
             <table className="data-table">
-              <thead><tr><th>Item Code</th><th>Description</th><th></th></tr></thead>
+              <thead><tr><th>Item Code</th><th>Description</th><th>Unit</th><th></th></tr></thead>
               <tbody>
                 {catalogItems.map((i) => (
                   <tr key={i.item_no}>
@@ -428,11 +516,18 @@ export default function AdminPage() {
                         i.description
                       )}
                     </td>
+                    <td>
+                      {editingItemNo === i.item_no ? (
+                        <input type="text" value={editingItemUnit} onChange={(e) => setEditingItemUnit(e.target.value)} style={{ maxWidth: 70 }} />
+                      ) : (
+                        i.unit
+                      )}
+                    </td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       {editingItemNo === i.item_no ? (
                         <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => saveCatalogItem(i.item_no)}>Save</button>
                       ) : (
-                        <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => { setEditingItemNo(i.item_no); setEditingItemDesc(i.description); }}>Edit</button>
+                        <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => { setEditingItemNo(i.item_no); setEditingItemDesc(i.description); setEditingItemUnit(i.unit); }}>Edit</button>
                       )}{" "}
                       <button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteCatalogItem(i.item_no)}>Delete</button>
                     </td>

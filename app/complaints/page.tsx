@@ -62,6 +62,8 @@ export default function ComplaintsPage() {
     setSoNo(jo.so_no);
     setCustomerName(jo.customer_name);
     setItemDescription(jo.item_description);
+    const matched = salesPeople.find((p) => p.name === jo.sales_person_name);
+    if (matched) setSubmittedBy(matched.name);
     setSoSuggestOpen(false);
   }
 
@@ -131,7 +133,7 @@ export default function ComplaintsPage() {
                     <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
                     <td>
                       {c.photo_paths.map((p, i) => (
-                        <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>#{i + 1}</button>
+                        <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
                       ))}
                     </td>
                     <td>
@@ -183,7 +185,7 @@ export default function ComplaintsPage() {
             {!complaintType ? (
               <div className="field">
                 <label>What kind of item is this complaint about?</label>
-                <div className="pill-toggle">
+                <div className="pill-toggle equal-width">
                   <button onClick={() => setComplaintType("indonesia")}>Tempsens Indonesia</button>
                   <button onClick={() => setComplaintType("traded")}>Traded Item</button>
                 </div>
@@ -260,8 +262,8 @@ export default function ComplaintsPage() {
                   <textarea value={problemDescription} onChange={(e) => setProblemDescription(e.target.value)} />
                 </div>
                 <div className="field">
-                  <label>Photos (gallery, PDF, JPEG, etc.)</label>
-                  <input key={fileInputKey} type="file" accept="image/*,application/pdf" multiple onChange={(e) => setPhotos(e.target.files)} />
+                  <label>Photos (PDF/JPG)</label>
+                  <input key={fileInputKey} type="file" accept="application/pdf,image/jpeg" multiple onChange={(e) => setPhotos(e.target.files)} />
                 </div>
                 {error && <p className="error-text">{error}</p>}
                 <div style={{ display: "flex", gap: 8 }}>

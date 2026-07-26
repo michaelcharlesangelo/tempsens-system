@@ -31,15 +31,16 @@ function JoInputInner() {
   const [urgent, setUrgent] = useState(false);
   const [drawingNumber, setDrawingNumber] = useState("");
   const [salesPersonName, setSalesPersonName] = useState("");
-  const [salesSupportName, setSalesSupportName] = useState("");
   const [drawingFile, setDrawingFile] = useState<File | null>(null);
   const [drawingPreview, setDrawingPreview] = useState<string | null>(null);
   const [poFile, setPoFile] = useState<File | null>(null);
   const [poPreview, setPoPreview] = useState<string | null>(null);
   const [existingDrawingUrl, setExistingDrawingUrl] = useState<string | null>(null);
   const [existingDrawingIsPdf, setExistingDrawingIsPdf] = useState(false);
+  const [existingDrawingFilename, setExistingDrawingFilename] = useState<string | null>(null);
   const [existingPoUrl, setExistingPoUrl] = useState<string | null>(null);
   const [existingPoIsPdf, setExistingPoIsPdf] = useState(false);
+  const [existingPoFilename, setExistingPoFilename] = useState<string | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [existingJoNumber, setExistingJoNumber] = useState<string | null>(null);
   const [loadingExisting, setLoadingExisting] = useState(isEditing);
@@ -75,13 +76,14 @@ function JoInputInner() {
       setUrgent(!!jo.urgent);
       setDrawingNumber(jo.drawing_number || "");
       setSalesPersonName(jo.sales_person_name || "");
-      setSalesSupportName(jo.sales_support_name || "");
       if (jo.drawing_path) {
         setExistingDrawingIsPdf(jo.drawing_path.toLowerCase().endsWith(".pdf"));
+        setExistingDrawingFilename(jo.drawing_filename || null);
         fetch(`/api/job-orders/${editId}/file?type=drawing&tab=jo-input`, { cache: "no-store" }).then((r) => r.json()).then((f) => setExistingDrawingUrl(f.url || null));
       }
       if (jo.po_attachment_path) {
         setExistingPoIsPdf(jo.po_attachment_path.toLowerCase().endsWith(".pdf"));
+        setExistingPoFilename(jo.po_attachment_filename || null);
         fetch(`/api/job-orders/${editId}/file?type=po&tab=jo-input`, { cache: "no-store" }).then((r) => r.json()).then((f) => setExistingPoUrl(f.url || null));
       }
       setLoadingExisting(false);
@@ -89,9 +91,10 @@ function JoInputInner() {
   }, [editId]);
 
   async function onItemNoChange(value: string) {
-    setItemNo(value);
-    if (!value) { setCatalogSuggestions([]); return; }
-    const res = await fetch(`/api/item-catalog?q=${encodeURIComponent(value)}`, { cache: "no-store" });
+    const upper = value.toUpperCase();
+    setItemNo(upper);
+    if (!upper) { setCatalogSuggestions([]); return; }
+    const res = await fetch(`/api/item-catalog?q=${encodeURIComponent(upper)}`, { cache: "no-store" });
     const data = await res.json();
     setCatalogSuggestions(data.items ?? []);
   }
@@ -116,7 +119,7 @@ function JoInputInner() {
   function resetForm() {
     setCustomerName(""); setSoNo(""); setItemDescription(""); setItemCategory("");
     setQuantity("1"); setItemNo(""); setDeadline(""); setUrgent(false); setDrawingNumber("");
-    setSalesPersonName(""); setSalesSupportName("");
+    setSalesPersonName("");
     onDrawingChange(null);
     onPoChange(null);
     setFileInputKey((k) => k + 1);
@@ -135,7 +138,6 @@ function JoInputInner() {
       formData.append("quantity", quantity);
       formData.append("itemNo", itemNo);
       formData.append("salesPersonName", salesPersonName);
-      formData.append("salesSupportName", salesSupportName);
       formData.append("deadline", deadline);
       formData.append("urgent", String(urgent));
       formData.append("drawingNumber", drawingNumber);
@@ -169,9 +171,8 @@ function JoInputInner() {
         <>
         <div className="form-sheet" style={{ marginTop: 18 }}>
           <div className="form-sheet-col">
-            <div className="form-row"><label>Created By</label><span>:</span><input type="text" placeholder="Sales Support name" value={salesSupportName} onChange={(e) => setSalesSupportName(e.target.value)} /></div>
             <div className="form-row"><label>Customer Name</label><span>:</span><input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} /></div>
-            <div className="form-row"><label>SO Number</label><span>:</span><input type="text" value={soNo} onChange={(e) => setSoNo(e.target.value)} /></div>
+            <div className="form-row"><label>SO Number</label><span>:</span><input type="text" value={soNo} onChange={(e) => setSoNo(e.target.value.toUpperCase())} /></div>
             <div className="form-row"><label>Item Description</label><span>:</span><input type="text" value={itemDescription} onChange={(e) => setItemDescription(e.target.value)} /></div>
             <div className="form-row"><label>Category</label><span>:</span>
               <select value={itemCategory} onChange={(e) => setItemCategory(e.target.value)}>
@@ -207,7 +208,7 @@ function JoInputInner() {
                 </label>
               </div>
             </div>
-            <div className="form-row"><label>Drawing Number</label><span>:</span><input type="text" value={drawingNumber} onChange={(e) => setDrawingNumber(e.target.value)} /></div>
+            <div className="form-row"><label>Drawing Number</label><span>:</span><input type="text" value={drawingNumber} onChange={(e) => setDrawingNumber(e.target.value.toUpperCase())} /></div>
             <div className="form-row"><label>Sales</label><span>:</span>
               <select value={salesPersonName} onChange={(e) => setSalesPersonName(e.target.value)}>
                 <option value="">Select...</option>
@@ -231,7 +232,7 @@ function JoInputInner() {
               </div>
             ) : existingDrawingUrl && (
               <div style={{ marginTop: 8 }}>
-                <div className="subtle" style={{ fontSize: "0.72rem", marginBottom: 4 }}>Current file:</div>
+                <div className="subtle" style={{ fontSize: "0.72rem", marginBottom: 4 }}>Current file: {existingDrawingFilename || "(unnamed)"}</div>
                 {existingDrawingIsPdf ? (
                   <iframe src={existingDrawingUrl} style={{ display: "block", width: "100%", height: 260, border: "1px solid var(--border)", borderRadius: 8 }} title="Current drawing" />
                 ) : (
@@ -253,7 +254,7 @@ function JoInputInner() {
               </div>
             ) : existingPoUrl && (
               <div style={{ marginTop: 8 }}>
-                <div className="subtle" style={{ fontSize: "0.72rem", marginBottom: 4 }}>Current file:</div>
+                <div className="subtle" style={{ fontSize: "0.72rem", marginBottom: 4 }}>Current file: {existingPoFilename || "(unnamed)"}</div>
                 {existingPoIsPdf ? (
                   <iframe src={existingPoUrl} style={{ display: "block", width: "100%", height: 260, border: "1px solid var(--border)", borderRadius: 8 }} title="Current PO" />
                 ) : (
@@ -266,7 +267,12 @@ function JoInputInner() {
 
         {error && <p className="error-text" style={{ marginTop: 12 }}>{error}</p>}
         {success && <p style={{ color: "var(--good)", fontSize: "0.85rem", marginTop: 12 }}>{success}</p>}
-        <button className="btn" style={{ marginTop: 12 }} onClick={submit} disabled={saving || !customerName.trim()}>
+        <button
+          className="btn"
+          style={{ marginTop: 12 }}
+          onClick={submit}
+          disabled={saving || !customerName.trim() || !soNo.trim() || !itemDescription.trim() || !itemCategory.trim() || !itemNo.trim()}
+        >
           {saving ? "Saving..." : isEditing ? "Save Changes" : "Create Job Order"}
         </button>
         </>

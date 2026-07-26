@@ -35,22 +35,22 @@ export async function POST(req: NextRequest) {
   const formData = await req.formData();
 
   const customerName = (formData.get("customerName") as string || "").trim();
-  const soNo = (formData.get("soNo") as string || "").trim();
+  const soNo = (formData.get("soNo") as string || "").trim().toUpperCase();
   const itemCategory = (formData.get("itemCategory") as string || "").trim();
   const itemDescription = (formData.get("itemDescription") as string || "").trim();
   const quantity = Number(formData.get("quantity")) || 1;
-  const itemNo = (formData.get("itemNo") as string || "").trim();
+  const itemNo = (formData.get("itemNo") as string || "").trim().toUpperCase();
   const salesPersonName = (formData.get("salesPersonName") as string || "").trim();
   const salesSupportName = (formData.get("salesSupportName") as string || "").trim();
   const deadlineRaw = formData.get("deadline") as string | null;
   const deadline = deadlineRaw && deadlineRaw.length > 0 ? deadlineRaw : null;
   const urgent = formData.get("urgent") === "true";
-  const drawingNumber = (formData.get("drawingNumber") as string || "").trim();
+  const drawingNumber = (formData.get("drawingNumber") as string || "").trim().toUpperCase();
   const drawingFile = formData.get("drawing") as File | null;
   const poFile = formData.get("po") as File | null;
 
-  if (!customerName) {
-    return NextResponse.json({ error: "Customer name is required." }, { status: 400 });
+  if (!customerName || !soNo || !itemDescription || !itemCategory || !itemNo) {
+    return NextResponse.json({ error: "Customer Name, SO Number, Item Description, Category, and Item Code are required." }, { status: 400 });
   }
 
   const admin = getSupabaseAdminClient();
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
       contentType: drawingFile.type || "application/octet-stream",
       upsert: true,
     });
-    if (!upErr) updates.drawing_path = path;
+    if (!upErr) { updates.drawing_path = path; updates.drawing_filename = drawingFile.name; }
   }
 
   if (poFile && poFile.size > 0) {
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
       contentType: poFile.type || "application/octet-stream",
       upsert: true,
     });
-    if (!upErr) updates.po_attachment_path = path;
+    if (!upErr) { updates.po_attachment_path = path; updates.po_attachment_filename = poFile.name; }
   }
 
   let finalJobOrder = data;

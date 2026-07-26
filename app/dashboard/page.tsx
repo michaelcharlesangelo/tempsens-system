@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import TabNav from "@/app/components/TabNav";
-import { JobOrder, dashboardStatusLabel, fmtDate } from "@/lib/jobOrders";
+import { Complaint, JobOrder, dashboardStatusLabel, fmtDate } from "@/lib/jobOrders";
 
 interface CategoryTotal { category: string; qty: number; }
 
@@ -16,7 +16,13 @@ export default function DashboardPage() {
   const [activeJobOrders, setActiveJobOrders] = useState<JobOrder[] | null>(null);
   const [yearlyByCategory, setYearlyByCategory] = useState<CategoryTotal[]>([]);
   const [year, setYear] = useState<number | null>(null);
-  const [openComplaints, setOpenComplaints] = useState<number>(0);
+  const [complaints, setComplaints] = useState<Complaint[] | null>(null);
+  const [editingActionId, setEditingActionId] = useState<string | null>(null);
+  const [actionText, setActionText] = useState("");
+
+  function loadComplaints() {
+    fetch("/api/complaints", { cache: "no-store" }).then((r) => r.json()).then((d) => setComplaints(d.complaints ?? []));
+  }
 
   useEffect(() => {
     fetch("/api/dashboard", { cache: "no-store" }).then((r) => r.json()).then((d) => {
@@ -24,11 +30,85 @@ export default function DashboardPage() {
       setYearlyByCategory(d.yearlyByCategory ?? []);
       setYear(d.year ?? null);
     });
-    fetch("/api/complaints", { cache: "no-store" }).then((r) => r.json()).then((d) => {
-      const open = (d.complaints ?? []).filter((c: { status: string }) => c.status !== "done").length;
-      setOpenComplaints(open);
-    });
+    loadComplaints();
   }, []);
+
+  async function viewPhoto(path: string) {
+    const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+    const data = await res.json();
+    if (data.url) window.open(data.url, "_blank");
+  }
+
+  async function updateStatus(id: string, status: string) {
+    await fetch(`/api/complaints/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+    });
+    loadComplaints();
+  }
+
+  async function saveAction(id: string) {
+    await fetch(`/api/complaints/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ suggestedAction: actionText }),
+    });
+    setEditingActionId(null);
+    loadComplaints();
+  }
+
+  function ComplaintTable({ items, title }: { items: Complaint[]; title: string }) {
+    return (
+      <div className="card">
+        <h2>{title} ({items.length})</h2>
+        {items.length === 0 ? <p className="subtle">None.</p> : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table">
+              <thead>
+                <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
+              </thead>
+              <tbody>
+                {items.map((c) => (
+                  <tr key={c.id}>
+                    <td>{fmtDate(c.created_at)}</td>
+                    <td>{c.customer_name}</td>
+                    <td>{c.so_no}</td>
+                    <td>{c.item_description}</td>
+                    <td>{c.quantity}</td>
+                    <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
+                    <td>
+                      {c.photo_paths.map((p, i) => (
+                        <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+                      ))}
+                    </td>
+                    <td>
+                      <select value={c.status} onChange={(e) => updateStatus(c.id, e.target.value)}>
+                        <option value="not_done">Not Done</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="done">Done</option>
+                      </select>
+                    </td>
+                    <td style={{ minWidth: 180 }}>
+                      {editingActionId === c.id ? (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <input type="text" value={actionText} onChange={(e) => setActionText(e.target.value)} />
+                          <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => saveAction(c.id)}>Save</button>
+                        </div>
+                      ) : (
+                        <span onClick={() => { setEditingActionId(c.id); setActionText(c.suggested_action); }} style={{ cursor: "pointer" }}>
+                          {c.suggested_action || <span className="subtle">Click to add...</span>}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const indonesia = (complaints ?? []).filter((c) => !c.is_traded);
+  const traded = (complaints ?? []).filter((c) => c.is_traded);
 
   return (
     <>
@@ -59,7 +139,7 @@ export default function DashboardPage() {
                     <td>{jo.item_description}</td>
                     <td>{jo.quantity}</td>
                     <td>{daysSince(jo.created_at)}</td>
-                    <td>{fmtDate(jo.finish_estimation)}</td>
+                    <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>
                     <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status)}</span></td>
                   </tr>
                 ))}
@@ -70,23 +150,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="card">
-        <h2>Production</h2>
-        <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
-          Placeholder until production floor tracking is wired up — Qty will reflect real progress later.
-        </p>
-        {!activeJobOrders ? <p className="subtle">Loading...</p> : activeJobOrders.length === 0 ? <p className="subtle">Nothing in production right now.</p> : (
-          <table className="data-table">
-            <thead><tr><th>Item Code</th><th>Item Description</th><th>Qty</th></tr></thead>
-            <tbody>
-              {activeJobOrders.map((jo) => <tr key={jo.id}><td>{jo.item_no}</td><td>{jo.item_description}</td><td>0</td></tr>)}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      <div className="card">
         <h2>{year ?? ""} Production So Far (Completed, By Item Category)</h2>
-        {yearlyByCategory.length === 0 ? <p className="subtle">Nothing completed yet this year.</p> : (
+        {yearlyByCategory.length === 0 ? <p className="subtle">No item categories set up yet.</p> : (
           <table className="data-table">
             <thead><tr><th>Category</th><th>Quantity</th></tr></thead>
             <tbody>
@@ -96,11 +161,12 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="card">
-        <h2>Product Complaints</h2>
-        <p className="subtle" style={{ marginBottom: 10 }}>{openComplaints} still open (not marked Done)</p>
-        <a href="/complaints" className="btn secondary">View complaints →</a>
-      </div>
+      {!complaints ? <p className="subtle">Loading...</p> : (
+        <>
+          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" />
+          <ComplaintTable items={traded} title="Complaints — Traded Item" />
+        </>
+      )}
     </>
   );
 }

@@ -21,11 +21,13 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const itemNo = typeof body.itemNo === "string" ? body.itemNo.trim() : "";
   const description = typeof body.description === "string" ? body.description.trim() : undefined;
+  const unit = typeof body.unit === "string" ? body.unit.trim() : undefined;
   if (!itemNo) return NextResponse.json({ error: "Item code is required." }, { status: 400 });
 
   const admin = getSupabaseAdminClient();
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (description !== undefined) updates.description = description;
+  if (unit !== undefined && unit) updates.unit = unit;
 
   const { data, error } = await admin.from("item_catalog").update(updates).eq("item_no", itemNo).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

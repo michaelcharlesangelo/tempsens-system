@@ -27,11 +27,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { data, error } = await admin.from("job_order_bom").update(updates).eq("id", params.rowId).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (updates.item_no || updates.description) {
+  if (updates.item_no || updates.description || updates.unit) {
     await admin
       .from("item_catalog")
       .upsert(
-        { item_no: data.item_no, description: data.description, updated_at: new Date().toISOString() },
+        { item_no: data.item_no, description: data.description, unit: data.unit, updated_at: new Date().toISOString() },
         { onConflict: "item_no" }
       );
   }

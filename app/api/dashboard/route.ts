@@ -23,7 +23,14 @@ export async function GET() {
     .gte("finish_date", yearStart);
   if (compErr) return NextResponse.json({ error: compErr.message }, { status: 500 });
 
+  const { data: categoriesRaw, error: catErr } = await admin
+    .from("item_categories")
+    .select("name, sequence")
+    .order("sequence");
+  if (catErr) return NextResponse.json({ error: catErr.message }, { status: 500 });
+
   const byCategory = new Map<string, number>();
+  for (const c of (categoriesRaw ?? []) as { name: string }[]) byCategory.set(c.name, 0);
   for (const jo of (completedRaw ?? []) as { item_category: string; quantity: number }[]) {
     const cat = jo.item_category || "Uncategorized";
     byCategory.set(cat, (byCategory.get(cat) ?? 0) + Number(jo.quantity));

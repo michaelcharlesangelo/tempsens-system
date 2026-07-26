@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   await admin
     .from("item_catalog")
-    .upsert({ item_no: itemNo, description, updated_at: new Date().toISOString() }, { onConflict: "item_no", ignoreDuplicates: true });
+    .upsert({ item_no: itemNo, description, unit, updated_at: new Date().toISOString() }, { onConflict: "item_no", ignoreDuplicates: true });
 
   return NextResponse.json({ bomItem: data });
 }

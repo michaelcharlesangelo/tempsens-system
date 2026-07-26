@@ -37,6 +37,7 @@ export interface JobOrder {
   item_category: string;
   item_description: string;
   drawing_path: string | null;
+  drawing_filename?: string | null;
   drawing_number: string;
   quantity: number;
   item_no: string;
@@ -45,6 +46,7 @@ export interface JobOrder {
   deadline: string | null;
   urgent: boolean;
   po_attachment_path?: string | null; // omitted by the API for unauthorized tabs
+  po_attachment_filename?: string | null;
   serial_no: string;
   finish_estimation: string | null;
   finish_date: string | null;
@@ -142,6 +144,13 @@ export interface ProductionAccount {
 }
 
 export interface SalesPerson {
+  id: string;
+  name: string;
+  email: string;
+  position_id: string | null;
+}
+
+export interface BackOfficePerson {
   id: string;
   name: string;
   email: string;

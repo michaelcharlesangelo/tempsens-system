@@ -91,8 +91,22 @@ create table if not exists item_catalog (
   description text not null default '',
   category text,
   kind text not null default 'material' check (kind in ('finished','material')), -- 'finished' = JO item code (Items tab), 'material' = BOM component (Admin > Items)
+  unit text not null default 'pcs', -- material default unit, autofills the BOM row's unit when item code is picked
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------------------
+-- Back Office - admin-managed staff records with a position, distinct from
+-- Production/QC (no email) and Sales Person (may not have a position).
+-- ---------------------------------------------------------------------------
+create table if not exists back_office (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  email text not null default '',
+  password_hash text not null default '',
+  position_id uuid references positions(id) on delete set null,
+  created_at timestamptz not null default now()
 );
 
 -- ---------------------------------------------------------------------------
@@ -130,6 +144,7 @@ create table if not exists job_orders (
   item_category text not null default '',
   item_description text not null default '',
   drawing_path text, -- uploaded PDF/JPG, private storage path
+  drawing_filename text, -- original uploaded file name, for display (drawing_path is a generated storage path)
   drawing_number text not null default '', -- reference number, separate from the uploaded file
   quantity numeric not null default 1,
   item_no text not null default '',
@@ -138,6 +153,7 @@ create table if not exists job_orders (
   deadline date,
   urgent boolean not null default false,
   po_attachment_path text, -- restricted visibility, see above
+  po_attachment_filename text, -- original uploaded file name, for display
 
   serial_no text not null default '', -- filled by Production Manager at acknowledge
   finish_estimation date, -- filled by Production Manager at acknowledge
@@ -238,6 +254,7 @@ create index if not exists idx_complaints_traded on complaints(is_traded);
 alter table positions enable row level security;
 alter table production_accounts enable row level security;
 alter table sales_people enable row level security;
+alter table back_office enable row level security;
 alter table item_categories enable row level security;
 alter table item_catalog enable row level security;
 alter table product_bom_templates enable row level security;

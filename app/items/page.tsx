@@ -68,7 +68,7 @@ export default function ItemsPage() {
                     <td>{jo.item_description}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       <Link className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} href={`/production-manager/${jo.id}`}>
-                        View BOM
+                        View JO
                       </Link>
                     </td>
                   </tr>

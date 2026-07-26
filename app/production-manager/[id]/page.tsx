@@ -5,10 +5,13 @@ import { useParams } from "next/navigation";
 import TabNav from "@/app/components/TabNav";
 import DateField from "@/app/components/DateField";
 import QrImage from "@/app/components/QrImage";
-import { JobOrder, BomItem, fmtDate } from "@/lib/jobOrders";
-import { printFileUrl } from "@/lib/printFile";
+import { JobOrder, BomItem, JobOrderHistoryEntry, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
-interface CatalogItem { item_no: string; description: string; }
+interface CatalogItem { item_no: string; description: string; unit?: string; }
+
+// Only approval-layer comments are relevant here - Sales Support's own
+// create/edit history is noise for Production Manager.
+const APPROVAL_COMMENT_AUTHORS = ["Sales Manager", "Operational Manager", "General Manager"];
 
 export default function ProductionJobOrderDetailPage() {
   const params = useParams();
@@ -16,7 +19,10 @@ export default function ProductionJobOrderDetailPage() {
 
   const [jobOrder, setJobOrder] = useState<JobOrder | null>(null);
   const [bom, setBom] = useState<BomItem[]>([]);
+  const [history, setHistory] = useState<JobOrderHistoryEntry[]>([]);
+  const [showComments, setShowComments] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [savedRowId, setSavedRowId] = useState<string | null>(null);
 
   const [serialNo, setSerialNo] = useState("");
   const [finishDate, setFinishDate] = useState("");
@@ -40,24 +46,47 @@ export default function ProductionJobOrderDetailPage() {
     // of getting buried at the bottom of a long BOM.
     const rows: BomItem[] = data.bom ?? [];
     setBom([...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
+    setHistory(data.history ?? []);
     setSerialNo(data.jobOrder?.serial_no || "");
     setFinishDate(data.jobOrder?.finish_date ? data.jobOrder.finish_date.slice(0, 10) : "");
   }
 
   useEffect(() => { if (id) load(); }, [id]);
 
-  async function viewDrawing() {
-    const res = await fetch(`/api/job-orders/${id}/file?type=drawing&tab=production-manager`, { cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok) { setMessage(data.error || "No drawing on file."); return; }
-    window.open(data.url, "_blank");
-  }
-
-  async function printDrawing() {
-    const res = await fetch(`/api/job-orders/${id}/file?type=drawing&tab=production-manager`, { cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok) { setMessage(data.error || "No drawing on file."); return; }
-    printFileUrl(data.url, !!data.isPdf);
+  function printJobOrder() {
+    if (!jobOrder) return;
+    const w = window.open("", "_blank", "width=850,height=1100");
+    if (!w) return;
+    const rows = bom.map((b) => `<tr><td>${b.item_no}</td><td>${b.description}</td><td>${b.qty}</td><td>${b.unit}</td></tr>`).join("");
+    w.document.write(`
+      <html><head><title>${jobOrder.jo_number}</title>
+      <style>
+        @page { size: A4; margin: 12mm; }
+        body { font-family: Arial, sans-serif; font-size: 11px; color: #111; }
+        h1 { font-size: 16px; text-align: center; margin: 0 0 10px; }
+        table.info { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+        table.info td { padding: 3px 6px; vertical-align: top; }
+        table.info td.label { font-weight: bold; width: 110px; }
+        table.bom { width: 100%; border-collapse: collapse; }
+        table.bom th, table.bom td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10px; }
+        table.bom th { background: #eee; }
+      </style>
+      </head><body onload="window.focus();window.print();">
+        <h1>JOB ORDER — ${jobOrder.jo_number}</h1>
+        <table class="info">
+          <tr><td class="label">Customer Name</td><td>${jobOrder.customer_name}</td><td class="label">Item Code</td><td>${jobOrder.item_no}</td></tr>
+          <tr><td class="label">SO Number</td><td>${jobOrder.so_no}</td><td class="label">JO Date</td><td>${fmtDate(jobOrder.created_at)}</td></tr>
+          <tr><td class="label">Item Description</td><td>${jobOrder.item_description}</td><td class="label">Deadline</td><td>${fmtDate(jobOrder.deadline)}</td></tr>
+          <tr><td class="label">Category</td><td>${jobOrder.item_category}</td><td class="label">Drawing Number</td><td>${jobOrder.drawing_number || "-"}</td></tr>
+          <tr><td class="label">Quantity</td><td>${jobOrder.quantity}</td><td class="label">Sales</td><td>${jobOrder.sales_person_name}</td></tr>
+        </table>
+        <table class="bom">
+          <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="4">No items yet.</td></tr>`}</tbody>
+        </table>
+      </body></html>
+    `);
+    w.document.close();
   }
 
   async function saveDetails() {
@@ -92,6 +121,7 @@ export default function ProductionJobOrderDetailPage() {
   function pickSuggestion(item: CatalogItem) {
     setNewItemNo(item.item_no);
     setNewDescription(item.description);
+    if (item.unit) setNewUnit(item.unit);
     setSuggestions([]);
   }
 
@@ -149,6 +179,8 @@ export default function ProductionJobOrderDetailPage() {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comment }),
     });
+    setSavedRowId(row.id);
+    setTimeout(() => setSavedRowId((cur) => (cur === row.id ? null : cur)), 1800);
     load();
   }
 
@@ -173,19 +205,33 @@ export default function ProductionJobOrderDetailPage() {
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
           <div>
-            <h2 style={{ margin: 0 }}>{jobOrder.jo_number} — {jobOrder.customer_name}</h2>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="btn secondary" onClick={viewDrawing}>View Drawing</button>
-              <button className="btn secondary" onClick={printDrawing}>Print Drawing</button>
-            </div>
+            <button className="btn secondary" onClick={() => setShowComments((s) => !s)}>
+              {showComments ? "Hide" : "View"} Comments ({history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).length})
+            </button>
           </div>
+          <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>JOB ORDER</h2>
           {jobOrder.barcode && (
             <div style={{ textAlign: "center" }}>
-              <QrImage value={jobOrder.barcode} size={92} />
+              <button className="btn secondary" style={{ marginBottom: 8 }} onClick={printJobOrder}>Print JO</button>
+              <div><QrImage value={jobOrder.barcode} size={92} /></div>
               <div className="subtle" style={{ fontSize: "0.68rem", marginTop: 2 }}>{jobOrder.barcode}</div>
             </div>
           )}
         </div>
+
+        {showComments && (
+          <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            {history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).length === 0 ? (
+              <p className="subtle">No comments from Sales Manager, Operational Manager, or General Manager yet.</p>
+            ) : (
+              history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).map((h) => (
+                <div key={h.id} style={{ fontSize: "0.85rem", padding: "4px 0" }}>
+                  <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                </div>
+              ))
+            )}
+          </div>
+        )}
 
         <div className="form-sheet" style={{ marginTop: 14 }}>
           <div className="form-sheet-col">
@@ -264,7 +310,10 @@ export default function ProductionJobOrderDetailPage() {
                         <td>{row.actual_unit ?? <span className="subtle">-</span>}</td>
                         <td style={{ textAlign: "center" }}><input type="checkbox" checked={!row.material_ready} onChange={() => toggleNotAvailable(row)} style={{ width: "auto" }} /></td>
                         <td>
-                          <div style={{ display: "flex", gap: 4 }}>
+                          {row.material_prepared && (
+                            <div style={{ color: "var(--good)", fontSize: "0.72rem", fontWeight: 700, marginBottom: 3 }}>✓ Warehouse: Prepared</div>
+                          )}
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                             <input
                               type="text"
                               placeholder="Note for Warehouse..."
@@ -273,6 +322,7 @@ export default function ProductionJobOrderDetailPage() {
                               style={{ fontSize: "0.78rem", padding: "4px 6px" }}
                             />
                             <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "4px 6px" }} onClick={() => saveComment(row)}>Save</button>
+                            {savedRowId === row.id && <span style={{ color: "var(--good)", fontSize: "0.72rem", whiteSpace: "nowrap" }}>✓ Saved</span>}
                           </div>
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
@@ -288,10 +338,10 @@ export default function ProductionJobOrderDetailPage() {
           </div>
         )}
 
-        <div className="grid" style={{ marginTop: 14, gridTemplateColumns: "1fr 2fr 0.6fr 0.6fr" }}>
+        <div className="grid" style={{ marginTop: 14, gridTemplateColumns: "0.5fr 2fr 0.4fr 0.4fr" }}>
           <div className="field" style={{ position: "relative" }}>
             <label>Item Code</label>
-            <input type="text" value={newItemNo} onChange={(e) => onNewItemNoChange(e.target.value)} autoComplete="off" />
+            <input type="text" value={newItemNo} onChange={(e) => onNewItemNoChange(e.target.value)} autoComplete="off" style={{ maxWidth: 130 }} />
             {suggestions.length > 0 && (
               <div style={{ position: "absolute", zIndex: 10, background: "white", border: "1px solid var(--border)", borderRadius: 8, width: "100%", maxHeight: 160, overflowY: "auto" }}>
                 {suggestions.map((s) => (
