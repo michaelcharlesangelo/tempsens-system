@@ -23,7 +23,8 @@ export async function GET() {
     .from("job_order_bom")
     .select("*")
     .in("job_order_id", jobOrderIds)
-    .eq("material_ready", true);
+    .eq("material_ready", true)
+    .order("created_at", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const bomRows = (bomRowsRaw ?? []) as BomItem[];
