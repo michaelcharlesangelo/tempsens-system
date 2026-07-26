@@ -15,6 +15,7 @@ drop table if exists item_catalog cascade;
 drop table if exists item_categories cascade;
 drop table if exists sales_people cascade;
 drop table if exists production_accounts cascade;
+drop table if exists positions cascade;
 
 -- Force PostgREST (the API layer) to forget its old cached schema and
 -- pick up the fresh one immediately, instead of waiting for its next
