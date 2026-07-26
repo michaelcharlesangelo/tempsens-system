@@ -1,87 +1,81 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import TabNav from "@/app/components/TabNav";
-import { BomTemplate, fmtDate } from "@/lib/jobOrders";
+import { JobOrder, JobOrderStatus, fmtDate } from "@/lib/jobOrders";
 
-interface CatalogItem { item_no: string; description: string; }
+// Only JOs that have cleared approval are meaningful to search here - a
+// draft or rejected JO doesn't have a settled item code / BOM to link to.
+const VISIBLE_STATUSES: JobOrderStatus[] = ["approved", "acknowledged", "in_progress", "qc", "completed"];
 
-export default function ProductsPage() {
-  const [finishedItems, setFinishedItems] = useState<CatalogItem[] | null>(null);
-  const [templates, setTemplates] = useState<BomTemplate[] | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
+export default function ItemsPage() {
+  const [jobOrders, setJobOrders] = useState<JobOrder[] | null>(null);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
-    fetch("/api/item-catalog?kind=finished", { cache: "no-store" }).then((r) => r.json()).then((d) => setFinishedItems(d.items ?? []));
-    fetch("/api/bom-templates", { cache: "no-store" }).then((r) => r.json()).then((d) => setTemplates(d.templates ?? []));
+    fetch("/api/job-orders", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setJobOrders(d.jobOrders ?? []));
   }, []);
 
-  async function viewDrawing(itemNo: string) {
-    const res = await fetch(`/api/bom-templates/${encodeURIComponent(itemNo)}/drawing`, { cache: "no-store" });
-    const data = await res.json();
-    if (data.url) window.open(data.url, "_blank");
-    else alert(data.error || "No drawing on file for this item.");
-  }
+  const rows = useMemo(() => {
+    const visible = (jobOrders ?? []).filter((jo) => VISIBLE_STATUSES.includes(jo.status));
+    const term = search.trim().toLowerCase();
+    const filtered = term
+      ? visible.filter((jo) =>
+          jo.so_no.toLowerCase().includes(term) ||
+          jo.item_no.toLowerCase().includes(term) ||
+          fmtDate(jo.jo_date).includes(term)
+        )
+      : visible;
+    return [...filtered].sort((a, b) => (a.jo_date < b.jo_date ? 1 : -1));
+  }, [jobOrders, search]);
 
   return (
     <>
       <TabNav active="/items" />
 
       <div className="card">
-        <h2>Finished Item Codes</h2>
+        <h2>Item Codes</h2>
         <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
-          Every finished-product item code entered on a Job Order (Sales Support's Item Code field).
+          Every item code used on an approved job order. Search by date, SO number, or item code, then open a
+          row to see that job order's final BOM.
         </p>
-        {!finishedItems ? <p className="subtle">Loading...</p> : finishedItems.length === 0 ? <p className="subtle">None yet.</p> : (
-          <table className="data-table">
-            <thead><tr><th>Item Code</th><th>Description</th></tr></thead>
-            <tbody>
-              {finishedItems.map((i) => <tr key={i.item_no}><td>{i.item_no}</td><td>{i.description}</td></tr>)}
-            </tbody>
-          </table>
-        )}
-      </div>
 
-      <div className="card">
-        <h2>Item Code Library (Completed Job Orders)</h2>
-        <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
-          Every item code that's been through a completed job order, with its final BOM and drawing — reference
-          this for repeat orders instead of starting from scratch.
-        </p>
-        {!templates ? <p className="subtle">Loading...</p> : templates.length === 0 ? <p className="subtle">Nothing completed yet.</p> : (
-          <table className="data-table">
-            <thead><tr><th>Item Code</th><th>Description</th><th>Last JO</th><th>Drawing No.</th><th>Saved</th><th></th></tr></thead>
-            <tbody>
-              {templates.map((t) => (
-                <Fragment key={t.item_no}>
-                  <tr>
-                    <td>{t.item_no}</td>
-                    <td>{t.description}</td>
-                    <td>{t.source_jo_number}</td>
-                    <td>{t.drawing_number || "-"}</td>
-                    <td>{fmtDate(t.saved_at)}</td>
+        <input
+          type="text"
+          placeholder="Search by date, SO number, or item code..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ marginBottom: 14, maxWidth: 360 }}
+        />
+
+        {!jobOrders ? <p className="subtle">Loading...</p> : rows.length === 0 ? <p className="subtle">No matching item codes.</p> : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Description</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((jo) => (
+                  <tr key={jo.id}>
+                    <td>{fmtDate(jo.jo_date)}</td>
+                    <td>{jo.so_no}</td>
+                    <td>{jo.item_no}</td>
+                    <td>{jo.item_description}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setExpanded(expanded === t.item_no ? null : t.item_no)}>
-                        {expanded === t.item_no ? "Hide BOM" : "View BOM"}
-                      </button>{" "}
-                      {t.drawing_path && (
-                        <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => viewDrawing(t.item_no)}>Drawing</button>
-                      )}
+                      <Link className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} href={`/production-manager/${jo.id}`}>
+                        View BOM
+                      </Link>
                     </td>
                   </tr>
-                  {expanded === t.item_no && (
-                    <tr>
-                      <td colSpan={6} style={{ background: "var(--panel-muted)" }}>
-                        {t.bom_snapshot.map((r, i) => (
-                          <div key={i} style={{ fontSize: "0.82rem", padding: "3px 0" }}>{r.itemNo} — {r.description} — {r.qty} {r.unit}</div>
-                        ))}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>
