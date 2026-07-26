@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import TabNav from "@/app/components/TabNav";
 import QrImage from "@/app/components/QrImage";
-import { StationCode, ProductionAccount, SalesPerson, ItemCategory } from "@/lib/jobOrders";
+import { StationCode, ProductionAccount, SalesPerson, ItemCategory, Position } from "@/lib/jobOrders";
 
-type AdminTab = "production" | "sales" | "product" | "items";
+type AdminTab = "production" | "account" | "product" | "items";
 
 interface CatalogItem { item_no: string; description: string; category: string | null; }
 
@@ -21,13 +21,18 @@ export default function AdminPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [newAccountPositionId, setNewAccountPositionId] = useState("");
 
   const [salesPeople, setSalesPeople] = useState<SalesPerson[]>([]);
   const [newSalesName, setNewSalesName] = useState("");
   const [newSalesEmail, setNewSalesEmail] = useState("");
   const [newSalesPassword, setNewSalesPassword] = useState("");
+  const [newSalesPositionId, setNewSalesPositionId] = useState("");
   const [editingPasswordId, setEditingPasswordId] = useState<string | null>(null);
   const [passwordDraft, setPasswordDraft] = useState("");
+
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [newPositionName, setNewPositionName] = useState("");
 
   const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -47,6 +52,9 @@ export default function AdminPage() {
   async function loadSales() {
     setSalesPeople((await (await fetch("/api/sales-people", { cache: "no-store" })).json()).salesPeople ?? []);
   }
+  async function loadPositions() {
+    setPositions((await (await fetch("/api/positions", { cache: "no-store" })).json()).positions ?? []);
+  }
   async function loadCategories() {
     setCategories((await (await fetch("/api/item-categories", { cache: "no-store" })).json()).categories ?? []);
   }
@@ -55,7 +63,7 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    loadStations(); loadAccounts(); loadSales(); loadCategories(); loadCatalog();
+    loadStations(); loadAccounts(); loadSales(); loadCategories(); loadCatalog(); loadPositions();
   }, []);
 
   async function addStation() {
@@ -84,22 +92,55 @@ export default function AdminPage() {
   async function addAccount() {
     const res = await fetch("/api/production-accounts", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password, fullName }),
+      body: JSON.stringify({ username, password, fullName, positionId: newAccountPositionId || null }),
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error); return; }
-    setUsername(""); setPassword(""); setFullName("");
+    setUsername(""); setPassword(""); setFullName(""); setNewAccountPositionId("");
+    loadAccounts();
+  }
+
+  async function setAccountPosition(id: string, positionId: string) {
+    await fetch(`/api/production-accounts/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positionId: positionId || null }),
+    });
     loadAccounts();
   }
 
   async function addSalesPerson() {
     const res = await fetch("/api/sales-people", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newSalesName, email: newSalesEmail, password: newSalesPassword }),
+      body: JSON.stringify({ name: newSalesName, email: newSalesEmail, password: newSalesPassword, positionId: newSalesPositionId || null }),
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error); return; }
-    setNewSalesName(""); setNewSalesEmail(""); setNewSalesPassword("");
+    setNewSalesName(""); setNewSalesEmail(""); setNewSalesPassword(""); setNewSalesPositionId("");
+    loadSales();
+  }
+
+  async function setSalesPosition(id: string, positionId: string) {
+    await fetch(`/api/sales-people/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positionId: positionId || null }),
+    });
+    loadSales();
+  }
+
+  async function addPosition() {
+    const res = await fetch("/api/positions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newPositionName }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMessage(data.error); return; }
+    setNewPositionName("");
+    loadPositions();
+  }
+
+  async function deletePosition(id: string) {
+    if (!confirm("Delete this position type? People currently assigned to it will show as unassigned.")) return;
+    await fetch(`/api/positions/${id}`, { method: "DELETE" });
+    loadPositions();
+    loadAccounts();
     loadSales();
   }
 
@@ -178,7 +219,7 @@ export default function AdminPage() {
 
       <div className="pill-toggle equal-width" style={{ marginBottom: 16 }}>
         <button className={adminTab === "production" ? "active" : ""} onClick={() => setAdminTab("production")}>Production</button>
-        <button className={adminTab === "sales" ? "active" : ""} onClick={() => setAdminTab("sales")}>Sales</button>
+        <button className={adminTab === "account" ? "active" : ""} onClick={() => setAdminTab("account")}>Account</button>
         <button className={adminTab === "product" ? "active" : ""} onClick={() => setAdminTab("product")}>Product</button>
         <button className={adminTab === "items" ? "active" : ""} onClick={() => setAdminTab("items")}>Items</button>
       </div>
@@ -215,6 +256,29 @@ export default function AdminPage() {
             )}
             <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => window.print()}>Print all QR codes</button>
           </div>
+        </>
+      )}
+
+      {adminTab === "account" && (
+        <>
+          <div className="card">
+            <h2>Position types</h2>
+            <p className="subtle">Extensible list of roles assignable to people below. Add new ones as needed.</p>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+              <input type="text" value={newPositionName} onChange={(e) => setNewPositionName(e.target.value)} placeholder="New position name" />
+              <button className="btn secondary" onClick={addPosition} disabled={!newPositionName.trim()}>Add</button>
+            </div>
+            {positions.length === 0 ? <p className="subtle">None yet.</p> : (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {positions.map((p) => (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid var(--border)", borderRadius: 999, padding: "4px 6px 4px 12px", fontSize: "0.82rem" }}>
+                    {p.name}
+                    <button className="btn danger" style={{ padding: "2px 8px", fontSize: "0.7rem", borderRadius: 999 }} onClick={() => deletePosition(p.id)}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="card">
             <h2>Production / QC accounts</h2>
@@ -223,52 +287,83 @@ export default function AdminPage() {
               <div className="field"><label>Username</label><input type="text" value={username} onChange={(e) => setUsername(e.target.value)} /></div>
               <div className="field"><label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
               <div className="field"><label>Full name</label><input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
+              <div className="field">
+                <label>Position</label>
+                <select value={newAccountPositionId} onChange={(e) => setNewAccountPositionId(e.target.value)}>
+                  <option value="">Select...</option>
+                  {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
             </div>
             <button className="btn" onClick={addAccount} disabled={!username.trim() || !password.trim() || !fullName.trim()}>Add account</button>
             {accounts.length > 0 && (
               <table className="data-table" style={{ marginTop: 14 }}>
-                <thead><tr><th>Username</th><th>Full name</th></tr></thead>
-                <tbody>{accounts.map((a) => <tr key={a.id}><td>{a.username}</td><td>{a.full_name}</td></tr>)}</tbody>
+                <thead><tr><th>Username</th><th>Full name</th><th>Position</th></tr></thead>
+                <tbody>
+                  {accounts.map((a) => (
+                    <tr key={a.id}>
+                      <td>{a.username}</td>
+                      <td>{a.full_name}</td>
+                      <td>
+                        <select value={a.position_id ?? ""} onChange={(e) => setAccountPosition(a.id, e.target.value)} style={{ maxWidth: 200 }}>
+                          <option value="">Unassigned</option>
+                          {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="card">
+            <h2>Sales people</h2>
+            <p className="subtle">Email/password are groundwork for a future login - not required or enforced yet.</p>
+            <div className="grid">
+              <div className="field"><label>Name</label><input type="text" value={newSalesName} onChange={(e) => setNewSalesName(e.target.value)} /></div>
+              <div className="field"><label>Email (optional)</label><input type="text" value={newSalesEmail} onChange={(e) => setNewSalesEmail(e.target.value)} /></div>
+              <div className="field"><label>Password (optional)</label><input type="password" value={newSalesPassword} onChange={(e) => setNewSalesPassword(e.target.value)} /></div>
+              <div className="field">
+                <label>Position</label>
+                <select value={newSalesPositionId} onChange={(e) => setNewSalesPositionId(e.target.value)}>
+                  <option value="">Select...</option>
+                  {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <button className="btn secondary" onClick={addSalesPerson} disabled={!newSalesName.trim()}>Add</button>
+            {salesPeople.length > 0 && (
+              <table className="data-table" style={{ marginTop: 14 }}>
+                <thead><tr><th>Name</th><th>Email</th><th>Position</th><th></th></tr></thead>
+                <tbody>
+                  {salesPeople.map((p) => (
+                    <tr key={p.id}>
+                      <td>{p.name}</td>
+                      <td>{p.email || "-"}</td>
+                      <td>
+                        <select value={p.position_id ?? ""} onChange={(e) => setSalesPosition(p.id, e.target.value)} style={{ maxWidth: 200 }}>
+                          <option value="">Unassigned</option>
+                          {positions.map((pos) => <option key={pos.id} value={pos.id}>{pos.name}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        {editingPasswordId === p.id ? (
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <input type="password" placeholder="New password" value={passwordDraft} onChange={(e) => setPasswordDraft(e.target.value)} style={{ width: 140 }} />
+                            <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => savePassword(p.id)}>Save</button>
+                          </div>
+                        ) : (
+                          <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => { setEditingPasswordId(p.id); setPasswordDraft(""); }}>Set password</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             )}
           </div>
         </>
-      )}
-
-      {adminTab === "sales" && (
-        <div className="card">
-          <h2>Sales people</h2>
-          <p className="subtle">Email/password are groundwork for a future login - not required or enforced yet.</p>
-          <div className="grid">
-            <div className="field"><label>Name</label><input type="text" value={newSalesName} onChange={(e) => setNewSalesName(e.target.value)} /></div>
-            <div className="field"><label>Email (optional)</label><input type="text" value={newSalesEmail} onChange={(e) => setNewSalesEmail(e.target.value)} /></div>
-            <div className="field"><label>Password (optional)</label><input type="password" value={newSalesPassword} onChange={(e) => setNewSalesPassword(e.target.value)} /></div>
-          </div>
-          <button className="btn secondary" onClick={addSalesPerson} disabled={!newSalesName.trim()}>Add</button>
-          {salesPeople.length > 0 && (
-            <table className="data-table" style={{ marginTop: 14 }}>
-              <thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
-              <tbody>
-                {salesPeople.map((p) => (
-                  <tr key={p.id}>
-                    <td>{p.name}</td>
-                    <td>{p.email || "-"}</td>
-                    <td>
-                      {editingPasswordId === p.id ? (
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <input type="password" placeholder="New password" value={passwordDraft} onChange={(e) => setPasswordDraft(e.target.value)} style={{ width: 140 }} />
-                          <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => savePassword(p.id)}>Save</button>
-                        </div>
-                      ) : (
-                        <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => { setEditingPasswordId(p.id); setPasswordDraft(""); }}>Set password</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
       )}
 
       {adminTab === "product" && (

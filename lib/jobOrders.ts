@@ -128,16 +128,24 @@ export interface QcCheck {
   performed_at: string;
 }
 
+export interface Position {
+  id: string;
+  name: string;
+  sequence: number;
+}
+
 export interface ProductionAccount {
   id: string;
   username: string;
   full_name: string;
+  position_id: string | null;
 }
 
 export interface SalesPerson {
   id: string;
   name: string;
   email: string;
+  position_id: string | null;
 }
 
 export interface ItemCategory {
@@ -181,7 +189,7 @@ export type ComplaintStatus = "not_done" | "in_progress" | "done";
 export interface Complaint {
   id: string;
   customer_name: string;
-  po_number: string;
+  so_no: string;
   item_description: string;
   quantity: number;
   is_traded: boolean;

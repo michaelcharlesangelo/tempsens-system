@@ -16,7 +16,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const customerName = (formData.get("customerName") as string || "").trim();
-  const poNumber = (formData.get("poNumber") as string || "").trim();
+  const soNo = (formData.get("soNo") as string || "").trim();
   const itemDescription = (formData.get("itemDescription") as string || "").trim();
   const quantity = Number(formData.get("quantity")) || 1;
   const isTraded = formData.get("isTraded") === "true";
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     .from("complaints")
     .insert({
       customer_name: customerName,
-      po_number: poNumber,
+      so_no: soNo,
       item_description: itemDescription,
       quantity,
       is_traded: isTraded,

@@ -6,6 +6,24 @@
 -- username+password table below (no email at all).
 
 -- ---------------------------------------------------------------------------
+-- Position types - extensible list of roles assignable to people in
+-- Admin > Account (Sales Support, Sales Manager, Production, QC, etc).
+-- Seeded with the initial set; more can be added from the admin UI.
+-- ---------------------------------------------------------------------------
+create table if not exists positions (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  sequence smallint not null default 0,
+  created_at timestamptz not null default now()
+);
+
+insert into positions (name, sequence) values
+  ('Sales Support', 1), ('Sales Manager', 2), ('Operational Manager', 3),
+  ('Production Manager', 4), ('Warehouse Manager', 5), ('Production', 6),
+  ('QC', 7), ('Sales', 8), ('Engineering', 9)
+on conflict (name) do nothing;
+
+-- ---------------------------------------------------------------------------
 -- Production/QC accounts - the ~4 floor staff who log into the scan/QC
 -- page. Simple username+password (hashed in application code, same
 -- lightweight approach as the thermocouple pricer's admin password).
@@ -15,6 +33,7 @@ create table if not exists production_accounts (
   username text not null unique,
   password_hash text not null,
   full_name text not null,
+  position_id uuid references positions(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -27,6 +46,7 @@ create table if not exists sales_people (
   name text not null unique,
   email text not null default '',
   password_hash text not null default '', -- groundwork for later login, not enforced yet
+  position_id uuid references positions(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -196,7 +216,7 @@ create table if not exists qc_checks (
 create table if not exists complaints (
   id uuid primary key default gen_random_uuid(),
   customer_name text not null,
-  po_number text not null default '',
+  so_no text not null default '',
   item_description text not null default '',
   quantity numeric not null default 1,
   is_traded boolean not null default false, -- which of the 2 tables this belongs in
@@ -215,6 +235,7 @@ create index if not exists idx_production_logs_job on production_logs(job_order_
 create index if not exists idx_qc_checks_job on qc_checks(job_order_id);
 create index if not exists idx_complaints_traded on complaints(is_traded);
 
+alter table positions enable row level security;
 alter table production_accounts enable row level security;
 alter table sales_people enable row level security;
 alter table item_categories enable row level security;

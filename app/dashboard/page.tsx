@@ -70,6 +70,21 @@ export default function DashboardPage() {
       </div>
 
       <div className="card">
+        <h2>Production</h2>
+        <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
+          Placeholder until production floor tracking is wired up — Qty will reflect real progress later.
+        </p>
+        {!activeJobOrders ? <p className="subtle">Loading...</p> : activeJobOrders.length === 0 ? <p className="subtle">Nothing in production right now.</p> : (
+          <table className="data-table">
+            <thead><tr><th>Item Code</th><th>Item Description</th><th>Qty</th></tr></thead>
+            <tbody>
+              {activeJobOrders.map((jo) => <tr key={jo.id}><td>{jo.item_no}</td><td>{jo.item_description}</td><td>0</td></tr>)}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="card">
         <h2>{year ?? ""} Production So Far (Completed, By Item Category)</h2>
         {yearlyByCategory.length === 0 ? <p className="subtle">Nothing completed yet this year.</p> : (
           <table className="data-table">

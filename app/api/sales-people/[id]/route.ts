@@ -13,13 +13,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const updates: Record<string, unknown> = {};
   if (password) updates.password_hash = hashPassword(password);
   if (email !== undefined) updates.email = email;
+  if ("positionId" in body) updates.position_id = typeof body.positionId === "string" && body.positionId ? body.positionId : null;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
 
   const admin = getSupabaseAdminClient();
-  const { data, error } = await admin.from("sales_people").update(updates).eq("id", params.id).select("id, name, email").single();
+  const { data, error } = await admin.from("sales_people").update(updates).eq("id", params.id).select("id, name, email, position_id").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ salesPerson: data });
 }
