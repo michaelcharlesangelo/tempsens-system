@@ -84,6 +84,8 @@ export function rejectedByFromHistory(history: JobOrderHistoryEntry[] | undefine
   const entry = [...history].reverse().find((h) => h.status === "rejected");
   return entry ? entry.changed_by : null;
 }
+
+export interface StationCode {
   id: string;
   code: string;
   station_name: string;
