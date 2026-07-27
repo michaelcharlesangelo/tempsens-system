@@ -8,6 +8,11 @@ import { JobOrder, joMatchesSearch, salesSupportProgressLabel } from "@/lib/jobO
 
 const EDITABLE_STATUSES = ["draft", "pending_approval"];
 const CANCELLABLE_STATUSES = ["draft", "pending_approval", "approved", "acknowledged", "in_progress", "qc"];
+// The other tabs that actively tag new job orders with their own name.
+// Sales Support is the original/default role, so anything NOT tagged as
+// one of these (blank, or a name typed into the old "Created By" field
+// before tagging existed) falls under Sales Support by default.
+const OTHER_TAGGED_ROLES = ["Operational Manager", "Sales Support Supervisor"];
 
 // Shared "Job Orders I've Submitted" card - same capability (create/edit/
 // cancel) is available from more than one tab since there's no per-user
@@ -26,10 +31,10 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
     // doesn't show every job order ever created. Once real accounts +
     // login exist, this becomes genuine per-user filtering.
     const all: JobOrder[] = data.jobOrders ?? [];
-    // Job orders created before this tagging existed have a blank
-    // sales_support_name - treat those as Sales Support's own (the
-    // original/default tab) instead of hiding them from every list.
-    setJobOrders(all.filter((jo) => jo.sales_support_name === by || (!jo.sales_support_name && by === "Sales Support")));
+    setJobOrders(all.filter((jo) => {
+      if (by === "Sales Support") return !OTHER_TAGGED_ROLES.includes(jo.sales_support_name);
+      return jo.sales_support_name === by;
+    }));
   }
 
   useEffect(() => { load(); }, [tab, by]);
