@@ -26,7 +26,10 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
     // doesn't show every job order ever created. Once real accounts +
     // login exist, this becomes genuine per-user filtering.
     const all: JobOrder[] = data.jobOrders ?? [];
-    setJobOrders(all.filter((jo) => jo.sales_support_name === by));
+    // Job orders created before this tagging existed have a blank
+    // sales_support_name - treat those as Sales Support's own (the
+    // original/default tab) instead of hiding them from every list.
+    setJobOrders(all.filter((jo) => jo.sales_support_name === by || (!jo.sales_support_name && by === "Sales Support")));
   }
 
   useEffect(() => { load(); }, [tab, by]);
