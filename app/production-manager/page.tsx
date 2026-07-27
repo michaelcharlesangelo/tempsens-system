@@ -1,9 +1,124 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import TabNav from "@/app/components/TabNav";
-import { JobOrder, fmtDate } from "@/lib/jobOrders";
+import { usePagedSearch } from "@/app/components/usePagedSearch";
+import { SearchBox, Pager } from "@/app/components/Pager";
+import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { printFileUrl } from "@/lib/printFile";
+
+const MATERIAL_PREPARED_STATUSES = ["in_progress", "qc", "completed"];
+
+function JoTable({
+  items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge,
+}: {
+  items: JobOrder[]; mode: "not_acknowledged" | "open"; acking: string | null;
+  historyOpenId: string | null; setHistoryOpenId: (id: string | null) => void;
+  viewDrawing: (id: string) => void; printDrawing: (id: string) => void; acknowledge: (id: string) => void;
+}) {
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table className="data-table">
+        <colgroup>
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "11%" }} />
+          <col style={{ width: "17%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "9%" }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Sales</th><th>Customer</th>
+            <th>Item Description</th><th>Qty</th><th>Deadline</th><th>Drawing</th><th>Material</th><th>Comments</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((jo) => {
+            const commented = (jo.history ?? []).filter((h) => h.comment);
+            return (
+              <Fragment key={jo.id}>
+                <tr>
+                  <td>{fmtDate(jo.created_at)}</td>
+                  <td>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
+                  <td>{jo.item_no}</td>
+                  <td>{jo.sales_person_name}</td>
+                  <td>{jo.customer_name}</td>
+                  <td>{jo.item_description}</td>
+                  <td>{jo.quantity}</td>
+                  <td>{fmtDate(jo.deadline)}</td>
+                  <td>
+                    <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => viewDrawing(jo.id)}>View</button>{" "}
+                    <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => printDrawing(jo.id)}>Print</button>
+                  </td>
+                  <td style={{ textAlign: "center" }}>
+                    <input type="checkbox" checked={MATERIAL_PREPARED_STATUSES.includes(jo.status)} disabled readOnly style={{ width: "auto" }} title="Ticked once Warehouse Manager has prepared all material" />
+                  </td>
+                  <td>
+                    <button
+                      className="btn secondary"
+                      style={{ fontSize: "0.72rem", padding: "3px 8px" }}
+                      onClick={() => setHistoryOpenId(historyOpenId === jo.id ? null : jo.id)}
+                      disabled={commented.length === 0}
+                    >
+                      {historyOpenId === jo.id ? "Hide" : `View (${commented.length})`}
+                    </button>
+                  </td>
+                  <td>
+                    {mode === "not_acknowledged" ? (
+                      <button className="btn" style={{ fontSize: "0.78rem", padding: "5px 10px" }} disabled={acking === jo.id} onClick={() => acknowledge(jo.id)}>
+                        {acking === jo.id ? "Acknowledging..." : "Acknowledge"}
+                      </button>
+                    ) : (
+                      <a href={`/production-manager/${jo.id}`} className="btn secondary" style={{ fontSize: "0.78rem", padding: "5px 10px" }}>JO →</a>
+                    )}
+                  </td>
+                </tr>
+                {historyOpenId === jo.id && commented.length > 0 && (
+                  <tr>
+                    <td colSpan={12} style={{ background: "var(--panel-muted)" }}>
+                      {commented.map((h: JobOrderHistoryEntry) => (
+                        <div key={h.id} style={{ fontSize: "0.82rem", padding: "4px 0" }}>
+                          <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PagedJoSection({
+  items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge,
+}: {
+  items: JobOrder[]; mode: "not_acknowledged" | "open"; acking: string | null;
+  historyOpenId: string | null; setHistoryOpenId: (id: string | null) => void;
+  viewDrawing: (id: string) => void; printDrawing: (id: string) => void; acknowledge: (id: string) => void;
+}) {
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, joMatchesSearch);
+  return (
+    <>
+      <SearchBox value={search} onChange={setSearch} />
+      <JoTable
+        items={pageItems} mode={mode} acking={acking} historyOpenId={historyOpenId} setHistoryOpenId={setHistoryOpenId}
+        viewDrawing={viewDrawing} printDrawing={printDrawing} acknowledge={acknowledge}
+      />
+      <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+    </>
+  );
+}
 
 export default function ProductionManagerPage() {
   const [notAcknowledged, setNotAcknowledged] = useState<JobOrder[]>([]);
@@ -11,6 +126,7 @@ export default function ProductionManagerPage() {
   const [readyForProduction, setReadyForProduction] = useState<JobOrder[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [acking, setAcking] = useState<string | null>(null);
+  const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
 
   async function load() {
     const [approvedRes, ackRes, inProgressRes] = await Promise.all([
@@ -54,59 +170,7 @@ export default function ProductionManagerPage() {
     load();
   }
 
-  function JoTable({ items, mode }: { items: JobOrder[]; mode: "not_acknowledged" | "open" }) {
-    return (
-      <div style={{ overflowX: "auto" }}>
-        <table className="data-table">
-          <colgroup>
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "20%" }} />
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "10%" }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Sales</th><th>Customer</th>
-              <th>Item Description</th><th>Qty</th><th>Deadline</th><th>Drawing</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((jo) => (
-              <tr key={jo.id}>
-                <td>{fmtDate(jo.created_at)}</td>
-                <td>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
-                <td>{jo.item_no}</td>
-                <td>{jo.sales_person_name}</td>
-                <td>{jo.customer_name}</td>
-                <td>{jo.item_description}</td>
-                <td>{jo.quantity}</td>
-                <td>{fmtDate(jo.deadline)}</td>
-                <td>
-                  <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => viewDrawing(jo.id)}>View</button>{" "}
-                  <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => printDrawing(jo.id)}>Print</button>
-                </td>
-                <td>
-                  {mode === "not_acknowledged" ? (
-                    <button className="btn" style={{ fontSize: "0.78rem", padding: "5px 10px" }} disabled={acking === jo.id} onClick={() => acknowledge(jo.id)}>
-                      {acking === jo.id ? "Acknowledging..." : "Acknowledge"}
-                    </button>
-                  ) : (
-                    <a href={`/production-manager/${jo.id}`} className="btn secondary" style={{ fontSize: "0.78rem", padding: "5px 10px" }}>Job Order →</a>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
+  const sharedProps = { acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge };
 
   return (
     <>
@@ -116,17 +180,17 @@ export default function ProductionManagerPage() {
       <div className="card">
         <h2>Not Yet Acknowledged ({notAcknowledged.length})</h2>
         {notAcknowledged.length > 0 && <p className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em", marginTop: -6 }}>Action Required</p>}
-        {notAcknowledged.length === 0 ? <p className="subtle">Nothing waiting.</p> : <JoTable items={notAcknowledged} mode="not_acknowledged" />}
+        {notAcknowledged.length === 0 ? <p className="subtle">Nothing waiting.</p> : <PagedJoSection items={notAcknowledged} mode="not_acknowledged" {...sharedProps} />}
       </div>
 
       <div className="card">
         <h2>Acknowledged ({acknowledged.length})</h2>
-        {acknowledged.length === 0 ? <p className="subtle">None yet.</p> : <JoTable items={acknowledged} mode="open" />}
+        {acknowledged.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={acknowledged} mode="open" {...sharedProps} />}
       </div>
 
       <div className="card">
         <h2>Ready for Production ({readyForProduction.length})</h2>
-        {readyForProduction.length === 0 ? <p className="subtle">None yet.</p> : <JoTable items={readyForProduction} mode="open" />}
+        {readyForProduction.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={readyForProduction} mode="open" {...sharedProps} />}
       </div>
     </>
   );

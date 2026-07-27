@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import TabNav from "@/app/components/TabNav";
+import { usePagedSearch } from "@/app/components/usePagedSearch";
+import { SearchBox, Pager } from "@/app/components/Pager";
 import { fmtDate } from "@/lib/jobOrders";
 
 interface PrepareItem {
@@ -31,13 +33,21 @@ function groupBySo(items: PrepareItem[]): SoBlock[] {
   return Array.from(map.values());
 }
 
+function soBlockMatches(block: SoBlock, term: string): boolean {
+  return block.so_no.toLowerCase().includes(term) || block.items.some((i) => i.item_no.toLowerCase().includes(term) || fmtDate(i.req_date).includes(term));
+}
+
+function notAvailableMatches(item: NotAvailableItem, term: string): boolean {
+  return item.item_no.toLowerCase().includes(term) || item.jo_number.toLowerCase().includes(term);
+}
+
 export default function WarehouseManagerPage() {
   const [items, setItems] = useState<PrepareItem[] | null>(null);
   const [notAvailable, setNotAvailable] = useState<NotAvailableItem[] | null>(null);
   const [showRecap, setShowRecap] = useState(false);
-  // Local drafts for Actual Qty / Actual Unit, keyed by BOM row id, so partially
-  // filled-in blocks aren't lost between renders and unfilled rows gate the button.
-  const [draft, setDraft] = useState<Record<string, { qty: string; unit: string }>>({});
+  // Actual Qty draft only - unit isn't typed by Warehouse Manager, it
+  // always follows the BOM row's own unit.
+  const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
   const [savingBlock, setSavingBlock] = useState<string | null>(null);
 
   async function loadPrepare() {
@@ -45,12 +55,10 @@ export default function WarehouseManagerPage() {
     const data = await res.json();
     const rows: PrepareItem[] = data.items ?? [];
     setItems(rows);
-    setDraft((cur) => {
+    setQtyDraft((cur) => {
       const next = { ...cur };
       for (const row of rows) {
-        if (!next[row.id]) {
-          next[row.id] = { qty: row.actual_qty != null ? String(row.actual_qty) : "", unit: row.actual_unit ?? row.unit };
-        }
+        if (!(row.id in next)) next[row.id] = row.actual_qty != null ? String(row.actual_qty) : "";
       }
       return next;
     });
@@ -63,8 +71,14 @@ export default function WarehouseManagerPage() {
 
   useEffect(() => { loadPrepare(); loadNotAvailable(); }, []);
 
-  const toPrepare = useMemo(() => groupBySo((items ?? []).filter((i) => !i.material_prepared)), [items]);
-  const prepared = useMemo(() => groupBySo((items ?? []).filter((i) => i.material_prepared)), [items]);
+  const toPrepareAll = useMemo(() => groupBySo((items ?? []).filter((i) => !i.material_prepared)), [items]);
+  const preparedAll = useMemo(() => groupBySo((items ?? []).filter((i) => i.material_prepared)), [items]);
+
+  const toPreparePaged = usePagedSearch(toPrepareAll, soBlockMatches);
+  const preparedPaged = usePagedSearch(preparedAll, soBlockMatches);
+  const notAvailablePaged = usePagedSearch(notAvailable ?? [], notAvailableMatches);
+  const toPrepare = toPreparePaged.pageItems;
+  const prepared = preparedPaged.pageItems;
 
   const recap = useMemo(() => {
     const map = new Map<string, { itemNo: string; soNo: string; description: string; totalQty: number; unit: string }>();
@@ -78,20 +92,18 @@ export default function WarehouseManagerPage() {
   }, [items]);
 
   function isRowFilled(row: PrepareItem) {
-    const d = draft[row.id];
-    return !!d && d.qty.trim() !== "" && d.unit.trim() !== "";
+    return (qtyDraft[row.id] ?? "").trim() !== "";
   }
 
   async function markBlockPrepared(block: SoBlock) {
     setSavingBlock(block.so_no);
     try {
-      await Promise.all(block.items.map((row) => {
-        const d = draft[row.id];
-        return fetch(`/api/job-orders/${row.job_order_id}/bom/${row.id}`, {
+      await Promise.all(block.items.map((row) =>
+        fetch(`/api/job-orders/${row.job_order_id}/bom/${row.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ actualQty: d.qty, actualUnit: d.unit, materialPrepared: true }),
-        });
-      }));
+          body: JSON.stringify({ actualQty: qtyDraft[row.id], actualUnit: row.unit, materialPrepared: true }),
+        })
+      ));
       await loadPrepare();
     } finally {
       setSavingBlock(null);
@@ -127,7 +139,7 @@ export default function WarehouseManagerPage() {
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <h2 style={{ margin: 0 }}>Material To Be Prepared ({toPrepare.reduce((n, b) => n + b.items.length, 0)})</h2>
+          <h2 style={{ margin: 0 }}>Material To Be Prepared ({toPrepareAll.reduce((n, b) => n + b.items.length, 0)})</h2>
           <button className="btn secondary" onClick={() => setShowRecap((s) => !s)}>{showRecap ? "Hide recap" : "Recap"}</button>
         </div>
 
@@ -140,7 +152,10 @@ export default function WarehouseManagerPage() {
           </table>
         )}
 
-        {!items ? <p className="subtle">Loading...</p> : toPrepare.length === 0 ? <p className="subtle">Nothing to prepare right now.</p> : (
+        {!items ? <p className="subtle">Loading...</p> : toPrepareAll.length === 0 ? <p className="subtle">Nothing to prepare right now.</p> : (
+          <SearchBox value={toPreparePaged.search} onChange={toPreparePaged.setSearch} />
+        )}
+        {items && toPrepareAll.length > 0 && (
           toPrepare.map((block) => {
             const allFilled = block.items.every(isRowFilled);
             return (
@@ -154,7 +169,7 @@ export default function WarehouseManagerPage() {
                     <thead>
                       <tr>
                         <th>Item Code</th><th>Item Description</th><th>Comment</th><th>Qty</th>
-                        <th>Actual Qty</th><th>Actual Unit</th>
+                        <th>Actual Qty</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -165,20 +180,15 @@ export default function WarehouseManagerPage() {
                           <td className="subtle">{row.comment || "-"}</td>
                           <td>{row.qty} {row.unit}</td>
                           <td>
-                            <input
-                              type="number"
-                              value={draft[row.id]?.qty ?? ""}
-                              onChange={(e) => setDraft((cur) => ({ ...cur, [row.id]: { qty: e.target.value, unit: cur[row.id]?.unit ?? row.unit } }))}
-                              style={{ width: 80 }}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="text"
-                              value={draft[row.id]?.unit ?? ""}
-                              onChange={(e) => setDraft((cur) => ({ ...cur, [row.id]: { qty: cur[row.id]?.qty ?? "", unit: e.target.value } }))}
-                              style={{ width: 60 }}
-                            />
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <input
+                                type="number"
+                                value={qtyDraft[row.id] ?? ""}
+                                onChange={(e) => setQtyDraft((cur) => ({ ...cur, [row.id]: e.target.value }))}
+                                style={{ width: 80 }}
+                              />
+                              <span className="subtle">{row.unit}</span>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -198,11 +208,17 @@ export default function WarehouseManagerPage() {
             );
           })
         )}
+        {items && toPrepareAll.length > 0 && (
+          <Pager page={toPreparePaged.page} totalPages={toPreparePaged.totalPages} totalCount={toPreparePaged.totalCount} onChange={toPreparePaged.setPage} />
+        )}
       </div>
 
       <div className="card">
-        <h2>Prepared ({prepared.reduce((n, b) => n + b.items.length, 0)})</h2>
-        {!items ? <p className="subtle">Loading...</p> : prepared.length === 0 ? <p className="subtle">Nothing prepared yet.</p> : (
+        <h2>Prepared ({preparedAll.reduce((n, b) => n + b.items.length, 0)})</h2>
+        {!items ? <p className="subtle">Loading...</p> : preparedAll.length === 0 ? <p className="subtle">Nothing prepared yet.</p> : (
+          <SearchBox value={preparedPaged.search} onChange={preparedPaged.setSearch} />
+        )}
+        {items && preparedAll.length > 0 && (
           prepared.map((block) => (
             <div key={block.so_no} style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 6 }}>
@@ -216,7 +232,7 @@ export default function WarehouseManagerPage() {
                   <thead>
                     <tr>
                       <th>Item Code</th><th>Item Description</th><th>Comment</th><th>Qty</th>
-                      <th>Actual Qty</th><th>Actual Unit</th>
+                      <th>Actual Qty</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -226,8 +242,7 @@ export default function WarehouseManagerPage() {
                         <td>{row.description}</td>
                         <td className="subtle">{row.comment || "-"}</td>
                         <td>{row.qty} {row.unit}</td>
-                        <td>{row.actual_qty ?? "-"}</td>
-                        <td>{row.actual_unit ?? "-"}</td>
+                        <td>{row.actual_qty ?? "-"} {row.actual_unit ?? ""}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -236,16 +251,21 @@ export default function WarehouseManagerPage() {
             </div>
           ))
         )}
+        {items && preparedAll.length > 0 && (
+          <Pager page={preparedPaged.page} totalPages={preparedPaged.totalPages} totalCount={preparedPaged.totalCount} onChange={preparedPaged.setPage} />
+        )}
       </div>
 
       <div className="card">
         <h2>Not Available — Needs Purchase ({notAvailable?.length ?? "..."})</h2>
         {!notAvailable ? <p className="subtle">Loading...</p> : notAvailable.length === 0 ? <p className="subtle">Nothing flagged right now.</p> : (
+          <>
+          <SearchBox value={notAvailablePaged.search} onChange={notAvailablePaged.setSearch} />
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead><tr><th>JO Number</th><th>Customer</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Procurement</th></tr></thead>
               <tbody>
-                {notAvailable.map((i) => (
+                {notAvailablePaged.pageItems.map((i) => (
                   <tr key={i.id}>
                     <td>{i.jo_number}</td>
                     <td>{i.customer_name}</td>
@@ -263,6 +283,8 @@ export default function WarehouseManagerPage() {
               </tbody>
             </table>
           </div>
+          <Pager page={notAvailablePaged.page} totalPages={notAvailablePaged.totalPages} totalCount={notAvailablePaged.totalCount} onChange={notAvailablePaged.setPage} />
+          </>
         )}
       </div>
     </>

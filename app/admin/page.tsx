@@ -16,6 +16,7 @@ export default function AdminPage() {
   const [stations, setStations] = useState<StationCode[]>([]);
   const [stationName, setStationName] = useState("");
   const [stationDesc, setStationDesc] = useState("");
+  const [stationParameter, setStationParameter] = useState("");
 
   const [accounts, setAccounts] = useState<ProductionAccount[]>([]);
   const [username, setUsername] = useState("");
@@ -81,11 +82,11 @@ export default function AdminPage() {
   async function addStation() {
     const res = await fetch("/api/station-codes", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stationName, description: stationDesc }),
+      body: JSON.stringify({ stationName, description: stationDesc, parameter: stationParameter }),
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error); return; }
-    setStationName(""); setStationDesc("");
+    setStationName(""); setStationDesc(""); setStationParameter("");
     loadStations();
   }
 
@@ -272,7 +273,8 @@ export default function AdminPage() {
             <p className="subtle">Order matters — this is the physical process sequence.</p>
             <div className="grid">
               <div className="field"><label>Station name</label><input type="text" value={stationName} onChange={(e) => setStationName(e.target.value)} placeholder="e.g. Drying" /></div>
-              <div className="field"><label>Description</label><input type="text" value={stationDesc} onChange={(e) => setStationDesc(e.target.value)} placeholder="e.g. Oven Drying 200degC" /></div>
+              <div className="field"><label>Description</label><input type="text" value={stationDesc} onChange={(e) => setStationDesc(e.target.value)} placeholder="e.g. Oven Drying" /></div>
+              <div className="field"><label>Parameter</label><input type="text" value={stationParameter} onChange={(e) => setStationParameter(e.target.value)} placeholder="e.g. 200degC for 60min" /></div>
             </div>
             <button className="btn" onClick={addStation} disabled={!stationName.trim()}>Add station</button>
           </div>
@@ -286,6 +288,7 @@ export default function AdminPage() {
                     <div style={{ fontWeight: 700, fontSize: "0.72rem", color: "var(--accent-dark)" }}>STEP {s.sequence}</div>
                     <QrImage value={s.code} size={110} />
                     <div style={{ fontWeight: 700, fontSize: "0.85rem", marginTop: 4 }}>{s.station_name}</div>
+                    {s.parameter && <div className="subtle" style={{ fontSize: "0.72rem", marginTop: 2 }}>{s.parameter}</div>}
                     <div style={{ display: "flex", justifyContent: "center", gap: 4, marginTop: 8 }}>
                       <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => moveStation(s.id, "up")} disabled={i === 0}>↑</button>
                       <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => moveStation(s.id, "down")} disabled={i === stations.length - 1}>↓</button>

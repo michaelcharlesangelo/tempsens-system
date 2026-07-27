@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { JobOrder } from "@/lib/jobOrders";
+import { JobOrder, joMatchesSearch } from "@/lib/jobOrders";
 import JoListTable from "@/app/components/JoListTable";
+import { usePagedSearch } from "@/app/components/usePagedSearch";
+import { SearchBox, Pager } from "@/app/components/Pager";
 
 export default function ApprovalTabView({ tab, layer, label }: { tab: string; layer: 1 | 2 | 3; label: string }) {
   const [allJobOrders, setAllJobOrders] = useState<JobOrder[] | null>(null);
@@ -60,6 +62,21 @@ export default function ApprovalTabView({ tab, layer, label }: { tab: string; la
   const rejected = allJobOrders.filter((j) => j.status === "rejected");
   const expandedJo = expanded ? pending.find((j) => j.id === expanded) : null;
 
+  return <ApprovalTabViewInner {...{ pending, passedThisLayer, rejected, expandedJo, message, comment, setComment, acting, toggleExpand, act, viewFile, expanded, label }} />;
+}
+
+function ApprovalTabViewInner({
+  pending, passedThisLayer, rejected, expandedJo, message, comment, setComment, acting, toggleExpand, act, viewFile, expanded, label,
+}: {
+  pending: JobOrder[]; passedThisLayer: JobOrder[]; rejected: JobOrder[]; expandedJo: JobOrder | null | undefined;
+  message: string | null; comment: string; setComment: (v: string) => void; acting: boolean;
+  toggleExpand: (id: string) => void; act: (id: string, action: "approve" | "reject") => void;
+  viewFile: (id: string, type: "drawing" | "po") => void; expanded: string | null; label: string;
+}) {
+  const pendingPaged = usePagedSearch(pending, joMatchesSearch);
+  const passedPaged = usePagedSearch(passedThisLayer, joMatchesSearch);
+  const rejectedPaged = usePagedSearch(rejected, joMatchesSearch);
+
   return (
     <>
       <div className="card">
@@ -69,15 +86,19 @@ export default function ApprovalTabView({ tab, layer, label }: { tab: string; la
         {pending.length === 0 ? (
           <p className="subtle">Nothing waiting on you right now.</p>
         ) : (
-          <JoListTable
-            items={pending}
-            onView={viewFile}
-            renderActions={(jo) => (
-              <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 10px" }} onClick={() => toggleExpand(jo.id)}>
-                {expanded === jo.id ? "Cancel" : "Approve / Reject"}
-              </button>
-            )}
-          />
+          <>
+            <SearchBox value={pendingPaged.search} onChange={pendingPaged.setSearch} />
+            <JoListTable
+              items={pendingPaged.pageItems}
+              onView={viewFile}
+              renderActions={(jo) => (
+                <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 10px" }} onClick={() => toggleExpand(jo.id)}>
+                  {expanded === jo.id ? "Cancel" : "Approve / Reject"}
+                </button>
+              )}
+            />
+            <Pager page={pendingPaged.page} totalPages={pendingPaged.totalPages} totalCount={pendingPaged.totalCount} onChange={pendingPaged.setPage} />
+          </>
         )}
 
         {/* Decision panel lives outside the table on purpose - putting it
@@ -105,12 +126,24 @@ export default function ApprovalTabView({ tab, layer, label }: { tab: string; la
 
       <div className="card">
         <h2>Approved (passed {label})</h2>
-        {passedThisLayer.length === 0 ? <p className="subtle">None yet.</p> : <JoListTable items={passedThisLayer} onView={viewFile} />}
+        {passedThisLayer.length === 0 ? <p className="subtle">None yet.</p> : (
+          <>
+            <SearchBox value={passedPaged.search} onChange={passedPaged.setSearch} />
+            <JoListTable items={passedPaged.pageItems} onView={viewFile} />
+            <Pager page={passedPaged.page} totalPages={passedPaged.totalPages} totalCount={passedPaged.totalCount} onChange={passedPaged.setPage} />
+          </>
+        )}
       </div>
 
       <div className="card">
         <h2>Rejected</h2>
-        {rejected.length === 0 ? <p className="subtle">None.</p> : <JoListTable items={rejected} onView={viewFile} />}
+        {rejected.length === 0 ? <p className="subtle">None.</p> : (
+          <>
+            <SearchBox value={rejectedPaged.search} onChange={rejectedPaged.setSearch} />
+            <JoListTable items={rejectedPaged.pageItems} onView={viewFile} />
+            <Pager page={rejectedPaged.page} totalPages={rejectedPaged.totalPages} totalCount={rejectedPaged.totalCount} onChange={rejectedPaged.setPage} />
+          </>
+        )}
       </div>
     </>
   );

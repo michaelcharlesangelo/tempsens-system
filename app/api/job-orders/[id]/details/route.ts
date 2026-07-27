@@ -11,6 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (typeof body.finishEstimation === "string") updates.finish_estimation = body.finishEstimation || null;
   if (typeof body.finishDate === "string") updates.finish_date = body.finishDate || null;
   if (typeof body.readyForProduction === "boolean") updates.ready_for_production = body.readyForProduction;
+  if (typeof body.costingDone === "boolean") updates.costing_done = body.costingDone;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });

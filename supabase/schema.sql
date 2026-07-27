@@ -118,6 +118,7 @@ create table if not exists station_codes (
   code text not null unique,
   station_name text not null,
   description text not null default '',
+  parameter text not null default '', -- target spec the production floor checks against, e.g. "200degC for 60min"
   sequence smallint not null default 0, -- display/process order, editable
   active boolean not null default true,
   created_at timestamptz not null default now()
@@ -160,6 +161,8 @@ create table if not exists job_orders (
   finish_date timestamptz, -- auto-set when production clicks Finish
 
   ready_for_production boolean not null default false, -- ticked by Production Manager once BOM/material is confirmed ready
+
+  costing_done boolean not null default false, -- ticked by Sales Support Supervisor once costing is finished (external system); irreversible in the UI
 
   barcode text unique,
 
@@ -209,6 +212,7 @@ create table if not exists production_logs (
   job_order_id uuid not null references job_orders(id) on delete cascade,
   station_id uuid not null references station_codes(id),
   scanned_by uuid not null references production_accounts(id),
+  actual_value text not null default '', -- what was actually achieved at this station, vs the station's parameter spec
   scanned_at timestamptz not null default now()
 );
 

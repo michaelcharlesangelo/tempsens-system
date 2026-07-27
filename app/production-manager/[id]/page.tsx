@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import TabNav from "@/app/components/TabNav";
 import DateField from "@/app/components/DateField";
 import QrImage from "@/app/components/QrImage";
-import { JobOrder, BomItem, JobOrderHistoryEntry, fmtDate, fmtDateTime } from "@/lib/jobOrders";
+import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
 interface CatalogItem { item_no: string; description: string; unit?: string; }
 
@@ -20,7 +20,7 @@ export default function ProductionJobOrderDetailPage() {
   const [jobOrder, setJobOrder] = useState<JobOrder | null>(null);
   const [bom, setBom] = useState<BomItem[]>([]);
   const [history, setHistory] = useState<JobOrderHistoryEntry[]>([]);
-  const [showComments, setShowComments] = useState(false);
+  const [productionLogs, setProductionLogs] = useState<ProductionLog[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [savedRowId, setSavedRowId] = useState<string | null>(null);
 
@@ -47,6 +47,7 @@ export default function ProductionJobOrderDetailPage() {
     const rows: BomItem[] = data.bom ?? [];
     setBom([...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
     setHistory(data.history ?? []);
+    setProductionLogs(data.productionLogs ?? []);
     setSerialNo(data.jobOrder?.serial_no || "");
     setFinishDate(data.jobOrder?.finish_date ? data.jobOrder.finish_date.slice(0, 10) : "");
   }
@@ -115,7 +116,15 @@ export default function ProductionJobOrderDetailPage() {
     if (!value) { setSuggestions([]); return; }
     const res = await fetch(`/api/item-catalog?q=${encodeURIComponent(value)}`, { cache: "no-store" });
     const data = await res.json();
-    setSuggestions(data.items ?? []);
+    const items: CatalogItem[] = data.items ?? [];
+    setSuggestions(items);
+    // Exact match while typing (no click needed) - autofills unit/description
+    // straight away since the code is already fully known to the catalog.
+    const exact = items.find((s) => s.item_no.toLowerCase() === value.toLowerCase());
+    if (exact) {
+      if (exact.unit) setNewUnit(exact.unit);
+      if (exact.description) setNewDescription(exact.description);
+    }
   }
 
   function pickSuggestion(item: CatalogItem) {
@@ -203,43 +212,39 @@ export default function ProductionJobOrderDetailPage() {
       {message && <div className="warn">{message}</div>}
 
       <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
-          <div>
-            <button className="btn secondary" onClick={() => setShowComments((s) => !s)}>
-              {showComments ? "Hide" : "View"} Comments ({history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).length})
-            </button>
-          </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
+          <div style={{ width: 92 }} />
           <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>JOB ORDER</h2>
           {jobOrder.barcode && (
             <div style={{ textAlign: "center" }}>
-              <button className="btn secondary" style={{ marginBottom: 8 }} onClick={printJobOrder}>Print JO</button>
+              <button className="btn secondary" style={{ marginBottom: 6 }} onClick={printJobOrder}>Print JO</button>
               <div><QrImage value={jobOrder.barcode} size={92} /></div>
               <div className="subtle" style={{ fontSize: "0.68rem", marginTop: 2 }}>{jobOrder.barcode}</div>
             </div>
           )}
         </div>
 
-        {showComments && (
-          <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-            {history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).length === 0 ? (
-              <p className="subtle">No comments from Sales Manager, Operational Manager, or General Manager yet.</p>
-            ) : (
-              history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).map((h) => (
-                <div key={h.id} style={{ fontSize: "0.85rem", padding: "4px 0" }}>
-                  <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        <div className="form-sheet" style={{ marginTop: 14 }}>
+        <div className="form-sheet" style={{ marginTop: 6 }}>
           <div className="form-sheet-col">
             <div className="form-row"><label>Customer Name</label><span>:</span><span>{jobOrder.customer_name}</span></div>
             <div className="form-row"><label>SO Number</label><span>:</span><span>{jobOrder.so_no}</span></div>
             <div className="form-row"><label>Item Description</label><span>:</span><span>{jobOrder.item_description}</span></div>
             <div className="form-row"><label>Category</label><span>:</span><span>{jobOrder.item_category}</span></div>
             <div className="form-row"><label>Quantity</label><span>:</span><span>{jobOrder.quantity}</span></div>
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--panel-muted)" }}>
+              <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>
+                Comments (Sales / Operational / General Manager)
+              </div>
+              {history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).length === 0 ? (
+                <p className="subtle" style={{ fontSize: "0.8rem", margin: 0 }}>None yet.</p>
+              ) : (
+                history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).map((h) => (
+                  <div key={h.id} style={{ fontSize: "0.8rem", padding: "3px 0" }}>
+                    <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
           <div className="form-sheet-col">
             <div className="form-row"><label>Item Code</label><span>:</span><span>{jobOrder.item_no}</span></div>
@@ -310,9 +315,6 @@ export default function ProductionJobOrderDetailPage() {
                         <td>{row.actual_unit ?? <span className="subtle">-</span>}</td>
                         <td style={{ textAlign: "center" }}><input type="checkbox" checked={!row.material_ready} onChange={() => toggleNotAvailable(row)} style={{ width: "auto" }} /></td>
                         <td>
-                          {row.material_prepared && (
-                            <div style={{ color: "var(--good)", fontSize: "0.72rem", fontWeight: 700, marginBottom: 3 }}>✓ Warehouse: Prepared</div>
-                          )}
                           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                             <input
                               type="text"
@@ -357,6 +359,28 @@ export default function ProductionJobOrderDetailPage() {
           <div className="field"><label>Unit</label><input type="text" value={newUnit} onChange={(e) => setNewUnit(e.target.value)} /></div>
         </div>
         <button className="btn secondary" onClick={addRow} disabled={savingRow || !newItemNo.trim()}>{savingRow ? "Adding..." : "+ Add item (auto-saves)"}</button>
+      </div>
+
+      <div className="card">
+        <h2>QC — Station Scans</h2>
+        {productionLogs.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No station scans yet.</p> : (
+          <div style={{ overflowX: "auto", marginTop: 10 }}>
+            <table className="data-table">
+              <thead><tr><th>Time</th><th>Station</th><th>Parameter</th><th>Actual</th><th>By</th></tr></thead>
+              <tbody>
+                {productionLogs.map((log) => (
+                  <tr key={log.id}>
+                    <td>{fmtDateTime(log.scanned_at)}</td>
+                    <td>{log.station?.station_name ?? "-"}</td>
+                    <td>{log.station?.parameter || "-"}</td>
+                    <td>{log.actual_value || "-"}</td>
+                    <td>{log.account?.full_name ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </>
   );

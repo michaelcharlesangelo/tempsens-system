@@ -5,7 +5,7 @@ import { JobOrder } from "@/lib/jobOrders";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const PO_VISIBLE_TABS = ["jo-input", "sales-manager", "operation-manager", "gm"];
+const PO_VISIBLE_TABS = ["jo-input", "sales-support-supervisor", "sales-manager", "operation-manager", "gm"];
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const tab = req.nextUrl.searchParams.get("tab");
@@ -16,7 +16,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     admin.from("job_orders").select("*").eq("id", id).maybeSingle(),
     admin.from("job_order_bom").select("*").eq("job_order_id", id).order("created_at"),
     admin.from("job_order_history").select("*").eq("job_order_id", id).order("changed_at", { ascending: true }),
-    admin.from("production_logs").select("*").eq("job_order_id", id).order("scanned_at", { ascending: false }),
+    admin
+      .from("production_logs")
+      .select("*, station:station_codes(station_name, parameter), account:production_accounts(full_name)")
+      .eq("job_order_id", id)
+      .order("scanned_at", { ascending: false }),
     admin.from("qc_checks").select("*").eq("job_order_id", id).order("performed_at", { ascending: false }),
   ]);
 

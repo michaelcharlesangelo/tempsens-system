@@ -23,5 +23,13 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const admin = getSupabaseAdminClient();
   const { error } = await admin.from("item_categories").delete().eq("id", params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Close the gap left in `sequence` so remaining rows stay numbered
+  // contiguously (1, 2, 3, ...) instead of skipping the deleted slot.
+  const { data: remaining } = await admin.from("item_categories").select("id").order("sequence");
+  if (remaining) {
+    await Promise.all(remaining.map((row, i) => admin.from("item_categories").update({ sequence: i + 1 }).eq("id", row.id)));
+  }
+
   return NextResponse.json({ ok: true });
 }

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const BUCKET = "tempsens-files";
-const PO_VISIBLE_TABS = ["jo-input", "sales-manager", "operation-manager", "gm"];
+const PO_VISIBLE_TABS = ["jo-input", "sales-support-supervisor", "sales-manager", "operation-manager", "gm"];
 
 function stripPoIfUnauthorized(jo: JobOrder, tab: string | null): JobOrder {
   if (tab && PO_VISIBLE_TABS.includes(tab)) return jo;
@@ -16,6 +16,7 @@ function stripPoIfUnauthorized(jo: JobOrder, tab: string | null): JobOrder {
 export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get("status");
   const tab = req.nextUrl.searchParams.get("tab");
+  const barcode = req.nextUrl.searchParams.get("barcode");
   const admin = getSupabaseAdminClient();
   let query = admin
     .from("job_orders")
@@ -23,6 +24,7 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .order("changed_at", { foreignTable: "job_order_history", ascending: true });
   if (status) query = query.eq("status", status);
+  if (barcode) query = query.eq("barcode", barcode.trim());
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -2,14 +2,20 @@
 
 import { useEffect, useState } from "react";
 import TabNav from "@/app/components/TabNav";
-import { Complaint, JobOrder, dashboardStatusLabel, fmtDate } from "@/lib/jobOrders";
+import { usePagedSearch } from "@/app/components/usePagedSearch";
+import { SearchBox, Pager } from "@/app/components/Pager";
+import { Complaint, JobOrder, complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate } from "@/lib/jobOrders";
 
 interface CategoryTotal { category: string; qty: number; }
 
-function daysSince(isoDate: string): number {
-  const start = new Date(isoDate);
+// Calendar-day difference (not elapsed-hours) - JO date 26/6 and today 27/6
+// should read "1", regardless of what time of day either happened at.
+function daysSince(dateStr: string): number {
+  const [y, m, d] = dateStr.slice(0, 10).split("-").map(Number);
+  const start = Date.UTC(y, m - 1, d);
   const now = new Date();
-  return Math.max(0, Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.round((today - start) / (1000 * 60 * 60 * 24)));
 }
 
 export default function DashboardPage() {
@@ -55,17 +61,20 @@ export default function DashboardPage() {
   }
 
   function ComplaintTable({ items, title }: { items: Complaint[]; title: string }) {
+    const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch);
     return (
       <div className="card">
         <h2>{title} ({items.length})</h2>
         {items.length === 0 ? <p className="subtle">None.</p> : (
+          <>
+          <SearchBox value={search} onChange={setSearch} />
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead>
                 <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
               </thead>
               <tbody>
-                {items.map((c) => (
+                {pageItems.map((c) => (
                   <tr key={c.id}>
                     <td>{fmtDate(c.created_at)}</td>
                     <td>{c.customer_name}</td>
@@ -102,8 +111,46 @@ export default function DashboardPage() {
               </tbody>
             </table>
           </div>
+          <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+          </>
         )}
       </div>
+    );
+  }
+
+  function CurrentJobOrders({ items }: { items: JobOrder[] }) {
+    const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, joMatchesSearch);
+    return (
+      <>
+        <SearchBox value={search} onChange={setSearch} />
+        <div style={{ overflowX: "auto" }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Sales</th><th>Customer Name</th>
+                <th>Item Description</th><th>Qty</th><th>Days</th><th>Estimation</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pageItems.map((jo) => (
+                <tr key={jo.id}>
+                  <td>{fmtDate(jo.jo_date)}</td>
+                  <td>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
+                  <td>{jo.item_no}</td>
+                  <td>{jo.sales_person_name}</td>
+                  <td>{jo.customer_name}</td>
+                  <td>{jo.item_description}</td>
+                  <td>{jo.quantity}</td>
+                  <td>{daysSince(jo.jo_date)}</td>
+                  <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>
+                  <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+      </>
     );
   }
 
@@ -115,37 +162,9 @@ export default function DashboardPage() {
       <TabNav active="/dashboard" />
 
       <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <h2 style={{ margin: 0 }}>Current Job Orders ({activeJobOrders?.length ?? "..."})</h2>
-          <a href="/jo-input" className="btn">+ New Job Order</a>
-        </div>
+        <h2 style={{ margin: 0 }}>Current Job Orders ({activeJobOrders?.length ?? "..."})</h2>
         {!activeJobOrders ? <p className="subtle">Loading...</p> : activeJobOrders.length === 0 ? <p className="subtle">Nothing active right now.</p> : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Sales</th><th>Customer Name</th>
-                  <th>Item Description</th><th>Qty</th><th>Days</th><th>Estimation</th><th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeJobOrders.map((jo) => (
-                  <tr key={jo.id}>
-                    <td>{fmtDate(jo.created_at)}</td>
-                    <td>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
-                    <td>{jo.item_no}</td>
-                    <td>{jo.sales_person_name}</td>
-                    <td>{jo.customer_name}</td>
-                    <td>{jo.item_description}</td>
-                    <td>{jo.quantity}</td>
-                    <td>{daysSince(jo.created_at)}</td>
-                    <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>
-                    <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status)}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <CurrentJobOrders items={activeJobOrders} />
         )}
       </div>
 

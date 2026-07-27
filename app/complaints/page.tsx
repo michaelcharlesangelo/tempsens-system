@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import TabNav from "@/app/components/TabNav";
-import { Complaint, JobOrder, SalesPerson, fmtDate } from "@/lib/jobOrders";
+import { usePagedSearch } from "@/app/components/usePagedSearch";
+import { SearchBox, Pager } from "@/app/components/Pager";
+import { Complaint, JobOrder, SalesPerson, complaintMatchesSearch, fmtDate } from "@/lib/jobOrders";
 
 type ComplaintType = "indonesia" | "traded";
 
@@ -113,17 +115,20 @@ export default function ComplaintsPage() {
   }
 
   function ComplaintTable({ items, title }: { items: Complaint[]; title: string }) {
+    const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch);
     return (
       <div className="card">
         <h2>{title} ({items.length})</h2>
         {items.length === 0 ? <p className="subtle">None.</p> : (
+          <>
+          <SearchBox value={search} onChange={setSearch} />
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead>
                 <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
               </thead>
               <tbody>
-                {items.map((c) => (
+                {pageItems.map((c) => (
                   <tr key={c.id}>
                     <td>{fmtDate(c.created_at)}</td>
                     <td>{c.customer_name}</td>
@@ -160,6 +165,8 @@ export default function ComplaintsPage() {
               </tbody>
             </table>
           </div>
+          <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+          </>
         )}
       </div>
     );

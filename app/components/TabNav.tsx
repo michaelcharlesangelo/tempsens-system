@@ -3,11 +3,13 @@
 const TABS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/sales-support", label: "Sales Support" },
+  { href: "/sales-support-supervisor", label: "Sales Support Supervisor" },
   { href: "/sales-manager", label: "Sales Manager" },
   { href: "/operation-manager", label: "Operational Manager" },
   { href: "/gm", label: "General Manager" },
   { href: "/production-manager", label: "Production Manager" },
   { href: "/warehouse-manager", label: "Warehouse Manager" },
+  { href: "/production", label: "Production" },
   { href: "/items", label: "Items" },
   { href: "/complaints", label: "Complaints" },
 ];

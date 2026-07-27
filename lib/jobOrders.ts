@@ -51,6 +51,7 @@ export interface JobOrder {
   finish_estimation: string | null;
   finish_date: string | null;
   ready_for_production: boolean;
+  costing_done: boolean;
   barcode: string | null;
   status: JobOrderStatus;
   current_approval_layer: 1 | 2 | 3 | null;
@@ -98,6 +99,7 @@ export interface StationCode {
   code: string;
   station_name: string;
   description: string;
+  parameter: string;
   sequence: number;
   active: boolean;
   created_at: string;
@@ -108,7 +110,11 @@ export interface ProductionLog {
   job_order_id: string;
   station_id: string;
   scanned_by: string;
+  actual_value: string;
   scanned_at: string;
+  // Embedded on the JO detail response for the QC-parameter table.
+  station?: { station_name: string; parameter: string };
+  account?: { full_name: string };
 }
 
 export type QcCheckType = "dimensional" | "continuity_resistance" | "ir_check" | "temperature";
@@ -209,6 +215,26 @@ export interface Complaint {
   submitted_by: string;
   created_at: string;
   resolved_at: string | null;
+}
+
+// Shared search predicates for the paged/searchable list tables - term is
+// already lowercased by usePagedSearch before this is called.
+export function joMatchesSearch(jo: JobOrder, term: string): boolean {
+  return (
+    jo.so_no.toLowerCase().includes(term) ||
+    jo.item_no.toLowerCase().includes(term) ||
+    fmtDate(jo.jo_date).includes(term) ||
+    fmtDate(jo.created_at).includes(term)
+  );
+}
+
+export function complaintMatchesSearch(c: Complaint, term: string): boolean {
+  return (
+    c.so_no.toLowerCase().includes(term) ||
+    c.item_description.toLowerCase().includes(term) ||
+    c.customer_name.toLowerCase().includes(term) ||
+    fmtDate(c.created_at).includes(term)
+  );
 }
 
 // Simplified 3-bucket status label for the Dashboard, per Michael's spec:
