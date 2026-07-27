@@ -7,7 +7,9 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { printFileUrl } from "@/lib/printFile";
 
-const MATERIAL_PREPARED_STATUSES = ["in_progress", "qc", "completed"];
+// Only approval-layer comments are relevant here - Sales Support's own
+// create/edit history is noise for Production Manager.
+const APPROVAL_COMMENT_AUTHORS = ["Sales Manager", "Operational Manager", "General Manager"];
 
 function JoTable({
   items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge,
@@ -41,7 +43,7 @@ function JoTable({
         </thead>
         <tbody>
           {items.map((jo) => {
-            const commented = (jo.history ?? []).filter((h) => h.comment);
+            const commented = (jo.history ?? []).filter((h) => h.comment && APPROVAL_COMMENT_AUTHORS.includes(h.changed_by));
             return (
               <Fragment key={jo.id}>
                 <tr>
@@ -58,7 +60,7 @@ function JoTable({
                     <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => printDrawing(jo.id)}>Print</button>
                   </td>
                   <td style={{ textAlign: "center" }}>
-                    <input type="checkbox" checked={MATERIAL_PREPARED_STATUSES.includes(jo.status)} disabled readOnly style={{ width: "auto" }} title="Ticked once Warehouse Manager has prepared all material" />
+                    <input type="checkbox" checked={!!jo.material_prepared_all} disabled readOnly style={{ width: "auto" }} title="Ticked once Warehouse Manager has prepared all material" />
                   </td>
                   <td>
                     <button

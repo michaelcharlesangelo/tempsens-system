@@ -20,6 +20,9 @@ function JoInputInner() {
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit");
   const isEditing = !!editId;
+  // Tags a new JO with which tab created it - stands in for real per-user
+  // "submitted by me" filtering until accounts/login exist.
+  const createdByTab = searchParams.get("by") || "Sales Support";
 
   const [customerName, setCustomerName] = useState("");
   const [soNo, setSoNo] = useState("");
@@ -138,6 +141,8 @@ function JoInputInner() {
       formData.append("quantity", quantity);
       formData.append("itemNo", itemNo);
       formData.append("salesPersonName", salesPersonName);
+      // Only tag on creation - editing shouldn't reassign whose "Submitted" list this shows under.
+      if (!isEditing) formData.append("salesSupportName", createdByTab);
       formData.append("deadline", deadline);
       formData.append("urgent", String(urgent));
       formData.append("drawingNumber", drawingNumber);

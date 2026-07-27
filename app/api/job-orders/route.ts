@@ -29,7 +29,34 @@ export async function GET(req: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const jobOrders = (data as JobOrder[]).map((jo) => stripPoIfUnauthorized(jo, tab));
+  const jobOrdersRaw = data as JobOrder[];
+
+  // Live "has Warehouse Manager prepared everything" flag - not just a
+  // snapshot from when the job order last flipped to in_progress, since
+  // Production Manager can add new BOM rows afterward that reset this.
+  const jobOrderIds = jobOrdersRaw.map((jo) => jo.id);
+  const materialPreparedMap = new Map<string, boolean>();
+  if (jobOrderIds.length > 0) {
+    const { data: bomRows } = await admin
+      .from("job_order_bom")
+      .select("job_order_id, material_ready, material_prepared")
+      .in("job_order_id", jobOrderIds);
+    const byJo = new Map<string, { material_ready: boolean; material_prepared: boolean }[]>();
+    for (const row of (bomRows ?? []) as { job_order_id: string; material_ready: boolean; material_prepared: boolean }[]) {
+      const list = byJo.get(row.job_order_id) ?? [];
+      list.push(row);
+      byJo.set(row.job_order_id, list);
+    }
+    for (const id of jobOrderIds) {
+      const rows = (byJo.get(id) ?? []).filter((r) => r.material_ready);
+      materialPreparedMap.set(id, rows.length > 0 && rows.every((r) => r.material_prepared));
+    }
+  }
+
+  const jobOrders = jobOrdersRaw.map((jo) => ({
+    ...stripPoIfUnauthorized(jo, tab),
+    material_prepared_all: materialPreparedMap.get(jo.id) ?? false,
+  }));
   return NextResponse.json({ jobOrders });
 }
 

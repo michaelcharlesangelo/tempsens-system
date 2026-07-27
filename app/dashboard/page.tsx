@@ -23,12 +23,6 @@ export default function DashboardPage() {
   const [yearlyByCategory, setYearlyByCategory] = useState<CategoryTotal[]>([]);
   const [year, setYear] = useState<number | null>(null);
   const [complaints, setComplaints] = useState<Complaint[] | null>(null);
-  const [editingActionId, setEditingActionId] = useState<string | null>(null);
-  const [actionText, setActionText] = useState("");
-
-  function loadComplaints() {
-    fetch("/api/complaints", { cache: "no-store" }).then((r) => r.json()).then((d) => setComplaints(d.complaints ?? []));
-  }
 
   useEffect(() => {
     fetch("/api/dashboard", { cache: "no-store" }).then((r) => r.json()).then((d) => {
@@ -36,28 +30,13 @@ export default function DashboardPage() {
       setYearlyByCategory(d.yearlyByCategory ?? []);
       setYear(d.year ?? null);
     });
-    loadComplaints();
+    fetch("/api/complaints", { cache: "no-store" }).then((r) => r.json()).then((d) => setComplaints(d.complaints ?? []));
   }, []);
 
   async function viewPhoto(path: string) {
     const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
     const data = await res.json();
     if (data.url) window.open(data.url, "_blank");
-  }
-
-  async function updateStatus(id: string, status: string) {
-    await fetch(`/api/complaints/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
-    });
-    loadComplaints();
-  }
-
-  async function saveAction(id: string) {
-    await fetch(`/api/complaints/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ suggestedAction: actionText }),
-    });
-    setEditingActionId(null);
-    loadComplaints();
   }
 
   function ComplaintTable({ items, title }: { items: Complaint[]; title: string }) {
@@ -87,25 +66,8 @@ export default function DashboardPage() {
                         <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
                       ))}
                     </td>
-                    <td>
-                      <select value={c.status} onChange={(e) => updateStatus(c.id, e.target.value)}>
-                        <option value="not_done">Not Done</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="done">Done</option>
-                      </select>
-                    </td>
-                    <td style={{ minWidth: 180 }}>
-                      {editingActionId === c.id ? (
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <input type="text" value={actionText} onChange={(e) => setActionText(e.target.value)} />
-                          <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => saveAction(c.id)}>Save</button>
-                        </div>
-                      ) : (
-                        <span onClick={() => { setEditingActionId(c.id); setActionText(c.suggested_action); }} style={{ cursor: "pointer" }}>
-                          {c.suggested_action || <span className="subtle">Click to add...</span>}
-                        </span>
-                      )}
-                    </td>
+                    <td>{c.status === "not_done" ? "Not Done" : c.status === "in_progress" ? "In Progress" : "Done"}</td>
+                    <td style={{ minWidth: 180 }}>{c.suggested_action || <span className="subtle">-</span>}</td>
                   </tr>
                 ))}
               </tbody>

@@ -60,6 +60,9 @@ export interface JobOrder {
   // Embedded on list/detail responses - full approval/action comment trail,
   // oldest first, so each layer can see what earlier layers said.
   history?: JobOrderHistoryEntry[];
+  // Computed by GET /api/job-orders - true only when every material_ready
+  // BOM row is currently material_prepared (live, not a status snapshot).
+  material_prepared_all?: boolean;
 }
 
 export interface JobOrderHistoryEntry {

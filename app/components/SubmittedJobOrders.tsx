@@ -20,10 +20,16 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
   async function load() {
     const res = await fetch(`/api/job-orders?tab=${tab}`, { cache: "no-store" });
     const data = await res.json();
-    setJobOrders(data.jobOrders ?? []);
+    // Not real per-account scoping yet (no login) - `sales_support_name`
+    // is tagged with `by` at creation time (see the ?by= param on the
+    // "+ New Job Order" link below) as a stand-in so each tab's list
+    // doesn't show every job order ever created. Once real accounts +
+    // login exist, this becomes genuine per-user filtering.
+    const all: JobOrder[] = data.jobOrders ?? [];
+    setJobOrders(all.filter((jo) => jo.sales_support_name === by));
   }
 
-  useEffect(() => { load(); }, [tab]);
+  useEffect(() => { load(); }, [tab, by]);
 
   async function viewFile(id: string, type: "drawing" | "po") {
     const res = await fetch(`/api/job-orders/${id}/file?type=${type}&tab=${tab}`, { cache: "no-store" });
@@ -49,7 +55,7 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
         <h2 style={{ margin: 0 }}>Job Orders I've Submitted</h2>
-        <a href="/jo-input" className="btn">+ New Job Order</a>
+        <a href={`/jo-input?by=${encodeURIComponent(by)}`} className="btn">+ New Job Order</a>
       </div>
       {message && <div className="warn">{message}</div>}
       {!jobOrders ? <p className="subtle">Loading...</p> : jobOrders.length === 0 ? <p className="subtle">None yet.</p> : (

@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const stationName = typeof body.stationName === "string" ? body.stationName.trim() : "";
   const description = typeof body.description === "string" ? body.description.trim() : "";
-  const parameter = typeof body.parameter === "string" ? body.parameter.trim() : "";
   if (!stationName) return NextResponse.json({ error: "Station name is required." }, { status: 400 });
 
   const admin = getSupabaseAdminClient();
@@ -24,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await admin
     .from("station_codes")
-    .insert({ code: generateShortCode(), station_name: stationName, description, parameter, sequence: (count ?? 0) + 1 })
+    .insert({ code: generateShortCode(), station_name: stationName, description, sequence: (count ?? 0) + 1 })
     .select()
     .single();
 

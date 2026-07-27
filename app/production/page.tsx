@@ -3,9 +3,11 @@
 import { useState } from "react";
 import TabNav from "@/app/components/TabNav";
 import QrScanner from "@/app/components/QrScanner";
+import PasswordField from "@/app/components/PasswordField";
 import { JobOrder, StationCode } from "@/lib/jobOrders";
 
 interface Account { id: string; username: string; full_name: string; }
+type Step = "scan-jo" | "scan-station" | "form";
 
 export default function ProductionScanPage() {
   const [account, setAccount] = useState<Account | null>(null);
@@ -14,17 +16,13 @@ export default function ProductionScanPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
-  const [jobOrder, setJobOrder] = useState<JobOrder | null>(null);
-  const [joInput, setJoInput] = useState("");
-  const [joError, setJoError] = useState<string | null>(null);
-  const [joScanning, setJoScanning] = useState(false);
-  const [lookingUpJo, setLookingUpJo] = useState(false);
+  const [step, setStep] = useState<Step>("scan-jo");
+  const [scanning, setScanning] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
 
+  const [jobOrder, setJobOrder] = useState<JobOrder | null>(null);
   const [station, setStation] = useState<StationCode | null>(null);
-  const [stationInput, setStationInput] = useState("");
-  const [stationError, setStationError] = useState<string | null>(null);
-  const [stationScanning, setStationScanning] = useState(false);
-  const [lookingUpStation, setLookingUpStation] = useState(false);
 
   const [actualValue, setActualValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -50,49 +48,62 @@ export default function ProductionScanPage() {
 
   function logout() {
     setAccount(null);
-    setJobOrder(null); setStation(null);
-    setJoInput(""); setStationInput(""); setActualValue("");
+    resetToScanJo();
   }
 
-  async function lookupJo(code: string) {
-    const trimmed = code.trim();
-    if (!trimmed) return;
-    setJoError(null);
-    setLookingUpJo(true);
+  function resetToScanJo() {
+    setStep("scan-jo");
+    setScanning(false);
+    setLookupError(null);
+    setJobOrder(null);
+    setStation(null);
+    setActualValue("");
+    setSuccessMsg(null);
+  }
+
+  function startScanStation() {
+    setStep("scan-station");
+    setLookupError(null);
+    setScanning(true);
+  }
+
+  async function handleJoScan(code: string) {
+    setScanning(false);
+    setLookupError(null);
+    setLookingUp(true);
     try {
-      const res = await fetch(`/api/job-orders?barcode=${encodeURIComponent(trimmed)}`, { cache: "no-store" });
+      const res = await fetch(`/api/job-orders?barcode=${encodeURIComponent(code.trim())}`, { cache: "no-store" });
       const data = await res.json();
       const found: JobOrder[] = data.jobOrders ?? [];
-      if (found.length === 0) { setJoError(`No job order found for barcode "${trimmed}".`); return; }
+      if (found.length === 0) { setLookupError(`No job order found for that QR code.`); return; }
       setJobOrder(found[0]);
-      setJoInput("");
+      // Chain straight into station scanning - no extra click needed.
+      startScanStation();
     } finally {
-      setLookingUpJo(false);
+      setLookingUp(false);
     }
   }
 
-  async function lookupStation(code: string) {
-    const trimmed = code.trim();
-    if (!trimmed) return;
-    setStationError(null);
-    setLookingUpStation(true);
+  async function handleStationScan(code: string) {
+    setScanning(false);
+    setLookupError(null);
+    setLookingUp(true);
     try {
       const res = await fetch("/api/station-codes", { cache: "no-store" });
       const data = await res.json();
       const stations: StationCode[] = data.stations ?? [];
-      const found = stations.find((s) => s.code.toLowerCase() === trimmed.toLowerCase());
-      if (!found) { setStationError(`No station found for code "${trimmed}".`); return; }
+      const found = stations.find((s) => s.code.toLowerCase() === code.trim().toLowerCase());
+      if (!found) { setLookupError(`No station found for that QR code.`); return; }
       setStation(found);
-      setStationInput("");
+      setStep("form");
     } finally {
-      setLookingUpStation(false);
+      setLookingUp(false);
     }
   }
 
   async function submitScan() {
     if (!jobOrder || !station || !account) return;
     setSubmitError(null);
-    setSuccessMsg(null);
     setSubmitting(true);
     try {
       const res = await fetch("/api/production-logs", {
@@ -102,8 +113,8 @@ export default function ProductionScanPage() {
       const data = await res.json();
       if (!res.ok) { setSubmitError(data.error || "Failed to save."); return; }
       setSuccessMsg(`Saved — ${station.station_name} recorded for ${jobOrder.jo_number}.`);
-      setStation(null);
       setActualValue("");
+      startScanStation();
     } finally {
       setSubmitting(false);
     }
@@ -116,7 +127,7 @@ export default function ProductionScanPage() {
         <div className="card" style={{ maxWidth: 400 }}>
           <h2>Production Login</h2>
           <div className="field"><label>Username</label><input type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} /></div>
-          <div className="field"><label>Password</label><input type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && login()} /></div>
+          <div className="field"><label>Password</label><PasswordField value={loginPassword} onChange={setLoginPassword} /></div>
           {loginError && <p className="error-text">{loginError}</p>}
           <button className="btn" onClick={login} disabled={loggingIn || !loginUsername.trim() || !loginPassword.trim()}>{loggingIn ? "Logging in..." : "Log In"}</button>
         </div>
@@ -134,23 +145,27 @@ export default function ProductionScanPage() {
         </div>
       </div>
 
-      {!jobOrder ? (
+      {successMsg && <div className="card" style={{ color: "var(--good)" }}>{successMsg}</div>}
+
+      {step === "scan-jo" && (
         <div className="card">
-          <h2>1. Scan Job Order</h2>
-          <p className="subtle">Scan the JO's QR barcode, or type it in manually.</p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <input type="text" placeholder="Barcode" value={joInput} onChange={(e) => setJoInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupJo(joInput)} style={{ maxWidth: 220 }} />
-            <button className="btn secondary" disabled={lookingUpJo || !joInput.trim()} onClick={() => lookupJo(joInput)}>{lookingUpJo ? "Looking up..." : "Look Up"}</button>
-            <button className="btn secondary" onClick={() => setJoScanning((s) => !s)}>{joScanning ? "Cancel Scan" : "Scan with Camera"}</button>
-          </div>
-          {joError && <p className="error-text" style={{ marginTop: 8 }}>{joError}</p>}
-          {joScanning && (
-            <div style={{ marginTop: 12 }}>
-              <QrScanner onScan={(v) => { setJoScanning(false); lookupJo(v); }} onClose={() => setJoScanning(false)} />
+          <h2>Scan JO</h2>
+          {!scanning ? (
+            <button className="btn" onClick={() => { setLookupError(null); setScanning(true); }}>Scan QR</button>
+          ) : (
+            <QrScanner onScan={handleJoScan} onClose={() => setScanning(false)} />
+          )}
+          {lookingUp && <p className="subtle" style={{ marginTop: 8 }}>Looking up job order...</p>}
+          {lookupError && (
+            <div style={{ marginTop: 8 }}>
+              <p className="error-text">{lookupError}</p>
+              <button className="btn secondary" onClick={() => setScanning(true)}>Try Again</button>
             </div>
           )}
         </div>
-      ) : !station ? (
+      )}
+
+      {step === "scan-station" && jobOrder && (
         <>
           <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -158,26 +173,28 @@ export default function ProductionScanPage() {
                 <b>{jobOrder.jo_number}</b> — {jobOrder.customer_name}
                 <div className="subtle" style={{ fontSize: "0.8rem" }}>{jobOrder.item_no} — {jobOrder.item_description}</div>
               </div>
-              <button className="btn secondary" onClick={() => setJobOrder(null)}>Change Job Order</button>
+              <button className="btn secondary" onClick={resetToScanJo}>Change Job Order</button>
             </div>
           </div>
           <div className="card">
-            <h2>2. Scan Station</h2>
-            <p className="subtle">Scan the station's QR code, or type it in manually.</p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <input type="text" placeholder="Station code" value={stationInput} onChange={(e) => setStationInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && lookupStation(stationInput)} style={{ maxWidth: 220 }} />
-              <button className="btn secondary" disabled={lookingUpStation || !stationInput.trim()} onClick={() => lookupStation(stationInput)}>{lookingUpStation ? "Looking up..." : "Look Up"}</button>
-              <button className="btn secondary" onClick={() => setStationScanning((s) => !s)}>{stationScanning ? "Cancel Scan" : "Scan with Camera"}</button>
-            </div>
-            {stationError && <p className="error-text" style={{ marginTop: 8 }}>{stationError}</p>}
-            {stationScanning && (
-              <div style={{ marginTop: 12 }}>
-                <QrScanner onScan={(v) => { setStationScanning(false); lookupStation(v); }} onClose={() => setStationScanning(false)} />
+            <h2>Scan Station</h2>
+            {!scanning ? (
+              <button className="btn" onClick={() => { setLookupError(null); setScanning(true); }}>Scan QR</button>
+            ) : (
+              <QrScanner onScan={handleStationScan} onClose={() => setScanning(false)} />
+            )}
+            {lookingUp && <p className="subtle" style={{ marginTop: 8 }}>Looking up station...</p>}
+            {lookupError && (
+              <div style={{ marginTop: 8 }}>
+                <p className="error-text">{lookupError}</p>
+                <button className="btn secondary" onClick={() => setScanning(true)}>Try Again</button>
               </div>
             )}
           </div>
         </>
-      ) : (
+      )}
+
+      {step === "form" && jobOrder && station && (
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
             <div>
@@ -185,8 +202,8 @@ export default function ProductionScanPage() {
               <div className="subtle" style={{ fontSize: "0.8rem" }}>Station: {station.station_name}</div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
-              <button className="btn secondary" onClick={() => setStation(null)}>Change Station</button>
-              <button className="btn secondary" onClick={() => setJobOrder(null)}>Change Job Order</button>
+              <button className="btn secondary" onClick={startScanStation}>Change Station</button>
+              <button className="btn secondary" onClick={resetToScanJo}>Change Job Order</button>
             </div>
           </div>
 
@@ -198,7 +215,6 @@ export default function ProductionScanPage() {
           <div className="form-row"><label>Performed By</label><span>:</span><span>{account.full_name}</span></div>
 
           {submitError && <p className="error-text" style={{ marginTop: 8 }}>{submitError}</p>}
-          {successMsg && <p style={{ color: "var(--good)", fontSize: "0.85rem", marginTop: 8 }}>{successMsg}</p>}
           <button className="btn" style={{ marginTop: 12 }} disabled={submitting || !actualValue.trim()} onClick={submitScan}>
             {submitting ? "Saving..." : "Save"}
           </button>
