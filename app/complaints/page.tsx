@@ -31,6 +31,8 @@ export default function ComplaintsPage() {
 
   const [editingActionId, setEditingActionId] = useState<string | null>(null);
   const [actionText, setActionText] = useState("");
+  const [finishing, setFinishing] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   async function load() {
     const res = await fetch("/api/complaints", { cache: "no-store" });
@@ -114,7 +116,20 @@ export default function ComplaintsPage() {
     load();
   }
 
-  function ComplaintTable({ items, title }: { items: Complaint[]; title: string }) {
+  async function finishComplaint(c: Complaint) {
+    if (!confirm(`Mark this complaint (SO ${c.so_no}) as finished? It will move to History.`)) return;
+    setFinishing(c.id);
+    try {
+      await fetch(`/api/complaints/${c.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archived: true }),
+      });
+      load();
+    } finally {
+      setFinishing(null);
+    }
+  }
+
+  function ComplaintTable({ items, title, showFinish = false }: { items: Complaint[]; title: string; showFinish?: boolean }) {
     const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch);
     return (
       <div className="card">
@@ -125,7 +140,7 @@ export default function ComplaintsPage() {
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead>
-                <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
+                <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th>{showFinish && <th>Finish</th>}</tr>
               </thead>
               <tbody>
                 {pageItems.map((c) => (
@@ -160,6 +175,20 @@ export default function ComplaintsPage() {
                         </span>
                       )}
                     </td>
+                    {showFinish && (
+                      <td style={{ textAlign: "center" }}>
+                        {c.status === "done" && (
+                          <input
+                            type="checkbox"
+                            checked={false}
+                            disabled={finishing === c.id}
+                            onChange={() => finishComplaint(c)}
+                            style={{ width: 20, height: 20, accentColor: "var(--good)" }}
+                            title="Tick once resolved to move this complaint to History"
+                          />
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -172,14 +201,39 @@ export default function ComplaintsPage() {
     );
   }
 
-  const indonesia = (complaints ?? []).filter((c) => !c.is_traded);
-  const traded = (complaints ?? []).filter((c) => c.is_traded);
+  // Done complaints drop off the main table 7 days after resolution even
+  // without a manual Finish tick, matching the Dashboard's auto-archive.
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  function isExpired(c: Complaint): boolean {
+    return c.status === "done" && !!c.resolved_at && Date.now() - new Date(c.resolved_at).getTime() > SEVEN_DAYS_MS;
+  }
+
+  const visible = (complaints ?? []).filter((c) => !c.archived && !isExpired(c));
+  const history = (complaints ?? []).filter((c) => c.archived || isExpired(c));
+
+  const indonesia = visible.filter((c) => !c.is_traded);
+  const traded = visible.filter((c) => c.is_traded);
+  const historyIndonesia = history.filter((c) => !c.is_traded);
+  const historyTraded = history.filter((c) => c.is_traded);
 
   const canSubmit = complaintType && customerName.trim() && !saving;
 
   return (
     <>
       <TabNav active="/complaints" />
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <button className="btn secondary" onClick={() => setHistoryOpen((v) => !v)}>
+          {historyOpen ? "Hide History" : `History (${history.length})`}
+        </button>
+      </div>
+
+      {historyOpen && (
+        <>
+          <ComplaintTable items={historyIndonesia} title="History — Tempsens Indonesia" />
+          <ComplaintTable items={historyTraded} title="History — Traded Item" />
+        </>
+      )}
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -285,8 +339,8 @@ export default function ComplaintsPage() {
 
       {!complaints ? <p className="subtle">Loading...</p> : (
         <>
-          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" />
-          <ComplaintTable items={traded} title="Complaints — Traded Item" />
+          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" showFinish />
+          <ComplaintTable items={traded} title="Complaints — Traded Item" showFinish />
         </>
       )}
     </>

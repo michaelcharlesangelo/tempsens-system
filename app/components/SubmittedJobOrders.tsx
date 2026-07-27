@@ -7,7 +7,12 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import { JobOrder, joMatchesSearch, salesSupportProgressLabel } from "@/lib/jobOrders";
 
 const EDITABLE_STATUSES = ["draft", "pending_approval"];
-const CANCELLABLE_STATUSES = ["draft", "pending_approval", "approved", "acknowledged", "in_progress", "qc"];
+// Cancellable only up until Sales Manager (layer 1) approves it - once it
+// moves past that, Sales Support/Supervisor/Operational Manager can no
+// longer cancel, even mid-production.
+function canCancel(jo: JobOrder): boolean {
+  return jo.status === "draft" || (jo.status === "pending_approval" && jo.current_approval_layer === 1);
+}
 // The other tabs that actively tag new job orders with their own name.
 // Sales Support is the original/default role, so anything NOT tagged as
 // one of these (blank, or a name typed into the old "Created By" field
@@ -79,7 +84,7 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
                 {EDITABLE_STATUSES.includes(jo.status) && (
                   <a href={`/jo-input?edit=${jo.id}`} className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>Edit</a>
                 )}
-                {CANCELLABLE_STATUSES.includes(jo.status) && (
+                {canCancel(jo) && (
                   <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => cancelJo(jo.id)}>Cancel</button>
                 )}
               </div>

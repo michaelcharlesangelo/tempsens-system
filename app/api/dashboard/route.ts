@@ -8,10 +8,14 @@ export const revalidate = 0;
 export async function GET() {
   const admin = getSupabaseAdminClient();
 
+  // Active JOs always show; completed ones stay visible for 7 days after
+  // finish_date so Sales/etc. can still see it just finished, then drop off.
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: activeRaw, error: activeErr } = await admin
     .from("job_orders")
     .select("id, jo_number, jo_date, customer_name, so_no, item_category, item_description, quantity, item_no, sales_person_name, deadline, urgent, serial_no, finish_estimation, finish_date, status, current_approval_layer, created_at")
-    .not("status", "in", "(completed,cancelled,rejected)")
+    .not("status", "in", "(cancelled,rejected)")
+    .or(`status.neq.completed,finish_date.gte.${sevenDaysAgo}`)
     .order("created_at", { ascending: false });
   if (activeErr) return NextResponse.json({ error: activeErr.message }, { status: 500 });
 

@@ -223,6 +223,7 @@ export interface Complaint {
   submitted_by: string;
   created_at: string;
   resolved_at: string | null;
+  archived: boolean;
 }
 
 // Shared search predicates for the paged/searchable list tables - term is

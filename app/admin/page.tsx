@@ -121,6 +121,14 @@ export default function AdminPage() {
     loadStations();
   }
 
+  async function deleteStation(id: string) {
+    if (!confirm("Delete this station? This can't be undone.")) return;
+    const res = await fetch(`/api/station-codes/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { setMessage(data.error || "Failed to delete station."); return; }
+    loadStations();
+  }
+
   async function addAccount() {
     const res = await fetch("/api/production-accounts", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -367,6 +375,7 @@ export default function AdminPage() {
                       <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => moveStation(s.id, "up")} disabled={i === 0}>↑</button>
                       <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => moveStation(s.id, "down")} disabled={i === stations.length - 1}>↓</button>
                       <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => toggleStation(s.id)}>{s.active ? "Off" : "On"}</button>
+                      <button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteStation(s.id)}>Delete</button>
                     </div>
                   </div>
                 ))}

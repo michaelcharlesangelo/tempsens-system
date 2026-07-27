@@ -7,10 +7,6 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { printFileUrl } from "@/lib/printFile";
 
-// Only approval-layer comments (plus Warehouse Manager's prep note) are
-// relevant here - Sales Support's own create/edit history is noise.
-const APPROVAL_COMMENT_AUTHORS = ["Sales Manager", "Operational Manager", "General Manager", "Warehouse Manager"];
-
 function JoTable({
   items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge, finishing, onFinish,
 }: {
@@ -49,7 +45,7 @@ function JoTable({
         </thead>
         <tbody>
           {items.map((jo) => {
-            const commented = (jo.history ?? []).filter((h) => h.comment && APPROVAL_COMMENT_AUTHORS.includes(h.changed_by));
+            const commented = (jo.history ?? []).filter((h) => h.comment);
             return (
               <Fragment key={jo.id}>
                 <tr>
@@ -203,7 +199,7 @@ export default function ProductionManagerPage() {
   }
 
   async function finishProduction(jo: JobOrder) {
-    if (!confirm(`Mark ${jo.jo_number} as finished production? This moves it to Finished Production.`)) return;
+    if (!confirm(`Mark SO ${jo.so_no} as finished production? This moves it to Finished Production.`)) return;
     setFinishing(jo.id);
     try {
       const res = await fetch(`/api/job-orders/${jo.id}/status`, {

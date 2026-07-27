@@ -19,3 +19,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { stationId:
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ station: data });
 }
+
+export async function DELETE(req: NextRequest, { params }: { params: { stationId: string } }) {
+  const admin = getSupabaseAdminClient();
+  const { error } = await admin.from("station_codes").delete().eq("id", params.stationId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}

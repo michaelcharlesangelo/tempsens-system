@@ -8,6 +8,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const body = await req.json();
   const status = typeof body.status === "string" ? body.status : undefined;
   const suggestedAction = typeof body.suggestedAction === "string" ? body.suggestedAction : undefined;
+  const archived = typeof body.archived === "boolean" ? body.archived : undefined;
 
   const updates: Record<string, unknown> = {};
   if (status) {
@@ -15,6 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (status === "done") updates.resolved_at = new Date().toISOString();
   }
   if (suggestedAction !== undefined) updates.suggested_action = suggestedAction;
+  if (archived !== undefined) updates.archived = archived;
 
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin.from("complaints").update(updates).eq("id", params.id).select().single();

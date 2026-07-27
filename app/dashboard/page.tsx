@@ -116,8 +116,15 @@ export default function DashboardPage() {
     );
   }
 
-  const indonesia = (complaints ?? []).filter((c) => !c.is_traded);
-  const traded = (complaints ?? []).filter((c) => c.is_traded);
+  // Same auto-archive rule as the Complaints tab: done complaints drop off
+  // 7 days after resolution (or immediately if manually archived there).
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  function isExpired(c: Complaint): boolean {
+    return c.status === "done" && !!c.resolved_at && Date.now() - new Date(c.resolved_at).getTime() > SEVEN_DAYS_MS;
+  }
+  const visibleComplaints = (complaints ?? []).filter((c) => !c.archived && !isExpired(c));
+  const indonesia = visibleComplaints.filter((c) => !c.is_traded);
+  const traded = visibleComplaints.filter((c) => c.is_traded);
 
   return (
     <>

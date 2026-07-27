@@ -10,10 +10,6 @@ import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, fmtDate, fmtDat
 
 interface CatalogItem { item_no: string; description: string; unit?: string; }
 
-// Only approval-layer comments (plus Warehouse Manager's prep note) are
-// relevant here - Sales Support's own create/edit history is noise.
-const APPROVAL_COMMENT_AUTHORS = ["Sales Manager", "Operational Manager", "General Manager", "Warehouse Manager"];
-
 export default function ProductionJobOrderDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -57,8 +53,6 @@ export default function ProductionJobOrderDetailPage() {
 
   async function printJobOrder() {
     if (!jobOrder) return;
-    const w = window.open("", "_blank", "width=850,height=1100");
-    if (!w) return;
 
     const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(jobOrder.barcode, { width: 110, margin: 1 }) : "";
 
@@ -68,38 +62,46 @@ export default function ProductionJobOrderDetailPage() {
         <td>${b.actual_qty ?? "-"}</td><td>${b.actual_unit ?? "-"}</td><td>${b.comment || "-"}</td>
       </tr>`).join("");
 
-    const approvalComments = history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment);
-    const commentRows = approvalComments.length
-      ? approvalComments.map((h) => `<div class="comment"><b>${h.changed_by}</b> <span class="muted">(${fmtDateTime(h.changed_at)})</span>: ${h.comment}</div>`).join("")
+    const comments = history.filter((h) => h.comment);
+    const commentRows = comments.length
+      ? comments.map((h) => `<div class="comment"><b>${h.changed_by}</b> <span class="muted">(${fmtDateTime(h.changed_at)})</span>: ${h.comment}</div>`).join("")
       : `<div class="muted">None.</div>`;
 
-    w.document.write(`
-      <html><head><title>${jobOrder.jo_number}</title>
+    const qcRows = productionLogs.flatMap((log) =>
+      (log.results.length > 0 ? log.results : [{ parameter: "-", actual: "-" }]).map((r) => `
+        <tr>
+          <td>${fmtDateTime(log.scanned_at)}</td><td>${log.station?.station_name ?? "-"}</td>
+          <td>${r.parameter}</td><td>${r.actual || "-"}</td><td>${log.account?.full_name ?? "-"}</td>
+        </tr>`)
+    ).join("");
+
+    const title = `Job Order, ${jobOrder.so_no}`;
+    const html = `
+      <html><head><title>${title}</title>
       <style>
         @page { size: A4 portrait; margin: 14mm; }
         body { font-family: Arial, sans-serif; font-size: 11px; color: #111; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .header h1 { font-size: 18px; margin: 0; flex: 1; text-align: center; }
-        .qr { text-align: center; width: 110px; }
+        .qr { display: flex; align-items: center; gap: 8px; }
         .qr img { display: block; }
-        .qr .code { font-size: 9px; margin-top: 2px; }
         table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
         table.info td { padding: 3px 6px; vertical-align: top; }
         table.info td.label { font-weight: bold; width: 110px; white-space: nowrap; }
         .section-title { font-weight: bold; text-transform: uppercase; font-size: 10px; margin: 10px 0 4px; border-top: 1px solid #999; padding-top: 6px; }
         .comment { font-size: 10px; padding: 2px 0; }
         .muted { color: #666; }
-        table.bom { width: 100%; border-collapse: collapse; margin-top: 4px; }
-        table.bom th, table.bom td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10px; }
+        table.bom, table.qc { width: 100%; border-collapse: collapse; margin-top: 4px; table-layout: fixed; }
+        table.bom th, table.bom td, table.qc th, table.qc td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10px; word-wrap: break-word; }
         table.bom th { background: #eee; }
+        table.qc th { background: #eee; }
       </style>
       </head><body onload="window.focus();window.print();">
         <div class="header">
-          <div style="width:110px"></div>
+          <div style="width:70px"></div>
           <h1>JOB ORDER</h1>
           <div class="qr">
-            ${qrDataUrl ? `<img src="${qrDataUrl}" width="90" height="90" />` : ""}
-            <div class="code">${jobOrder.barcode ?? ""}</div>
+            ${qrDataUrl ? `<img src="${qrDataUrl}" width="60" height="60" />` : ""}
           </div>
         </div>
         <table class="info">
@@ -116,12 +118,27 @@ export default function ProductionJobOrderDetailPage() {
 
         <div class="section-title">Material BOM</div>
         <table class="bom">
-          <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Actual Qty</th><th>Actual Unit</th><th>Comment (to Warehouse)</th></tr></thead>
+          <colgroup>
+            <col style="width:10%"><col style="width:44%"><col style="width:6%"><col style="width:6%">
+            <col style="width:7%"><col style="width:7%"><col style="width:20%">
+          </colgroup>
+          <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Actual</th><th>Unit</th><th>Comment (to Warehouse)</th></tr></thead>
           <tbody>${bomRows || `<tr><td colspan="7">No items yet.</td></tr>`}</tbody>
         </table>
+
+        <div class="section-title">QC — Parameter</div>
+        <table class="qc">
+          <thead><tr><th>Time</th><th>Station</th><th>Parameter</th><th>Actual</th><th>Checked By</th></tr></thead>
+          <tbody>${qcRows || `<tr><td colspan="5">No station scans yet.</td></tr>`}</tbody>
+        </table>
       </body></html>
-    `);
-    w.document.close();
+    `;
+
+    // Blob URL instead of window.open("") + document.write - gives the
+    // print window a real URL/title instead of "about:blank" in the
+    // browser's own print header/footer.
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    window.open(blobUrl, "_blank", "width=850,height=1100");
   }
 
   async function saveDetails() {
@@ -246,16 +263,13 @@ export default function ProductionJobOrderDetailPage() {
       {message && <div className="warn">{message}</div>}
 
       <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
-          <div style={{ width: 92 }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 60 }} />
           <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>JOB ORDER</h2>
-          {jobOrder.barcode && (
-            <div style={{ textAlign: "center" }}>
-              <button className="btn secondary" style={{ marginBottom: 6 }} onClick={printJobOrder}>Print JO</button>
-              <div><QrImage value={jobOrder.barcode} size={92} /></div>
-              <div className="subtle" style={{ fontSize: "0.68rem", marginTop: 2 }}>{jobOrder.barcode}</div>
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px", whiteSpace: "nowrap" }} onClick={printJobOrder}>Print JO</button>
+            {jobOrder.barcode && <QrImage value={jobOrder.barcode} size={60} />}
+          </div>
         </div>
 
         <div className="form-sheet" style={{ marginTop: 6 }}>
@@ -267,12 +281,12 @@ export default function ProductionJobOrderDetailPage() {
             <div className="form-row"><label>Quantity</label><span>:</span><span>{jobOrder.quantity}</span></div>
             <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--panel-muted)" }}>
               <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>
-                Comments (Sales / Operational / General Manager)
+                Comments
               </div>
-              {history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).length === 0 ? (
+              {history.filter((h) => h.comment).length === 0 ? (
                 <p className="subtle" style={{ fontSize: "0.8rem", margin: 0 }}>None yet.</p>
               ) : (
-                history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment).map((h) => (
+                history.filter((h) => h.comment).map((h) => (
                   <div key={h.id} style={{ fontSize: "0.8rem", padding: "3px 0" }}>
                     <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
                   </div>
@@ -314,16 +328,16 @@ export default function ProductionJobOrderDetailPage() {
             <table className="data-table">
               <colgroup>
                 <col style={{ width: "10%" }} />
-                <col style={{ width: "24%" }} />
+                <col style={{ width: "30%" }} />
                 <col style={{ width: "6%" }} />
                 <col style={{ width: "6%" }} />
                 <col style={{ width: "8%" }} />
                 <col style={{ width: "8%" }} />
                 <col style={{ width: "5%" }} />
-                <col style={{ width: "18%" }} />
-                <col style={{ width: "15%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "13%" }} />
               </colgroup>
-              <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Actual Qty</th><th>Actual Unit</th><th>N/A</th><th>Comment (to Warehouse)</th><th></th></tr></thead>
+              <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Actual</th><th>Unit</th><th>N/A</th><th>Comment (to Warehouse)</th><th></th></tr></thead>
               <tbody>
                 {bom.map((row) => (
                   <tr key={row.id}>
