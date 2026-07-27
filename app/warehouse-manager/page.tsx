@@ -104,6 +104,15 @@ export default function WarehouseManagerPage() {
           body: JSON.stringify({ actualQty: qtyDraft[row.id], actualUnit: row.unit, materialPrepared: true }),
         })
       ));
+      // One SO block can span multiple job orders - note it on each so
+      // Production Manager sees "Material has been prepared" in Comments.
+      const jobOrderIds = Array.from(new Set(block.items.map((row) => row.job_order_id)));
+      await Promise.all(jobOrderIds.map((joId) =>
+        fetch(`/api/job-orders/${joId}/history`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ changedBy: "Warehouse Manager", comment: "Material has been prepared." }),
+        })
+      ));
       await loadPrepare();
     } finally {
       setSavingBlock(null);
@@ -214,6 +223,38 @@ export default function WarehouseManagerPage() {
       </div>
 
       <div className="card">
+        <h2>Not Available — Needs Purchase ({notAvailable?.length ?? "..."})</h2>
+        {!notAvailable ? <p className="subtle">Loading...</p> : notAvailable.length === 0 ? <p className="subtle">Nothing flagged right now.</p> : (
+          <>
+          <SearchBox value={notAvailablePaged.search} onChange={notAvailablePaged.setSearch} />
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table">
+              <thead><tr><th>JO Number</th><th>Customer</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Procurement</th></tr></thead>
+              <tbody>
+                {notAvailablePaged.pageItems.map((i) => (
+                  <tr key={i.id}>
+                    <td>{i.jo_number}</td>
+                    <td>{i.customer_name}</td>
+                    <td>{i.item_no}</td>
+                    <td>{i.description}</td>
+                    <td>{i.qty} {i.unit}</td>
+                    <td>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button className={i.procurement_method === "import" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "import")}>Import</button>
+                        <button className={i.procurement_method === "local_purchase" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "local_purchase")}>Local Purchase</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager page={notAvailablePaged.page} totalPages={notAvailablePaged.totalPages} totalCount={notAvailablePaged.totalCount} onChange={notAvailablePaged.setPage} />
+          </>
+        )}
+      </div>
+
+      <div className="card">
         <h2>Prepared ({preparedAll.reduce((n, b) => n + b.items.length, 0)})</h2>
         {!items ? <p className="subtle">Loading...</p> : preparedAll.length === 0 ? <p className="subtle">Nothing prepared yet.</p> : (
           <SearchBox value={preparedPaged.search} onChange={preparedPaged.setSearch} />
@@ -253,38 +294,6 @@ export default function WarehouseManagerPage() {
         )}
         {items && preparedAll.length > 0 && (
           <Pager page={preparedPaged.page} totalPages={preparedPaged.totalPages} totalCount={preparedPaged.totalCount} onChange={preparedPaged.setPage} />
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Not Available — Needs Purchase ({notAvailable?.length ?? "..."})</h2>
-        {!notAvailable ? <p className="subtle">Loading...</p> : notAvailable.length === 0 ? <p className="subtle">Nothing flagged right now.</p> : (
-          <>
-          <SearchBox value={notAvailablePaged.search} onChange={notAvailablePaged.setSearch} />
-          <div style={{ overflowX: "auto" }}>
-            <table className="data-table">
-              <thead><tr><th>JO Number</th><th>Customer</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Procurement</th></tr></thead>
-              <tbody>
-                {notAvailablePaged.pageItems.map((i) => (
-                  <tr key={i.id}>
-                    <td>{i.jo_number}</td>
-                    <td>{i.customer_name}</td>
-                    <td>{i.item_no}</td>
-                    <td>{i.description}</td>
-                    <td>{i.qty} {i.unit}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button className={i.procurement_method === "import" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "import")}>Import</button>
-                        <button className={i.procurement_method === "local_purchase" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "local_purchase")}>Local Purchase</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Pager page={notAvailablePaged.page} totalPages={notAvailablePaged.totalPages} totalCount={notAvailablePaged.totalCount} onChange={notAvailablePaged.setPage} />
-          </>
         )}
       </div>
     </>

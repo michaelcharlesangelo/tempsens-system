@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     admin.from("job_order_history").select("*").eq("job_order_id", id).order("changed_at", { ascending: true }),
     admin
       .from("production_logs")
-      .select("*, station:station_codes(station_name, parameter), account:production_accounts(full_name)")
+      .select("*, station:station_codes(station_name), account:production_accounts(full_name)")
       .eq("job_order_id", id)
       .order("scanned_at", { ascending: false }),
     admin.from("qc_checks").select("*").eq("job_order_id", id).order("performed_at", { ascending: false }),

@@ -125,7 +125,7 @@ function ApprovalTabViewInner({
       </div>
 
       <div className="card">
-        <h2>Approved (passed {label})</h2>
+        <h2>Approved by {label}</h2>
         {passedThisLayer.length === 0 ? <p className="subtle">None yet.</p> : (
           <>
             <SearchBox value={passedPaged.search} onChange={passedPaged.setSearch} />
@@ -136,7 +136,7 @@ function ApprovalTabViewInner({
       </div>
 
       <div className="card">
-        <h2>Rejected</h2>
+        <h2>Rejected by {label}</h2>
         {rejected.length === 0 ? <p className="subtle">None.</p> : (
           <>
             <SearchBox value={rejectedPaged.search} onChange={rejectedPaged.setSearch} />

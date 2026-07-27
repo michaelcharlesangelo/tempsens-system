@@ -7,7 +7,7 @@ export const revalidate = 0;
 export async function PATCH(req: NextRequest, { params }: { params: { stationId: string } }) {
   const body = await req.json();
   const updates: Record<string, unknown> = {};
-  if (typeof body.parameter === "string") updates.parameter = body.parameter.trim();
+  if (Array.isArray(body.parameters)) updates.parameters = body.parameters.map((p: unknown) => String(p).trim()).filter(Boolean);
   if (typeof body.description === "string") updates.description = body.description.trim();
 
   if (Object.keys(updates).length === 0) {

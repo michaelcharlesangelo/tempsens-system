@@ -118,7 +118,7 @@ create table if not exists station_codes (
   code text not null unique,
   station_name text not null,
   description text not null default '',
-  parameter text not null default '', -- target spec the production floor checks against, e.g. "200degC for 60min"
+  parameters text[] not null default '{}', -- target specs the production floor checks against, e.g. "200degC for 60min"
   sequence smallint not null default 0, -- display/process order, editable
   active boolean not null default true,
   created_at timestamptz not null default now()
@@ -212,7 +212,7 @@ create table if not exists production_logs (
   job_order_id uuid not null references job_orders(id) on delete cascade,
   station_id uuid not null references station_codes(id),
   scanned_by uuid not null references production_accounts(id),
-  actual_value text not null default '', -- what was actually achieved at this station, vs the station's parameter spec
+  results jsonb not null default '[]'::jsonb, -- [{parameter, actual}] - one scan covers every parameter configured for that station
   scanned_at timestamptz not null default now()
 );
 

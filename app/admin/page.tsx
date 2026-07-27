@@ -17,8 +17,7 @@ export default function AdminPage() {
   const [stations, setStations] = useState<StationCode[]>([]);
   const [stationName, setStationName] = useState("");
   const [stationDesc, setStationDesc] = useState("");
-  const [editingStationParamId, setEditingStationParamId] = useState<string | null>(null);
-  const [stationParamDraft, setStationParamDraft] = useState("");
+  const [newStationParamDraft, setNewStationParamDraft] = useState<Record<string, string>>({});
 
   const [accounts, setAccounts] = useState<ProductionAccount[]>([]);
   const [username, setUsername] = useState("");
@@ -91,12 +90,22 @@ export default function AdminPage() {
     loadStations();
   }
 
-  async function saveStationParameter(id: string) {
-    await fetch(`/api/station-codes/${id}`, {
+  async function addStationParameter(station: StationCode) {
+    const text = (newStationParamDraft[station.id] || "").trim();
+    if (!text) return;
+    await fetch(`/api/station-codes/${station.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ parameter: stationParamDraft }),
+      body: JSON.stringify({ parameters: [...station.parameters, text] }),
     });
-    setEditingStationParamId(null);
+    setNewStationParamDraft((d) => ({ ...d, [station.id]: "" }));
+    loadStations();
+  }
+
+  async function removeStationParameter(station: StationCode, index: number) {
+    await fetch(`/api/station-codes/${station.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parameters: station.parameters.filter((_, i) => i !== index) }),
+    });
     loadStations();
   }
 
@@ -319,22 +328,41 @@ export default function AdminPage() {
           <div className="card">
             <h2>Stations (in process order)</h2>
             {stations.length === 0 ? <p className="subtle">None yet.</p> : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14 }}>
                 {stations.map((s, i) => (
                   <div key={s.id} style={{ textAlign: "center", border: "1px solid var(--border)", borderRadius: 8, padding: 12, opacity: s.active ? 1 : 0.4 }}>
                     <div style={{ fontWeight: 700, fontSize: "0.72rem", color: "var(--accent-dark)" }}>STEP {s.sequence}</div>
                     <QrImage value={s.code} size={110} />
                     <div style={{ fontWeight: 700, fontSize: "0.85rem", marginTop: 4 }}>{s.station_name}</div>
-                    {editingStationParamId === s.id ? (
-                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                        <input type="text" value={stationParamDraft} onChange={(e) => setStationParamDraft(e.target.value)} placeholder="e.g. 200degC for 60min" style={{ fontSize: "0.75rem" }} />
-                        <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.72rem" }} onClick={() => saveStationParameter(s.id)}>Save</button>
+
+                    <div style={{ textAlign: "left", marginTop: 8 }}>
+                      <div className="subtle" style={{ fontSize: "0.65rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>
+                        Parameters to check
                       </div>
-                    ) : (
-                      <div className="subtle" style={{ fontSize: "0.72rem", marginTop: 2, cursor: "pointer" }} onClick={() => { setEditingStationParamId(s.id); setStationParamDraft(s.parameter || ""); }}>
-                        {s.parameter || "Set parameter..."}
+                      {s.parameters.length === 0 ? (
+                        <p className="subtle" style={{ fontSize: "0.75rem", margin: "0 0 6px" }}>None yet.</p>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
+                          {s.parameters.map((p, pi) => (
+                            <div key={pi} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4, fontSize: "0.75rem", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 6px" }}>
+                              <span>{pi + 1}. {p}</span>
+                              <button className="btn danger" style={{ padding: "1px 6px", fontSize: "0.68rem" }} onClick={() => removeStationParameter(s, pi)}>×</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <input
+                          type="text"
+                          value={newStationParamDraft[s.id] ?? ""}
+                          onChange={(e) => setNewStationParamDraft((d) => ({ ...d, [s.id]: e.target.value }))}
+                          placeholder="e.g. 200degC for 60min"
+                          style={{ fontSize: "0.75rem" }}
+                        />
+                        <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.72rem", whiteSpace: "nowrap" }} onClick={() => addStationParameter(s)}>+ Add</button>
                       </div>
-                    )}
+                    </div>
+
                     <div style={{ display: "flex", justifyContent: "center", gap: 4, marginTop: 8 }}>
                       <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => moveStation(s.id, "up")} disabled={i === 0}>↑</button>
                       <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => moveStation(s.id, "down")} disabled={i === stations.length - 1}>↓</button>

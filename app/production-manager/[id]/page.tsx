@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import QRCode from "qrcode";
 import TabNav from "@/app/components/TabNav";
 import DateField from "@/app/components/DateField";
 import QrImage from "@/app/components/QrImage";
@@ -9,9 +10,9 @@ import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, fmtDate, fmtDat
 
 interface CatalogItem { item_no: string; description: string; unit?: string; }
 
-// Only approval-layer comments are relevant here - Sales Support's own
-// create/edit history is noise for Production Manager.
-const APPROVAL_COMMENT_AUTHORS = ["Sales Manager", "Operational Manager", "General Manager"];
+// Only approval-layer comments (plus Warehouse Manager's prep note) are
+// relevant here - Sales Support's own create/edit history is noise.
+const APPROVAL_COMMENT_AUTHORS = ["Sales Manager", "Operational Manager", "General Manager", "Warehouse Manager"];
 
 export default function ProductionJobOrderDetailPage() {
   const params = useParams();
@@ -54,36 +55,69 @@ export default function ProductionJobOrderDetailPage() {
 
   useEffect(() => { if (id) load(); }, [id]);
 
-  function printJobOrder() {
+  async function printJobOrder() {
     if (!jobOrder) return;
     const w = window.open("", "_blank", "width=850,height=1100");
     if (!w) return;
-    const rows = bom.map((b) => `<tr><td>${b.item_no}</td><td>${b.description}</td><td>${b.qty}</td><td>${b.unit}</td></tr>`).join("");
+
+    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(jobOrder.barcode, { width: 110, margin: 1 }) : "";
+
+    const bomRows = bom.map((b) => `
+      <tr>
+        <td>${b.item_no}</td><td>${b.description}</td><td>${b.qty}</td><td>${b.unit}</td>
+        <td>${b.actual_qty ?? "-"}</td><td>${b.actual_unit ?? "-"}</td><td>${b.comment || "-"}</td>
+      </tr>`).join("");
+
+    const approvalComments = history.filter((h) => APPROVAL_COMMENT_AUTHORS.includes(h.changed_by) && h.comment);
+    const commentRows = approvalComments.length
+      ? approvalComments.map((h) => `<div class="comment"><b>${h.changed_by}</b> <span class="muted">(${fmtDateTime(h.changed_at)})</span>: ${h.comment}</div>`).join("")
+      : `<div class="muted">None.</div>`;
+
     w.document.write(`
       <html><head><title>${jobOrder.jo_number}</title>
       <style>
-        @page { size: A4; margin: 12mm; }
+        @page { size: A4 portrait; margin: 14mm; }
         body { font-family: Arial, sans-serif; font-size: 11px; color: #111; }
-        h1 { font-size: 16px; text-align: center; margin: 0 0 10px; }
-        table.info { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        .header h1 { font-size: 18px; margin: 0; flex: 1; text-align: center; }
+        .qr { text-align: center; width: 110px; }
+        .qr img { display: block; }
+        .qr .code { font-size: 9px; margin-top: 2px; }
+        table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
         table.info td { padding: 3px 6px; vertical-align: top; }
-        table.info td.label { font-weight: bold; width: 110px; }
-        table.bom { width: 100%; border-collapse: collapse; }
+        table.info td.label { font-weight: bold; width: 110px; white-space: nowrap; }
+        .section-title { font-weight: bold; text-transform: uppercase; font-size: 10px; margin: 10px 0 4px; border-top: 1px solid #999; padding-top: 6px; }
+        .comment { font-size: 10px; padding: 2px 0; }
+        .muted { color: #666; }
+        table.bom { width: 100%; border-collapse: collapse; margin-top: 4px; }
         table.bom th, table.bom td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10px; }
         table.bom th { background: #eee; }
       </style>
       </head><body onload="window.focus();window.print();">
-        <h1>JOB ORDER — ${jobOrder.jo_number}</h1>
+        <div class="header">
+          <div style="width:110px"></div>
+          <h1>JOB ORDER</h1>
+          <div class="qr">
+            ${qrDataUrl ? `<img src="${qrDataUrl}" width="90" height="90" />` : ""}
+            <div class="code">${jobOrder.barcode ?? ""}</div>
+          </div>
+        </div>
         <table class="info">
           <tr><td class="label">Customer Name</td><td>${jobOrder.customer_name}</td><td class="label">Item Code</td><td>${jobOrder.item_no}</td></tr>
           <tr><td class="label">SO Number</td><td>${jobOrder.so_no}</td><td class="label">JO Date</td><td>${fmtDate(jobOrder.created_at)}</td></tr>
           <tr><td class="label">Item Description</td><td>${jobOrder.item_description}</td><td class="label">Deadline</td><td>${fmtDate(jobOrder.deadline)}</td></tr>
           <tr><td class="label">Category</td><td>${jobOrder.item_category}</td><td class="label">Drawing Number</td><td>${jobOrder.drawing_number || "-"}</td></tr>
           <tr><td class="label">Quantity</td><td>${jobOrder.quantity}</td><td class="label">Sales</td><td>${jobOrder.sales_person_name}</td></tr>
+          <tr><td class="label">Serial Number</td><td>${jobOrder.serial_no || "-"}</td><td class="label">Finish Date</td><td>${fmtDate(jobOrder.finish_date)}</td></tr>
         </table>
+
+        <div class="section-title">Comments</div>
+        ${commentRows}
+
+        <div class="section-title">Material BOM</div>
         <table class="bom">
-          <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="4">No items yet.</td></tr>`}</tbody>
+          <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Actual Qty</th><th>Actual Unit</th><th>Comment (to Warehouse)</th></tr></thead>
+          <tbody>${bomRows || `<tr><td colspan="7">No items yet.</td></tr>`}</tbody>
         </table>
       </body></html>
     `);
@@ -362,21 +396,23 @@ export default function ProductionJobOrderDetailPage() {
       </div>
 
       <div className="card">
-        <h2>QC — Station Scans</h2>
+        <h2>QC — Parameter</h2>
         {productionLogs.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No station scans yet.</p> : (
           <div style={{ overflowX: "auto", marginTop: 10 }}>
             <table className="data-table">
-              <thead><tr><th>Time</th><th>Station</th><th>Parameter</th><th>Actual</th><th>By</th></tr></thead>
+              <thead><tr><th>Time</th><th>Station</th><th>Parameter</th><th>Actual</th><th>Checked By</th></tr></thead>
               <tbody>
-                {productionLogs.map((log) => (
-                  <tr key={log.id}>
-                    <td>{fmtDateTime(log.scanned_at)}</td>
-                    <td>{log.station?.station_name ?? "-"}</td>
-                    <td>{log.station?.parameter || "-"}</td>
-                    <td>{log.actual_value || "-"}</td>
-                    <td>{log.account?.full_name ?? "-"}</td>
-                  </tr>
-                ))}
+                {productionLogs.flatMap((log) =>
+                  (log.results.length > 0 ? log.results : [{ parameter: "-", actual: "-" }]).map((r, i) => (
+                    <tr key={`${log.id}-${i}`}>
+                      <td>{fmtDateTime(log.scanned_at)}</td>
+                      <td>{log.station?.station_name ?? "-"}</td>
+                      <td>{r.parameter}</td>
+                      <td>{r.actual || "-"}</td>
+                      <td>{log.account?.full_name ?? "-"}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

@@ -75,7 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     newStatus = "qc";
     updates.status = newStatus;
   } else if (action === "complete") {
-    if (jobOrder.status !== "qc") {
+    if (!["qc", "in_progress"].includes(jobOrder.status)) {
       return NextResponse.json({ error: `Can't complete a job order that's "${jobOrder.status}".` }, { status: 400 });
     }
     newStatus = "completed";

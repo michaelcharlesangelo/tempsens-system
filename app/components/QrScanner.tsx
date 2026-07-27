@@ -3,37 +3,54 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 
-// NOTE: built against html5-qrcode's documented API but not run live in
-// this environment (no network/npm install available here) - worth a
-// quick real-device test once deployed, in case the exact method
-// signatures need a small tweak for the installed version.
 export default function QrScanner({ onScan, onClose }: { onScan: (value: string) => void; onClose: () => void }) {
-  const regionId = "qr-scan-region";
+  // Unique per mount - a fixed id caused trouble when this component
+  // mounted more than once in a session (JO scan, then station scan):
+  // the previous instance's leftover DOM/video state could collide with
+  // the new one targeting the same element id.
+  const regionIdRef = useRef(`qr-scan-region-${Math.random().toString(36).slice(2)}`);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [cameraStarted, setCameraStarted] = useState(false);
+  const [starting, setStarting] = useState(true);
 
   useEffect(() => {
-    const scanner = new Html5Qrcode(regionId);
+    let cancelled = false;
+    const scanner = new Html5Qrcode(regionIdRef.current);
     scannerRef.current = scanner;
 
-    scanner
-      .start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 250 },
-        (decodedText) => {
-          onScan(decodedText);
-          scanner.stop().catch(() => {});
-        },
-        () => {
-          // per-frame "no QR found yet" - expected constantly while aiming, ignore
+    function onDecode(decodedText: string) {
+      if (cancelled) return;
+      onScan(decodedText);
+      scanner.stop().then(() => scanner.clear()).catch(() => {});
+    }
+
+    async function start() {
+      const config = { fps: 10, qrbox: 250 };
+      // facingMode: "environment" only exists on phones with a rear
+      // camera - desktop webcams reject that constraint outright, which
+      // is likely why scanning silently did nothing on a laptop. Fall
+      // back to enumerating actual cameras and using whichever is found.
+      try {
+        await scanner.start({ facingMode: "environment" }, config, onDecode, () => {});
+      } catch {
+        if (cancelled) return;
+        try {
+          const cameras = await Html5Qrcode.getCameras();
+          if (cancelled) return;
+          if (!cameras || cameras.length === 0) throw new Error("No camera was found on this device.");
+          await scanner.start(cameras[0].id, config, onDecode, () => {});
+        } catch (e2) {
+          if (!cancelled) setError("Could not start camera: " + (e2 as Error).message + " - you can still use 'choose from library' below.");
         }
-      )
-      .then(() => setCameraStarted(true))
-      .catch((e) => setError("Could not start camera: " + (e as Error).message + " - you can still use 'choose from library' below."));
+      } finally {
+        if (!cancelled) setStarting(false);
+      }
+    }
+    start();
 
     return () => {
-      scanner.stop().catch(() => {});
+      cancelled = true;
+      scanner.stop().then(() => scanner.clear()).catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -43,10 +60,7 @@ export default function QrScanner({ onScan, onClose }: { onScan: (value: string)
     if (!file || !scannerRef.current) return;
     setError(null);
     try {
-      if (cameraStarted) {
-        await scannerRef.current.stop().catch(() => {});
-        setCameraStarted(false);
-      }
+      await scannerRef.current.stop().catch(() => {});
       const result = await scannerRef.current.scanFile(file, true);
       onScan(result);
     } catch {
@@ -57,7 +71,8 @@ export default function QrScanner({ onScan, onClose }: { onScan: (value: string)
   return (
     <div className="card">
       <h2>Scan QR code</h2>
-      <div id={regionId} style={{ width: "100%", maxWidth: 340, margin: "0 auto" }} />
+      {starting && !error && <p className="subtle">Requesting camera access...</p>}
+      <div id={regionIdRef.current} style={{ width: "100%", maxWidth: 340, margin: "0 auto" }} />
       {error && <p className="error-text" style={{ marginTop: 8 }}>{error}</p>}
       <div className="field" style={{ marginTop: 12 }}>
         <label>Or choose from photo library</label>

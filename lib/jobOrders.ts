@@ -102,10 +102,15 @@ export interface StationCode {
   code: string;
   station_name: string;
   description: string;
-  parameter: string;
+  parameters: string[];
   sequence: number;
   active: boolean;
   created_at: string;
+}
+
+export interface ProductionLogResult {
+  parameter: string;
+  actual: string;
 }
 
 export interface ProductionLog {
@@ -113,10 +118,10 @@ export interface ProductionLog {
   job_order_id: string;
   station_id: string;
   scanned_by: string;
-  actual_value: string;
+  results: ProductionLogResult[];
   scanned_at: string;
   // Embedded on the JO detail response for the QC-parameter table.
-  station?: { station_name: string; parameter: string };
+  station?: { station_name: string };
   account?: { full_name: string };
 }
 
@@ -247,7 +252,7 @@ export function dashboardStatusLabel(status: JobOrderStatus): string {
   if (status === "approved") return "Approved";
   if (status === "acknowledged") return "Preparing Item";
   if (status === "in_progress" || status === "qc") return "Under Production";
-  if (status === "completed") return "Completed";
+  if (status === "completed") return "Finish Production";
   return status;
 }
 

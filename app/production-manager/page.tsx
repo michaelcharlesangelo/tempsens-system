@@ -7,17 +7,20 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { printFileUrl } from "@/lib/printFile";
 
-// Only approval-layer comments are relevant here - Sales Support's own
-// create/edit history is noise for Production Manager.
-const APPROVAL_COMMENT_AUTHORS = ["Sales Manager", "Operational Manager", "General Manager"];
+// Only approval-layer comments (plus Warehouse Manager's prep note) are
+// relevant here - Sales Support's own create/edit history is noise.
+const APPROVAL_COMMENT_AUTHORS = ["Sales Manager", "Operational Manager", "General Manager", "Warehouse Manager"];
 
 function JoTable({
-  items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge,
+  items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge, finishing, onFinish,
 }: {
   items: JobOrder[]; mode: "not_acknowledged" | "open"; acking: string | null;
   historyOpenId: string | null; setHistoryOpenId: (id: string | null) => void;
   viewDrawing: (id: string) => void; printDrawing: (id: string) => void; acknowledge: (id: string) => void;
+  finishing?: string | null; onFinish?: (jo: JobOrder) => void;
 }) {
+  const showFinish = mode === "open" && !!onFinish;
+  const colCount = showFinish ? 13 : 12;
   return (
     <div style={{ overflowX: "auto" }}>
       <table className="data-table">
@@ -25,20 +28,23 @@ function JoTable({
           <col style={{ width: "7%" }} />
           <col style={{ width: "9%" }} />
           <col style={{ width: "9%" }} />
-          <col style={{ width: "9%" }} />
-          <col style={{ width: "11%" }} />
-          <col style={{ width: "17%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "15%" }} />
           <col style={{ width: "5%" }} />
           <col style={{ width: "7%" }} />
           <col style={{ width: "8%" }} />
           <col style={{ width: "7%" }} />
-          <col style={{ width: "9%" }} />
-          <col style={{ width: "9%" }} />
+          <col style={{ width: "8%" }} />
+          {showFinish && <col style={{ width: "6%" }} />}
+          <col style={{ width: "8%" }} />
         </colgroup>
         <thead>
           <tr>
             <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Sales</th><th>Customer</th>
-            <th>Item Description</th><th>Qty</th><th>Deadline</th><th>Drawing</th><th>Material</th><th>Comments</th><th></th>
+            <th>Item Description</th><th>Qty</th><th>Deadline</th><th>Drawing</th><th>Material</th><th>Comments</th>
+            {showFinish && <th>Finish</th>}
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -59,8 +65,15 @@ function JoTable({
                     <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => viewDrawing(jo.id)}>View</button>{" "}
                     <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => printDrawing(jo.id)}>Print</button>
                   </td>
-                  <td style={{ textAlign: "center" }}>
-                    <input type="checkbox" checked={!!jo.material_prepared_all} disabled readOnly style={{ width: "auto" }} title="Ticked once Warehouse Manager has prepared all material" />
+                  <td style={{ textAlign: "center", background: jo.material_prepared_all ? "#d3f5d3" : undefined }}>
+                    <input
+                      type="checkbox"
+                      checked={!!jo.material_prepared_all}
+                      disabled
+                      readOnly
+                      style={{ width: 20, height: 20, accentColor: "var(--good)" }}
+                      title="Ticked once Warehouse Manager has prepared all material"
+                    />
                   </td>
                   <td>
                     <button
@@ -72,6 +85,18 @@ function JoTable({
                       {historyOpenId === jo.id ? "Hide" : `View (${commented.length})`}
                     </button>
                   </td>
+                  {showFinish && (
+                    <td style={{ textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={false}
+                        disabled={finishing === jo.id}
+                        onChange={() => onFinish!(jo)}
+                        style={{ width: 20, height: 20, accentColor: "var(--good)" }}
+                        title="Tick once all material is finished - moves this JO to Finished Production"
+                      />
+                    </td>
+                  )}
                   <td>
                     {mode === "not_acknowledged" ? (
                       <button className="btn" style={{ fontSize: "0.78rem", padding: "5px 10px" }} disabled={acking === jo.id} onClick={() => acknowledge(jo.id)}>
@@ -84,7 +109,7 @@ function JoTable({
                 </tr>
                 {historyOpenId === jo.id && commented.length > 0 && (
                   <tr>
-                    <td colSpan={12} style={{ background: "var(--panel-muted)" }}>
+                    <td colSpan={colCount} style={{ background: "var(--panel-muted)" }}>
                       {commented.map((h: JobOrderHistoryEntry) => (
                         <div key={h.id} style={{ fontSize: "0.82rem", padding: "4px 0" }}>
                           <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
@@ -103,11 +128,12 @@ function JoTable({
 }
 
 function PagedJoSection({
-  items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge,
+  items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge, finishing, onFinish,
 }: {
   items: JobOrder[]; mode: "not_acknowledged" | "open"; acking: string | null;
   historyOpenId: string | null; setHistoryOpenId: (id: string | null) => void;
   viewDrawing: (id: string) => void; printDrawing: (id: string) => void; acknowledge: (id: string) => void;
+  finishing?: string | null; onFinish?: (jo: JobOrder) => void;
 }) {
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, joMatchesSearch);
   return (
@@ -115,7 +141,7 @@ function PagedJoSection({
       <SearchBox value={search} onChange={setSearch} />
       <JoTable
         items={pageItems} mode={mode} acking={acking} historyOpenId={historyOpenId} setHistoryOpenId={setHistoryOpenId}
-        viewDrawing={viewDrawing} printDrawing={printDrawing} acknowledge={acknowledge}
+        viewDrawing={viewDrawing} printDrawing={printDrawing} acknowledge={acknowledge} finishing={finishing} onFinish={onFinish}
       />
       <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
     </>
@@ -126,15 +152,18 @@ export default function ProductionManagerPage() {
   const [notAcknowledged, setNotAcknowledged] = useState<JobOrder[]>([]);
   const [acknowledged, setAcknowledged] = useState<JobOrder[]>([]);
   const [readyForProduction, setReadyForProduction] = useState<JobOrder[]>([]);
+  const [finishedProduction, setFinishedProduction] = useState<JobOrder[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [acking, setAcking] = useState<string | null>(null);
+  const [finishing, setFinishing] = useState<string | null>(null);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
 
   async function load() {
-    const [approvedRes, ackRes, inProgressRes] = await Promise.all([
+    const [approvedRes, ackRes, inProgressRes, completedRes] = await Promise.all([
       fetch("/api/job-orders?status=approved&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=acknowledged&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=in_progress&tab=production-manager", { cache: "no-store" }),
+      fetch("/api/job-orders?status=completed&tab=production-manager", { cache: "no-store" }),
     ]);
     setNotAcknowledged((await approvedRes.json()).jobOrders ?? []);
     const ack: JobOrder[] = (await ackRes.json()).jobOrders ?? [];
@@ -142,6 +171,7 @@ export default function ProductionManagerPage() {
     const combined = [...ack, ...inProg];
     setAcknowledged(combined.filter((jo) => !jo.ready_for_production));
     setReadyForProduction(combined.filter((jo) => jo.ready_for_production));
+    setFinishedProduction((await completedRes.json()).jobOrders ?? []);
   }
 
   useEffect(() => { load(); }, []);
@@ -172,6 +202,22 @@ export default function ProductionManagerPage() {
     load();
   }
 
+  async function finishProduction(jo: JobOrder) {
+    if (!confirm(`Mark ${jo.jo_number} as finished production? This moves it to Finished Production.`)) return;
+    setFinishing(jo.id);
+    try {
+      const res = await fetch(`/api/job-orders/${jo.id}/status`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "complete", by: "Production Manager", comment: "Production finished." }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMessage(data.error || "Failed to finish."); return; }
+      load();
+    } finally {
+      setFinishing(null);
+    }
+  }
+
   const sharedProps = { acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge };
 
   return (
@@ -192,7 +238,14 @@ export default function ProductionManagerPage() {
 
       <div className="card">
         <h2>Ready for Production ({readyForProduction.length})</h2>
-        {readyForProduction.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={readyForProduction} mode="open" {...sharedProps} />}
+        {readyForProduction.length === 0 ? <p className="subtle">None yet.</p> : (
+          <PagedJoSection items={readyForProduction} mode="open" {...sharedProps} finishing={finishing} onFinish={finishProduction} />
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Finished Production ({finishedProduction.length})</h2>
+        {finishedProduction.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={finishedProduction} mode="open" {...sharedProps} />}
       </div>
     </>
   );

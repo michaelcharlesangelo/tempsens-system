@@ -24,7 +24,7 @@ export default function ProductionScanPage() {
   const [jobOrder, setJobOrder] = useState<JobOrder | null>(null);
   const [station, setStation] = useState<StationCode | null>(null);
 
-  const [actualValue, setActualValue] = useState("");
+  const [actualValues, setActualValues] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export default function ProductionScanPage() {
     setLookupError(null);
     setJobOrder(null);
     setStation(null);
-    setActualValue("");
+    setActualValues([]);
     setSuccessMsg(null);
   }
 
@@ -95,6 +95,7 @@ export default function ProductionScanPage() {
       const found = stations.find((s) => s.code.toLowerCase() === code.trim().toLowerCase());
       if (!found) { setLookupError(`No station found for that QR code.`); return; }
       setStation(found);
+      setActualValues(found.parameters.map(() => ""));
       setStep("form");
     } finally {
       setLookingUp(false);
@@ -106,19 +107,21 @@ export default function ProductionScanPage() {
     setSubmitError(null);
     setSubmitting(true);
     try {
+      const results = station.parameters.map((p, i) => ({ parameter: p, actual: actualValues[i] ?? "" }));
       const res = await fetch("/api/production-logs", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobOrderId: jobOrder.id, stationId: station.id, scannedBy: account.id, actualValue }),
+        body: JSON.stringify({ jobOrderId: jobOrder.id, stationId: station.id, scannedBy: account.id, results }),
       });
       const data = await res.json();
       if (!res.ok) { setSubmitError(data.error || "Failed to save."); return; }
       setSuccessMsg(`Saved — ${station.station_name} recorded for ${jobOrder.jo_number}.`);
-      setActualValue("");
       startScanStation();
     } finally {
       setSubmitting(false);
     }
   }
+
+  const allFilled = actualValues.length > 0 && actualValues.every((v) => v.trim() !== "");
 
   if (!account) {
     return (
@@ -207,15 +210,35 @@ export default function ProductionScanPage() {
             </div>
           </div>
 
-          <div className="form-row"><label>Parameter</label><span>:</span><span>{station.parameter || "-"}</span></div>
-          <div className="field" style={{ marginTop: 10 }}>
-            <label>Actual</label>
-            <input type="text" value={actualValue} onChange={(e) => setActualValue(e.target.value)} placeholder="e.g. 180degC for 50min" />
-          </div>
-          <div className="form-row"><label>Performed By</label><span>:</span><span>{account.full_name}</span></div>
+          {station.parameters.length === 0 ? (
+            <p className="subtle">No parameters configured for this station yet - add some under Admin &gt; Production first.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table className="data-table">
+                <thead><tr><th>No.</th><th>Parameter</th><th>Actual</th><th>Checked By</th></tr></thead>
+                <tbody>
+                  {station.parameters.map((p, i) => (
+                    <tr key={i}>
+                      <td>{i + 1}</td>
+                      <td>{p}</td>
+                      <td>
+                        <input
+                          type="text"
+                          value={actualValues[i] ?? ""}
+                          onChange={(e) => setActualValues((cur) => cur.map((v, vi) => (vi === i ? e.target.value : v)))}
+                          style={{ width: 140 }}
+                        />
+                      </td>
+                      <td>{account.full_name}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {submitError && <p className="error-text" style={{ marginTop: 8 }}>{submitError}</p>}
-          <button className="btn" style={{ marginTop: 12 }} disabled={submitting || !actualValue.trim()} onClick={submitScan}>
+          <button className="btn" style={{ marginTop: 12 }} disabled={submitting || !allFilled} onClick={submitScan}>
             {submitting ? "Saving..." : "Save"}
           </button>
         </div>
