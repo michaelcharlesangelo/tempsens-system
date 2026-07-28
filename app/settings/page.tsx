@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import QrImage from "@/app/components/QrImage";
 import PasswordField from "@/app/components/PasswordField";
-import { StationCode, ProductionAccount, SalesPerson, BackOfficePerson, ItemCategory, Position } from "@/lib/jobOrders";
+import { StationCode, ProductionAccount, ItemCategory, Position } from "@/lib/jobOrders";
 
 type SettingsTab = "production" | "account" | "product";
 
@@ -23,20 +23,6 @@ export default function SettingsPage() {
   const [newAccountPositionId, setNewAccountPositionId] = useState("");
   const [accountPasswordDraft, setAccountPasswordDraft] = useState<Record<string, string>>({});
 
-  const [salesPeople, setSalesPeople] = useState<SalesPerson[]>([]);
-  const [newSalesName, setNewSalesName] = useState("");
-  const [newSalesEmail, setNewSalesEmail] = useState("");
-  const [newSalesPassword, setNewSalesPassword] = useState("");
-  const [newSalesPositionId, setNewSalesPositionId] = useState("");
-  const [salesPasswordDraft, setSalesPasswordDraft] = useState<Record<string, string>>({});
-
-  const [backOffice, setBackOffice] = useState<BackOfficePerson[]>([]);
-  const [newBoName, setNewBoName] = useState("");
-  const [newBoEmail, setNewBoEmail] = useState("");
-  const [newBoPassword, setNewBoPassword] = useState("");
-  const [newBoPositionId, setNewBoPositionId] = useState("");
-  const [boPasswordDraft, setBoPasswordDraft] = useState<Record<string, string>>({});
-
   const [positions, setPositions] = useState<Position[]>([]);
   const [newPositionName, setNewPositionName] = useState("");
 
@@ -51,21 +37,15 @@ export default function SettingsPage() {
   async function loadAccounts() {
     setAccounts((await (await fetch("/api/production-accounts", { cache: "no-store" })).json()).accounts ?? []);
   }
-  async function loadSales() {
-    setSalesPeople((await (await fetch("/api/sales-people", { cache: "no-store" })).json()).salesPeople ?? []);
-  }
   async function loadPositions() {
     setPositions((await (await fetch("/api/positions", { cache: "no-store" })).json()).positions ?? []);
-  }
-  async function loadBackOffice() {
-    setBackOffice((await (await fetch("/api/back-office", { cache: "no-store" })).json()).people ?? []);
   }
   async function loadCategories() {
     setCategories((await (await fetch("/api/item-categories", { cache: "no-store" })).json()).categories ?? []);
   }
 
   useEffect(() => {
-    loadStations(); loadAccounts(); loadSales(); loadCategories(); loadPositions(); loadBackOffice();
+    loadStations(); loadAccounts(); loadCategories(); loadPositions();
   }, []);
 
   async function addStation() {
@@ -152,30 +132,6 @@ export default function SettingsPage() {
     loadAccounts();
   }
 
-  async function addSalesPerson() {
-    const res = await fetch("/api/sales-people", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newSalesName, email: newSalesEmail, password: newSalesPassword, positionId: newSalesPositionId || null }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setMessage(data.error); return; }
-    setNewSalesName(""); setNewSalesEmail(""); setNewSalesPassword(""); setNewSalesPositionId("");
-    loadSales();
-  }
-
-  async function setSalesPosition(id: string, positionId: string) {
-    await fetch(`/api/sales-people/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positionId: positionId || null }),
-    });
-    loadSales();
-  }
-
-  async function deleteSalesPerson(id: string) {
-    if (!confirm("Delete this Sales Person? This can't be undone.")) return;
-    await fetch(`/api/sales-people/${id}`, { method: "DELETE" });
-    loadSales();
-  }
-
   async function addPosition() {
     const res = await fetch("/api/positions", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -192,52 +148,6 @@ export default function SettingsPage() {
     await fetch(`/api/positions/${id}`, { method: "DELETE" });
     loadPositions();
     loadAccounts();
-    loadSales();
-    loadBackOffice();
-  }
-
-  async function addBackOffice() {
-    const res = await fetch("/api/back-office", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newBoName, email: newBoEmail, password: newBoPassword, positionId: newBoPositionId || null }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setMessage(data.error); return; }
-    setNewBoName(""); setNewBoEmail(""); setNewBoPassword(""); setNewBoPositionId("");
-    loadBackOffice();
-  }
-
-  async function setBackOfficePosition(id: string, positionId: string) {
-    await fetch(`/api/back-office/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positionId: positionId || null }),
-    });
-    loadBackOffice();
-  }
-
-  async function saveBackOfficePassword(id: string) {
-    const pw = boPasswordDraft[id];
-    if (!pw) return;
-    await fetch(`/api/back-office/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }),
-    });
-    setBoPasswordDraft((d) => ({ ...d, [id]: "" }));
-    setMessage("Password updated.");
-  }
-
-  async function deleteBackOffice(id: string) {
-    if (!confirm("Delete this Back Office person? This can't be undone.")) return;
-    await fetch(`/api/back-office/${id}`, { method: "DELETE" });
-    loadBackOffice();
-  }
-
-  async function saveSalesPassword(id: string) {
-    const pw = salesPasswordDraft[id];
-    if (!pw) return;
-    await fetch(`/api/sales-people/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }),
-    });
-    setSalesPasswordDraft((d) => ({ ...d, [id]: "" }));
-    setMessage("Password updated.");
   }
 
   async function addCategory() {
@@ -362,7 +272,10 @@ export default function SettingsPage() {
         <>
           <div className="card">
             <h2>Position types</h2>
-            <p className="subtle">Extensible list of roles assignable to people below. Add new ones as needed.</p>
+            <p className="subtle">
+              Extensible list of roles assignable to Accounts below. Sales, Sales Manager, and General Manager are the
+              positions that make an account selectable as "Sales" on a Job Order.
+            </p>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
               <input type="text" value={newPositionName} onChange={(e) => setNewPositionName(e.target.value)} placeholder="New position name" />
               <button className="btn secondary" onClick={addPosition} disabled={!newPositionName.trim()}>Add</button>
@@ -422,94 +335,6 @@ export default function SettingsPage() {
                         </div>
                       </td>
                       <td><button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteAccount(a.id)}>Delete</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div className="card">
-            <h2>Sales Person</h2>
-            <p className="subtle">Feeds the Sales dropdown on JOs and Complaints - kept separate from Accounts above.</p>
-            <div className="grid">
-              <div className="field"><label>Name</label><input type="text" value={newSalesName} onChange={(e) => setNewSalesName(e.target.value)} /></div>
-              <div className="field"><label>Email (optional)</label><input type="text" value={newSalesEmail} onChange={(e) => setNewSalesEmail(e.target.value)} /></div>
-              <div className="field"><label>Password (optional)</label><PasswordField value={newSalesPassword} onChange={setNewSalesPassword} /></div>
-              <div className="field">
-                <label>Position</label>
-                <select value={newSalesPositionId} onChange={(e) => setNewSalesPositionId(e.target.value)}>
-                  <option value="">Select...</option>
-                  {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-            </div>
-            <button className="btn secondary" onClick={addSalesPerson} disabled={!newSalesName.trim()}>Add</button>
-            {salesPeople.length > 0 && (
-              <table className="data-table" style={{ marginTop: 14 }}>
-                <thead><tr><th>Name</th><th>Email</th><th>Position</th><th>Password</th><th></th></tr></thead>
-                <tbody>
-                  {salesPeople.map((p) => (
-                    <tr key={p.id}>
-                      <td>{p.name}</td>
-                      <td>{p.email || "-"}</td>
-                      <td>
-                        <select value={p.position_id ?? ""} onChange={(e) => setSalesPosition(p.id, e.target.value)} style={{ maxWidth: 200 }}>
-                          <option value="">Unassigned</option>
-                          {positions.map((pos) => <option key={pos.id} value={pos.id}>{pos.name}</option>)}
-                        </select>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <PasswordField value={salesPasswordDraft[p.id] ?? ""} onChange={(v) => setSalesPasswordDraft((d) => ({ ...d, [p.id]: v }))} placeholder="New password" style={{ width: 130 }} />
-                          <button className="btn secondary" style={{ fontSize: "0.75rem" }} disabled={!salesPasswordDraft[p.id]} onClick={() => saveSalesPassword(p.id)}>Save</button>
-                        </div>
-                      </td>
-                      <td><button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteSalesPerson(p.id)}>Delete</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div className="card">
-            <h2>Back Office</h2>
-            <p className="subtle">Admin-assignable position, with name/email/password.</p>
-            <div className="grid">
-              <div className="field"><label>Name</label><input type="text" value={newBoName} onChange={(e) => setNewBoName(e.target.value)} /></div>
-              <div className="field"><label>Email (optional)</label><input type="text" value={newBoEmail} onChange={(e) => setNewBoEmail(e.target.value)} /></div>
-              <div className="field"><label>Password (optional)</label><PasswordField value={newBoPassword} onChange={setNewBoPassword} /></div>
-              <div className="field">
-                <label>Position</label>
-                <select value={newBoPositionId} onChange={(e) => setNewBoPositionId(e.target.value)}>
-                  <option value="">Select...</option>
-                  {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-            </div>
-            <button className="btn secondary" onClick={addBackOffice} disabled={!newBoName.trim()}>Add</button>
-            {backOffice.length > 0 && (
-              <table className="data-table" style={{ marginTop: 14 }}>
-                <thead><tr><th>Name</th><th>Email</th><th>Position</th><th>Password</th><th></th></tr></thead>
-                <tbody>
-                  {backOffice.map((p) => (
-                    <tr key={p.id}>
-                      <td>{p.name}</td>
-                      <td>{p.email || "-"}</td>
-                      <td>
-                        <select value={p.position_id ?? ""} onChange={(e) => setBackOfficePosition(p.id, e.target.value)} style={{ maxWidth: 200 }}>
-                          <option value="">Unassigned</option>
-                          {positions.map((pos) => <option key={pos.id} value={pos.id}>{pos.name}</option>)}
-                        </select>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <PasswordField value={boPasswordDraft[p.id] ?? ""} onChange={(v) => setBoPasswordDraft((d) => ({ ...d, [p.id]: v }))} placeholder="New password" style={{ width: 130 }} />
-                          <button className="btn secondary" style={{ fontSize: "0.75rem" }} disabled={!boPasswordDraft[p.id]} onClick={() => saveBackOfficePassword(p.id)}>Save</button>
-                        </div>
-                      </td>
-                      <td><button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteBackOffice(p.id)}>Delete</button></td>
                     </tr>
                   ))}
                 </tbody>

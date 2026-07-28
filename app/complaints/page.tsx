@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
-import { Complaint, JobOrder, SalesPerson, complaintMatchesSearch, fmtDate } from "@/lib/jobOrders";
+import { Complaint, JobOrder, complaintMatchesSearch, fmtDate } from "@/lib/jobOrders";
+
+interface SalesAccount { id: string; full_name: string; }
 
 type ComplaintType = "indonesia" | "traded";
 
@@ -162,7 +164,7 @@ function ComplaintTable({
 
 export default function ComplaintsPage() {
   const [complaints, setComplaints] = useState<Complaint[] | null>(null);
-  const [salesPeople, setSalesPeople] = useState<SalesPerson[]>([]);
+  const [salesAccounts, setSalesAccounts] = useState<SalesAccount[]>([]);
   const [jobOrders, setJobOrders] = useState<JobOrder[]>([]);
 
   const [showForm, setShowForm] = useState(false);
@@ -193,7 +195,7 @@ export default function ComplaintsPage() {
 
   useEffect(() => {
     load();
-    fetch("/api/sales-people", { cache: "no-store" }).then((r) => r.json()).then((d) => setSalesPeople(d.salesPeople ?? []));
+    fetch("/api/production-accounts?forSales=true", { cache: "no-store" }).then((r) => r.json()).then((d) => setSalesAccounts(d.accounts ?? []));
     fetch("/api/job-orders", { cache: "no-store" }).then((r) => r.json()).then((d) => setJobOrders(d.jobOrders ?? []));
   }, []);
 
@@ -217,8 +219,8 @@ export default function ComplaintsPage() {
     setSoNo(jo.so_no);
     setCustomerName(jo.customer_name);
     setItemDescription(jo.item_description);
-    const matched = salesPeople.find((p) => p.name === jo.sales_person_name);
-    if (matched) setSubmittedBy(matched.name);
+    const matched = salesAccounts.find((a) => a.full_name === jo.sales_person_name);
+    if (matched) setSubmittedBy(matched.full_name);
     setSoSuggestOpen(false);
   }
 
@@ -382,7 +384,7 @@ export default function ComplaintsPage() {
                     <label>Sales person</label>
                     <select value={submittedBy} onChange={(e) => setSubmittedBy(e.target.value)}>
                       <option value="">Select...</option>
-                      {salesPeople.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                      {salesAccounts.map((a) => <option key={a.id} value={a.full_name}>{a.full_name}</option>)}
                     </select>
                   </div>
                 </div>

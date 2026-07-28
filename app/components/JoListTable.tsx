@@ -15,12 +15,16 @@ export default function JoListTable({
   showProgress,
   progressLabel,
   renderActions,
+  dateColor,
 }: {
   items: JobOrder[];
   onView: (id: string, type: "drawing" | "po") => void;
   showProgress?: boolean;
   progressLabel?: (jo: JobOrder) => string;
   renderActions?: (jo: JobOrder) => ReactNode;
+  // Optional per-row color for the JO Date cell (e.g. green/red to flag
+  // approved/rejected at a glance on the combined approval table).
+  dateColor?: (jo: JobOrder) => string | undefined;
 }) {
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
 
@@ -43,7 +47,7 @@ export default function JoListTable({
             return (
               <Fragment key={jo.id}>
                 <tr>
-                  <td>{fmtDate(jo.created_at)}</td>
+                  <td style={dateColor ? { color: dateColor(jo), fontWeight: dateColor(jo) ? 700 : undefined } : undefined}>{fmtDate(jo.created_at)}</td>
                   <td>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
                   <td>{jo.item_no}</td>
                   <td>{jo.sales_person_name}</td>

@@ -24,7 +24,9 @@ const OTHER_TAGGED_ROLES = ["Operational Manager", "Sales Support Supervisor"];
 // cancel) is available from more than one tab since there's no per-user
 // login yet to scope "mine" by; `tab` controls file-visibility permissions
 // and `by` is the name recorded on the cancel history entry.
-export default function SubmittedJobOrders({ tab, by }: { tab: string; by: string }) {
+export default function SubmittedJobOrders({
+  tab, by, defaultOpen = false, pageSize = 10,
+}: { tab: string; by: string; defaultOpen?: boolean; pageSize?: number }) {
   const [jobOrders, setJobOrders] = useState<JobOrder[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -63,12 +65,13 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
     load();
   }
 
-  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(jobOrders ?? [], joMatchesSearch);
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(jobOrders ?? [], joMatchesSearch, pageSize);
 
   return (
     <Collapsible
       title="Job Orders I've Submitted"
       count={jobOrders?.length}
+      defaultOpen={defaultOpen}
       actions={<a href={`/jo-input?by=${encodeURIComponent(by)}`} className="btn">+ New Job Order</a>}
     >
       {message && <div className="warn">{message}</div>}
@@ -83,7 +86,7 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
             renderActions={(jo) => (
               <div style={{ display: "flex", gap: 6, whiteSpace: "nowrap" }}>
                 {EDITABLE_STATUSES.includes(jo.status) && (
-                  <a href={`/jo-input?edit=${jo.id}`} className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>Edit</a>
+                  <a href={`/jo-input?edit=${jo.id}&by=${encodeURIComponent(by)}`} className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>Edit</a>
                 )}
                 {canCancel(jo) && (
                   <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => cancelJo(jo.id)}>Cancel</button>

@@ -20,7 +20,7 @@ create table if not exists positions (
 insert into positions (name, sequence) values
   ('Sales Support', 1), ('Sales Manager', 2), ('Operational Manager', 3),
   ('Production Manager', 4), ('Warehouse Manager', 5), ('Production', 6),
-  ('QC', 7), ('Sales', 8), ('Engineering', 9)
+  ('QC', 7), ('Sales', 8), ('Engineering', 9), ('General Manager', 10)
 on conflict (name) do nothing;
 
 -- ---------------------------------------------------------------------------

@@ -10,10 +10,12 @@ interface JoSummary { id: string; jo_number: string; customer_name: string; }
 export async function GET() {
   const admin = getSupabaseAdminClient();
 
+  // Same widened scope as prepare-list - a "Not Available" flag shouldn't
+  // disappear just because the JO moved on to qc/completed.
   const { data: joRowsRaw } = await admin
     .from("job_orders")
     .select("id, jo_number, customer_name")
-    .in("status", ["acknowledged", "in_progress"]);
+    .in("status", ["acknowledged", "in_progress", "qc", "completed"]);
   const joRows = (joRowsRaw ?? []) as JoSummary[];
 
   const jobOrderIds = joRows.map((j) => j.id);

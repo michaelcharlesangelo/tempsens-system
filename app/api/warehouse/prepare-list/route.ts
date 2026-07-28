@@ -10,10 +10,14 @@ interface JoSummary { id: string; jo_number: string; so_no: string; acknowledged
 export async function GET() {
   const admin = getSupabaseAdminClient();
 
+  // Was scoped to just "acknowledged"/"in_progress" - once a JO moved past
+  // that (qc, completed), its already-prepared rows vanished from this
+  // page entirely, which read as Warehouse Manager data going missing.
+  // Widened to cover the rest of the post-acknowledge lifecycle too.
   const { data: joRowsRaw } = await admin
     .from("job_orders")
     .select("id, jo_number, so_no, acknowledged_at, status")
-    .in("status", ["acknowledged", "in_progress"]);
+    .in("status", ["acknowledged", "in_progress", "qc", "completed"]);
   const joRows = (joRowsRaw ?? []) as JoSummary[];
 
   const jobOrderIds = joRows.map((j) => j.id);

@@ -3,9 +3,19 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import DateField from "@/app/components/DateField";
-import { ItemCategory, SalesPerson } from "@/lib/jobOrders";
+import { ItemCategory } from "@/lib/jobOrders";
 
 interface CatalogItem { item_no: string; description: string; }
+interface SalesAccount { id: string; full_name: string; }
+
+// Which page's "+ New Job Order" / "Edit" link launched this - drives the
+// back link at the top so it returns to wherever the user actually came
+// from instead of always landing on Sales Support.
+const BACK_LINKS: Record<string, string> = {
+  "Sales Support": "/sales-support",
+  "Sales Support Supervisor": "/sales-support-supervisor",
+  "Operational Manager": "/operation-manager",
+};
 
 export default function JoInputPage() {
   return (
@@ -48,7 +58,7 @@ function JoInputInner() {
   const [loadingExisting, setLoadingExisting] = useState(isEditing);
 
   const [categories, setCategories] = useState<ItemCategory[]>([]);
-  const [salesPeople, setSalesPeople] = useState<SalesPerson[]>([]);
+  const [salesAccounts, setSalesAccounts] = useState<SalesAccount[]>([]);
   const [catalogSuggestions, setCatalogSuggestions] = useState<CatalogItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -58,7 +68,9 @@ function JoInputInner() {
 
   useEffect(() => {
     fetch("/api/item-categories", { cache: "no-store" }).then((r) => r.json()).then((d) => setCategories(d.categories ?? []));
-    fetch("/api/sales-people", { cache: "no-store" }).then((r) => r.json()).then((d) => setSalesPeople(d.salesPeople ?? []));
+    // Only Accounts with a Sales/Sales Manager/General Manager position
+    // are selectable here - see SALES_QUALIFYING_POSITIONS.
+    fetch("/api/production-accounts?forSales=true", { cache: "no-store" }).then((r) => r.json()).then((d) => setSalesAccounts(d.accounts ?? []));
   }, []);
 
   useEffect(() => {
@@ -166,7 +178,7 @@ function JoInputInner() {
 
   return (
     <>
-      <p style={{ marginBottom: 10 }}><a href="/sales-support" className="subtle">← Back to Sales Support</a></p>
+      <p style={{ marginBottom: 10 }}><a href={BACK_LINKS[createdByTab] || "/sales-support"} className="subtle">← Back to {createdByTab}</a></p>
 
       <div className="card">
         <h2 style={{ textAlign: "center", marginTop: 0 }}>{isEditing ? `Edit Job Order${existingJoNumber ? ` — ${existingJoNumber}` : ""}` : "Job Order"}</h2>
@@ -215,7 +227,7 @@ function JoInputInner() {
             <div className="form-row"><label>Sales</label><span>:</span>
               <select value={salesPersonName} onChange={(e) => setSalesPersonName(e.target.value)}>
                 <option value="">Select...</option>
-                {salesPeople.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                {salesAccounts.map((a) => <option key={a.id} value={a.full_name}>{a.full_name}</option>)}
               </select>
             </div>
           </div>

@@ -113,6 +113,11 @@ function ApprovalTabViewInner({
             <JoListTable
               items={combinedPaged.pageItems}
               onView={viewFile}
+              dateColor={(jo) => {
+                if (approvedHere.some((a) => a.id === jo.id)) return "var(--good)";
+                if (rejected.some((r) => r.id === jo.id)) return "var(--bad)";
+                return undefined;
+              }}
               renderActions={(jo) => (
                 pending.some((p) => p.id === jo.id) ? (
                   <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 10px" }} onClick={() => toggleExpand(jo.id)}>

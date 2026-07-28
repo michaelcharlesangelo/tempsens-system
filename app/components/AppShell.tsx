@@ -3,26 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-const SIDEBAR_LINKS = [
-  { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
-  { href: "/work-history", label: "Work History", icon: "history" },
-  { href: "/items", label: "Items", icon: "box" },
-  { href: "/complaints", label: "Complaints", icon: "alert" },
-] as const;
+const ROLE_STORAGE_KEY = "tempsens-current-role";
 
 // Role-simulation pages - there's no real per-account login yet, so
 // "switching account" just means jumping to that role's POV. See
 // CLAUDE.md: these tabs simulate each role for now, real accounts planned later.
 const ROLE_LINKS = [
-  { href: "/sales-support", label: "Sales Support" },
-  { href: "/sales-support-supervisor", label: "Sales Support Supervisor" },
-  { href: "/sales-manager", label: "Sales Manager" },
-  { href: "/operation-manager", label: "Operational Manager" },
-  { href: "/gm", label: "General Manager" },
-  { href: "/production-manager", label: "Production Manager" },
-  { href: "/warehouse-manager", label: "Warehouse Manager" },
-  { href: "/production", label: "Production" },
+  { href: "/sales-support", label: "Sales Support", initials: "SS" },
+  { href: "/sales-support-supervisor", label: "Sales Support Supervisor", initials: "SSS" },
+  { href: "/sales-manager", label: "Sales Manager", initials: "SM" },
+  { href: "/operation-manager", label: "Operational Manager", initials: "OM" },
+  { href: "/gm", label: "General Manager", initials: "GM" },
+  { href: "/production-manager", label: "Production Manager", initials: "PM" },
+  { href: "/warehouse-manager", label: "Warehouse Manager", initials: "WM" },
+  { href: "/production", label: "Production", initials: "PR" },
 ];
+
+// GM acts as the de-facto admin of this page for now, so it's the default
+// role shown before anything's been picked via Switch account.
+const DEFAULT_ROLE = ROLE_LINKS[4];
 
 function Icon({ name }: { name: string }) {
   const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -35,6 +34,8 @@ function Icon({ name }: { name: string }) {
       return <svg {...common}><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z" /><path d="M3.5 7.5 12 12l8.5-4.5" /><path d="M12 12v9" /></svg>;
     case "alert":
       return <svg {...common}><path d="M12 3 2 20h20L12 3Z" /><path d="M12 10v4" /><path d="M12 17h.01" /></svg>;
+    case "user":
+      return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" /></svg>;
     case "bell":
       return <svg {...common}><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9Z" /><path d="M10 19a2 2 0 0 0 4 0" /></svg>;
     case "swap":
@@ -45,6 +46,8 @@ function Icon({ name }: { name: string }) {
       return <svg {...common}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>;
     case "chevron":
       return <svg {...common} width={14} height={14}><path d="M9 6l6 6-6 6" /></svg>;
+    case "menu":
+      return <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></svg>;
     default:
       return null;
   }
@@ -55,29 +58,57 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [role, setRole] = useState(DEFAULT_ROLE);
   const accountRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem(ROLE_STORAGE_KEY) : null;
+    const match = ROLE_LINKS.find((r) => r.href === stored);
+    if (match) setRole(match);
+  }, []);
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) { setAccountOpen(false); setSwitchOpen(false); }
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) setSidebarOpen(false);
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
+  function pickRole(r: typeof ROLE_LINKS[number]) {
+    if (typeof window !== "undefined") window.localStorage.setItem(ROLE_STORAGE_KEY, r.href);
+  }
+
   // Production's scanning page is the one place a floor worker actually
   // lands without needing the sidebar/account chrome - keep it minimal.
   const bare = pathname === "/production";
 
+  const sidebarLinks = [
+    { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
+    { href: role.href, label: role.label, icon: "user" },
+    { href: "/work-history", label: "Work History", icon: "history" },
+    { href: "/items", label: "Items", icon: "box" },
+    { href: "/complaints", label: "Complaints", icon: "alert" },
+  ];
+
   return (
-    <div className={bare ? "shell shell-bare" : "shell"}>
+    <div className="shell">
       <div className="shell-topbar">
-        <a href="/dashboard" className="shell-brand">
-          <img src="/logo.png" alt="Tempsens" style={{ height: 24, width: "auto" }} />
-          <span>Tempsens</span>
-        </a>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {!bare && (
+            <button className="shell-menu-btn" onClick={() => setSidebarOpen((v) => !v)} aria-label="Menu">
+              <Icon name="menu" />
+            </button>
+          )}
+          <a href="/dashboard" className="shell-brand">
+            <img src="/logo.png" alt="Tempsens" style={{ height: 26, width: "auto" }} />
+          </a>
+        </div>
 
         {!bare && (
           <div className="shell-topbar-right">
@@ -93,12 +124,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="account-wrap" ref={accountRef}>
-              <button className="avatar-btn" onClick={() => setAccountOpen((v) => !v)} aria-label="Account menu">AD</button>
+              <button className="avatar-btn" onClick={() => setAccountOpen((v) => !v)} aria-label="Account menu">{role.initials}</button>
               {accountOpen && (
                 <div className="account-dropdown">
                   <div className="account-dropdown-head">
-                    <span className="avatar-btn" style={{ cursor: "default" }}>AD</span>
-                    <span className="account-dropdown-name">Admin User</span>
+                    <span className="avatar-btn" style={{ cursor: "default" }}>{role.initials}</span>
+                    <span className="account-dropdown-name">{role.label}</span>
                   </div>
 
                   <button className="account-menu-item" onClick={() => setSwitchOpen((v) => !v)}>
@@ -108,7 +139,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   {switchOpen && (
                     <div className="account-submenu">
                       {ROLE_LINKS.map((r) => (
-                        <a key={r.href} href={r.href} className="account-submenu-item">{r.label}</a>
+                        <a key={r.href} href={r.href} className="account-submenu-item" onClick={() => pickRole(r)}>{r.label}</a>
                       ))}
                     </div>
                   )}
@@ -122,13 +153,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
-      {!bare && (
-        <div className="shell-sidebar">
-          {SIDEBAR_LINKS.map((l) => (
-            <a key={l.href} href={l.href} className={pathname === l.href ? "shell-nav-item active" : "shell-nav-item"}>
-              <Icon name={l.icon} /> {l.label}
-            </a>
-          ))}
+      {!bare && sidebarOpen && (
+        <div className="shell-sidebar-overlay" ref={sidebarRef}>
+          <div className="shell-sidebar-head">
+            <button className="shell-menu-btn" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+              <Icon name="menu" />
+            </button>
+            <img src="/logo.png" alt="Tempsens" style={{ height: 22, width: "auto" }} />
+          </div>
+          <div className="shell-sidebar-list">
+            {sidebarLinks.map((l) => (
+              <a key={l.label} href={l.href} className={pathname === l.href ? "shell-nav-item active" : "shell-nav-item"}>
+                <Icon name={l.icon} /> {l.label}
+              </a>
+            ))}
+          </div>
         </div>
       )}
 

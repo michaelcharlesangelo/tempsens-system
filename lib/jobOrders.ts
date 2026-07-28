@@ -163,6 +163,10 @@ export interface ProductionAccount {
   position_id: string | null;
 }
 
+// Position names that make an Account eligible to appear in the "Sales"
+// dropdown on the JO Input and Complaints pages.
+export const SALES_QUALIFYING_POSITIONS = ["Sales", "Sales Manager", "General Manager"];
+
 export interface SalesPerson {
   id: string;
   name: string;
