@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import TabNav from "@/app/components/TabNav";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import { Complaint, JobOrder, complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate } from "@/lib/jobOrders";
@@ -159,7 +158,6 @@ export default function DashboardPage() {
 
   return (
     <>
-      <TabNav active="/dashboard" />
 
       <div className="card">
         <h2 style={{ margin: 0 }}>Current Job Orders ({activeJobOrders?.length ?? "..."})</h2>

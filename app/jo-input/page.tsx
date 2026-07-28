@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import TabNav from "@/app/components/TabNav";
 import DateField from "@/app/components/DateField";
 import { ItemCategory, SalesPerson } from "@/lib/jobOrders";
 
@@ -10,7 +9,7 @@ interface CatalogItem { item_no: string; description: string; }
 
 export default function JoInputPage() {
   return (
-    <Suspense fallback={<><TabNav active="" /><p className="subtle">Loading...</p></>}>
+    <Suspense fallback={<p className="subtle">Loading...</p>}>
       <JoInputInner />
     </Suspense>
   );
@@ -167,7 +166,6 @@ function JoInputInner() {
 
   return (
     <>
-      <TabNav active="" />
       <p style={{ marginBottom: 10 }}><a href="/sales-support" className="subtle">← Back to Sales Support</a></p>
 
       <div className="card">

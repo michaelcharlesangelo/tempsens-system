@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import TabNav from "@/app/components/TabNav";
 import QrImage from "@/app/components/QrImage";
 import PasswordField from "@/app/components/PasswordField";
 import { StationCode, ProductionAccount, SalesPerson, BackOfficePerson, ItemCategory, Position } from "@/lib/jobOrders";
 
-type AdminTab = "production" | "account" | "product" | "items";
+type SettingsTab = "production" | "account" | "product";
 
-interface CatalogItem { item_no: string; description: string; category: string | null; unit: string; }
-
-export default function AdminPage() {
-  const [adminTab, setAdminTab] = useState<AdminTab>("production");
+export default function SettingsPage() {
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("production");
   const [message, setMessage] = useState<string | null>(null);
 
   const [stations, setStations] = useState<StationCode[]>([]);
@@ -48,11 +45,6 @@ export default function AdminPage() {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
 
-  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
-  const [editingItemNo, setEditingItemNo] = useState<string | null>(null);
-  const [editingItemDesc, setEditingItemDesc] = useState("");
-  const [editingItemUnit, setEditingItemUnit] = useState("");
-
   async function loadStations() {
     setStations((await (await fetch("/api/station-codes", { cache: "no-store" })).json()).stations ?? []);
   }
@@ -71,12 +63,9 @@ export default function AdminPage() {
   async function loadCategories() {
     setCategories((await (await fetch("/api/item-categories", { cache: "no-store" })).json()).categories ?? []);
   }
-  async function loadCatalog() {
-    setCatalogItems((await (await fetch("/api/item-catalog?kind=material", { cache: "no-store" })).json()).items ?? []);
-  }
 
   useEffect(() => {
-    loadStations(); loadAccounts(); loadSales(); loadCategories(); loadCatalog(); loadPositions(); loadBackOffice();
+    loadStations(); loadAccounts(); loadSales(); loadCategories(); loadPositions(); loadBackOffice();
   }, []);
 
   async function addStation() {
@@ -158,7 +147,7 @@ export default function AdminPage() {
   }
 
   async function deleteAccount(id: string) {
-    if (!confirm("Delete this Production/QC account? This can't be undone.")) return;
+    if (!confirm("Delete this account? This can't be undone.")) return;
     await fetch(`/api/production-accounts/${id}`, { method: "DELETE" });
     loadAccounts();
   }
@@ -294,34 +283,17 @@ export default function AdminPage() {
     loadCategories();
   }
 
-  async function saveCatalogItem(itemNo: string) {
-    await fetch("/api/item-catalog", {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemNo, description: editingItemDesc, unit: editingItemUnit }),
-    });
-    setEditingItemNo(null);
-    loadCatalog();
-  }
-
-  async function deleteCatalogItem(itemNo: string) {
-    if (!confirm(`Delete material item "${itemNo}"?`)) return;
-    await fetch(`/api/item-catalog?itemNo=${encodeURIComponent(itemNo)}`, { method: "DELETE" });
-    loadCatalog();
-  }
-
   return (
     <>
-      <TabNav active="/admin" />
       {message && <div className="warn">{message}</div>}
 
       <div className="pill-toggle equal-width" style={{ marginBottom: 16 }}>
-        <button className={adminTab === "production" ? "active" : ""} onClick={() => setAdminTab("production")}>Production</button>
-        <button className={adminTab === "account" ? "active" : ""} onClick={() => setAdminTab("account")}>Account</button>
-        <button className={adminTab === "product" ? "active" : ""} onClick={() => setAdminTab("product")}>Product</button>
-        <button className={adminTab === "items" ? "active" : ""} onClick={() => setAdminTab("items")}>Items</button>
+        <button className={settingsTab === "production" ? "active" : ""} onClick={() => setSettingsTab("production")}>Production</button>
+        <button className={settingsTab === "account" ? "active" : ""} onClick={() => setSettingsTab("account")}>Account</button>
+        <button className={settingsTab === "product" ? "active" : ""} onClick={() => setSettingsTab("product")}>Product</button>
       </div>
 
-      {adminTab === "production" && (
+      {settingsTab === "production" && (
         <>
           <div className="card">
             <h2>Register a station</h2>
@@ -386,7 +358,7 @@ export default function AdminPage() {
         </>
       )}
 
-      {adminTab === "account" && (
+      {settingsTab === "account" && (
         <>
           <div className="card">
             <h2>Position types</h2>
@@ -396,11 +368,17 @@ export default function AdminPage() {
               <button className="btn secondary" onClick={addPosition} disabled={!newPositionName.trim()}>Add</button>
             </div>
             {positions.length === 0 ? <p className="subtle">None yet.</p> : (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
                 {positions.map((p) => (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid var(--border)", borderRadius: 999, padding: "4px 6px 4px 12px", fontSize: "0.82rem" }}>
-                    {p.name}
-                    <button className="btn danger" style={{ padding: "2px 8px", fontSize: "0.7rem", borderRadius: 999 }} onClick={() => deletePosition(p.id)}>×</button>
+                  <div
+                    key={p.id}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                      border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", background: "var(--panel-muted)",
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>{p.name}</span>
+                    <button className="btn danger" style={{ padding: "3px 7px", fontSize: "0.68rem", flex: "none" }} onClick={() => deletePosition(p.id)}>×</button>
                   </div>
                 ))}
               </div>
@@ -408,12 +386,12 @@ export default function AdminPage() {
           </div>
 
           <div className="card">
-            <h2>Production / QC accounts</h2>
-            <p className="subtle">Username + password, no email.</p>
+            <h2>Accounts</h2>
+            <p className="subtle">Register with a name, email/username, password, and position.</p>
             <div className="grid">
-              <div className="field"><label>Username</label><input type="text" value={username} onChange={(e) => setUsername(e.target.value)} /></div>
+              <div className="field"><label>Name</label><input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
+              <div className="field"><label>Email / Username</label><input type="text" value={username} onChange={(e) => setUsername(e.target.value)} /></div>
               <div className="field"><label>Password</label><PasswordField value={password} onChange={setPassword} /></div>
-              <div className="field"><label>Full name</label><input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} /></div>
               <div className="field">
                 <label>Position</label>
                 <select value={newAccountPositionId} onChange={(e) => setNewAccountPositionId(e.target.value)}>
@@ -425,7 +403,7 @@ export default function AdminPage() {
             <button className="btn" onClick={addAccount} disabled={!username.trim() || !password.trim() || !fullName.trim()}>Add account</button>
             {accounts.length > 0 && (
               <table className="data-table" style={{ marginTop: 14 }}>
-                <thead><tr><th>Username</th><th>Full name</th><th>Position</th><th>Password</th><th></th></tr></thead>
+                <thead><tr><th>Email / Username</th><th>Full name</th><th>Position</th><th>New password</th><th></th></tr></thead>
                 <tbody>
                   {accounts.map((a) => (
                     <tr key={a.id}>
@@ -439,7 +417,7 @@ export default function AdminPage() {
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 4 }}>
-                          <PasswordField value={accountPasswordDraft[a.id] ?? ""} onChange={(v) => setAccountPasswordDraft((d) => ({ ...d, [a.id]: v }))} placeholder="New password" style={{ width: 130 }} />
+                          <PasswordField value={accountPasswordDraft[a.id] ?? ""} onChange={(v) => setAccountPasswordDraft((d) => ({ ...d, [a.id]: v }))} placeholder="Set new password" style={{ width: 130 }} />
                           <button className="btn secondary" style={{ fontSize: "0.75rem" }} disabled={!accountPasswordDraft[a.id]} onClick={() => saveAccountPassword(a.id)}>Save</button>
                         </div>
                       </td>
@@ -453,7 +431,7 @@ export default function AdminPage() {
 
           <div className="card">
             <h2>Sales Person</h2>
-            <p className="subtle">Email/password are groundwork for a future login - not required or enforced yet.</p>
+            <p className="subtle">Feeds the Sales dropdown on JOs and Complaints - kept separate from Accounts above.</p>
             <div className="grid">
               <div className="field"><label>Name</label><input type="text" value={newSalesName} onChange={(e) => setNewSalesName(e.target.value)} /></div>
               <div className="field"><label>Email (optional)</label><input type="text" value={newSalesEmail} onChange={(e) => setNewSalesEmail(e.target.value)} /></div>
@@ -541,7 +519,7 @@ export default function AdminPage() {
         </>
       )}
 
-      {adminTab === "product" && (
+      {settingsTab === "product" && (
         <div className="card">
           <h2>Item categories</h2>
           <p className="subtle">Order here also controls the dropdown order on the JO Input page.</p>
@@ -573,50 +551,6 @@ export default function AdminPage() {
                         <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => startEditCategory(c)}>Rename</button>
                       )}{" "}
                       <button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteCategory(c.id)}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {adminTab === "items" && (
-        <div className="card">
-          <h2>Materials (component-level, from BOM entries)</h2>
-          <p className="subtle">
-            Component/material item codes used across BOMs — not finished product codes. Finished item codes from
-            Job Orders live under the <b>Items</b> tab in the main nav, not here.
-          </p>
-          {catalogItems.length === 0 ? <p className="subtle">None yet.</p> : (
-            <table className="data-table">
-              <thead><tr><th>Item Code</th><th>Description</th><th>Unit</th><th></th></tr></thead>
-              <tbody>
-                {catalogItems.map((i) => (
-                  <tr key={i.item_no}>
-                    <td>{i.item_no}</td>
-                    <td>
-                      {editingItemNo === i.item_no ? (
-                        <input type="text" value={editingItemDesc} onChange={(e) => setEditingItemDesc(e.target.value)} style={{ maxWidth: 320 }} />
-                      ) : (
-                        i.description
-                      )}
-                    </td>
-                    <td>
-                      {editingItemNo === i.item_no ? (
-                        <input type="text" value={editingItemUnit} onChange={(e) => setEditingItemUnit(e.target.value)} style={{ maxWidth: 70 }} />
-                      ) : (
-                        i.unit
-                      )}
-                    </td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {editingItemNo === i.item_no ? (
-                        <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => saveCatalogItem(i.item_no)}>Save</button>
-                      ) : (
-                        <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => { setEditingItemNo(i.item_no); setEditingItemDesc(i.description); setEditingItemUnit(i.unit); }}>Edit</button>
-                      )}{" "}
-                      <button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteCatalogItem(i.item_no)}>Delete</button>
                     </td>
                   </tr>
                 ))}

@@ -120,7 +120,10 @@ export interface ProductionLog {
   id: string;
   job_order_id: string;
   station_id: string;
-  scanned_by: string;
+  scanned_by: string | null;
+  // Set directly (e.g. "Production") when there's no real logged-in
+  // account - login is bypassed for now, see CLAUDE.md.
+  scanned_by_label: string | null;
   results: ProductionLogResult[];
   scanned_at: string;
   // Embedded on the JO detail response for the QC-parameter table.

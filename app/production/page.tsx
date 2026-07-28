@@ -1,21 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import TabNav from "@/app/components/TabNav";
 import QrScanner from "@/app/components/QrScanner";
-import PasswordField from "@/app/components/PasswordField";
 import { JobOrder, StationCode } from "@/lib/jobOrders";
 
-interface Account { id: string; username: string; full_name: string; }
 type Step = "scan-jo" | "scan-station" | "form";
 
-export default function ProductionScanPage() {
-  const [account, setAccount] = useState<Account | null>(null);
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loggingIn, setLoggingIn] = useState(false);
+// Real per-account production login is queued for later (see CLAUDE.md) -
+// until then every scan is just attributed to "Production" as a group.
+const SCANNED_BY_LABEL = "Production";
 
+export default function ProductionScanPage() {
   const [step, setStep] = useState<Step>("scan-jo");
   const [scanning, setScanning] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -28,28 +23,6 @@ export default function ProductionScanPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
-  async function login() {
-    setLoginError(null);
-    setLoggingIn(true);
-    try {
-      const res = await fetch("/api/production/login", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setLoginError(data.error || "Login failed."); return; }
-      setAccount(data.account);
-      setLoginUsername(""); setLoginPassword("");
-    } finally {
-      setLoggingIn(false);
-    }
-  }
-
-  function logout() {
-    setAccount(null);
-    resetToScanJo();
-  }
 
   function resetToScanJo() {
     setStep("scan-jo");
@@ -103,14 +76,14 @@ export default function ProductionScanPage() {
   }
 
   async function submitScan() {
-    if (!jobOrder || !station || !account) return;
+    if (!jobOrder || !station) return;
     setSubmitError(null);
     setSubmitting(true);
     try {
       const results = station.parameters.map((p, i) => ({ parameter: p, actual: actualValues[i] ?? "" }));
       const res = await fetch("/api/production-logs", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobOrderId: jobOrder.id, stationId: station.id, scannedBy: account.id, results }),
+        body: JSON.stringify({ jobOrderId: jobOrder.id, stationId: station.id, results }),
       });
       const data = await res.json();
       if (!res.ok) { setSubmitError(data.error || "Failed to save."); return; }
@@ -123,31 +96,8 @@ export default function ProductionScanPage() {
 
   const allFilled = actualValues.length > 0 && actualValues.every((v) => v.trim() !== "");
 
-  if (!account) {
-    return (
-      <>
-        <TabNav active="/production" />
-        <div className="card" style={{ maxWidth: 400 }}>
-          <h2>Production Login</h2>
-          <div className="field"><label>Username</label><input type="text" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} /></div>
-          <div className="field"><label>Password</label><PasswordField value={loginPassword} onChange={setLoginPassword} /></div>
-          {loginError && <p className="error-text">{loginError}</p>}
-          <button className="btn" onClick={login} disabled={loggingIn || !loginUsername.trim() || !loginPassword.trim()}>{loggingIn ? "Logging in..." : "Log In"}</button>
-        </div>
-      </>
-    );
-  }
-
   return (
     <>
-      <TabNav active="/production" />
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <div>Logged in as <b>{account.full_name}</b></div>
-          <button className="btn secondary" onClick={logout}>Log Out</button>
-        </div>
-      </div>
-
       {successMsg && <div className="card" style={{ color: "var(--good)" }}>{successMsg}</div>}
 
       {step === "scan-jo" && (
@@ -211,7 +161,7 @@ export default function ProductionScanPage() {
           </div>
 
           {station.parameters.length === 0 ? (
-            <p className="subtle">No parameters configured for this station yet - add some under Admin &gt; Production first.</p>
+            <p className="subtle">No parameters configured for this station yet - add some under Settings &gt; Production first.</p>
           ) : (
             <div style={{ overflowX: "auto" }}>
               <table className="data-table">
@@ -229,7 +179,7 @@ export default function ProductionScanPage() {
                           style={{ width: 140 }}
                         />
                       </td>
-                      <td>{account.full_name}</td>
+                      <td>{SCANNED_BY_LABEL}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -26,39 +26,52 @@ body {
 .app-shell {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 0 16px 60px;
 }
 
-/* ---------- Nav ---------- */
-.navbar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 20px;
-  flex-wrap: wrap;
+/* ---------- Shell: topbar + left sidebar + main ---------- */
+.shell {
+  display: grid;
+  grid-template-columns: 208px 1fr;
+  grid-template-rows: 56px 1fr;
+  grid-template-areas: "topbar topbar" "sidebar main";
+  min-height: 100vh;
 }
-.navbar .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
-.navbar .brand h1 { font-size: 1.1rem; margin: 0; white-space: nowrap; }
-.navbar nav { display: flex; gap: 4px; flex-wrap: wrap; }
-.navbar nav a {
-  padding: 7px 12px;
-  border-radius: 8px;
-  text-decoration: none;
-  color: var(--text-muted);
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-.navbar nav a.active, .navbar nav a:hover { background: var(--panel-muted); color: var(--text); }
-.navbar .user-menu { display: flex; align-items: center; gap: 10px; }
-.navbar .user-name { font-size: 0.85rem; color: var(--text-muted); }
+.shell.shell-bare { grid-template-columns: 1fr; grid-template-areas: "topbar" "main"; }
 
-.bell-wrap { position: relative; }
+.shell-topbar {
+  grid-area: topbar;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.shell-brand { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--text); font-weight: 700; font-size: 1.02rem; }
+.shell-topbar-right { display: flex; align-items: center; gap: 10px; }
+
+.shell-sidebar {
+  grid-area: sidebar; border-right: 1px solid var(--border); background: var(--panel);
+  padding: 16px 10px; display: flex; flex-direction: column; gap: 2px;
+}
+.shell-nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
+  text-decoration: none; color: var(--text-muted); font-size: 0.88rem; font-weight: 600;
+}
+.shell-nav-item:hover { background: var(--panel-muted); color: var(--text); }
+.shell-nav-item.active { background: var(--accent); color: white; }
+
+.shell-main { grid-area: main; padding: 20px 24px 60px; max-width: 1180px; }
+.shell-main-bare { padding: 20px; max-width: 480px; margin: 0 auto; }
+
+@media (max-width: 820px) {
+  .shell { grid-template-columns: 1fr; grid-template-areas: "topbar" "sidebar" "main"; }
+  .shell-sidebar { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+/* ---------- Bell + account dropdowns ---------- */
+.bell-wrap, .account-wrap { position: relative; }
 .bell-btn {
   background: none; border: 1px solid var(--border); border-radius: 8px;
-  padding: 7px 10px; cursor: pointer; font-size: 1rem; position: relative;
+  padding: 7px 9px; cursor: pointer; position: relative; color: var(--text-muted); display: flex;
 }
+.bell-btn:hover { color: var(--text); border-color: var(--text-muted); }
 .bell-badge {
   position: absolute; top: -6px; right: -6px;
   background: var(--bad); color: white; font-size: 0.68rem; font-weight: 700;
@@ -66,7 +79,7 @@ body {
   display: flex; align-items: center; justify-content: center; padding: 0 4px;
 }
 .bell-dropdown {
-  position: absolute; right: 0; top: 44px; width: 320px; max-height: 400px; overflow-y: auto;
+  position: absolute; right: 0; top: 44px; width: 280px; max-height: 400px; overflow-y: auto;
   background: white; border: 1px solid var(--border); border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 20; padding: 8px;
 }
@@ -76,6 +89,31 @@ body {
 .bell-item .bell-item-title { font-weight: 700; font-size: 0.85rem; }
 .bell-item .bell-item-msg { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
 .bell-item .bell-item-time { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+
+.avatar-btn {
+  width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: white;
+  border: none; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; font-family: inherit;
+}
+.account-dropdown {
+  position: absolute; right: 0; top: 42px; width: 250px;
+  background: white; border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 20; padding: 6px;
+}
+.account-dropdown-head { display: flex; align-items: center; gap: 10px; padding: 10px 8px 12px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.account-dropdown-name { font-weight: 700; font-size: 0.9rem; }
+.account-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 9px 8px; border-radius: 8px; border: none; background: none; cursor: pointer;
+  color: var(--text); font-size: 0.85rem; text-decoration: none; font-family: inherit;
+}
+.account-menu-item:hover { background: var(--panel-muted); }
+.account-submenu { padding: 2px 0 4px 30px; display: flex; flex-direction: column; }
+.account-submenu-item {
+  padding: 7px 8px; border-radius: 6px; font-size: 0.82rem; color: var(--text-muted);
+  text-decoration: none;
+}
+.account-submenu-item:hover { background: var(--panel-muted); color: var(--text); }
 
 /* ---------- Cards / layout ---------- */
 .card {
@@ -121,7 +159,12 @@ textarea { resize: vertical; min-height: 70px; }
 .error-text { color: var(--bad); font-size: 0.82rem; }
 
 /* ---------- Tables ---------- */
-table.data-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; table-layout: fixed; }
+table.data-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+/* Opt-in - only tables that define a <colgroup> with deliberate column
+   widths should use fixed layout. Applying it blanket to every table
+   forced equal-ish column widths regardless of content, which looked
+   worse than the column-shifting it was meant to fix. */
+table.data-table.fixed { table-layout: fixed; }
 table.data-table th { text-align: left; font-size: 0.72rem; text-transform: uppercase; color: var(--text-muted); padding: 8px 6px; border-bottom: 2px solid var(--border); overflow-wrap: break-word; }
 table.data-table td { padding: 10px 6px; border-bottom: 1px solid var(--panel-muted); overflow-wrap: break-word; }
 table.data-table tr:hover td { background: var(--panel-muted); }
@@ -207,10 +250,7 @@ table.data-table a { color: var(--accent-dark); text-decoration: none; font-weig
 
 /* ---------- Mobile ---------- */
 @media (max-width: 640px) {
-  .app-shell { padding: 0 12px 40px; }
-  .navbar { gap: 10px; }
-  .navbar .brand h1 { font-size: 0.95rem; }
-  .navbar nav a { padding: 6px 9px; font-size: 0.8rem; }
+  .shell-main { padding: 14px 12px 40px; }
   .card { padding: 14px; }
   table.data-table { font-size: 0.8rem; }
   .bell-dropdown { width: 280px; right: -60px; }

@@ -1,7 +1,6 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import TabNav from "@/app/components/TabNav";
 import Collapsible from "@/app/components/Collapsible";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
@@ -20,7 +19,7 @@ function JoTable({
   const colCount = showFinish ? 13 : 12;
   return (
     <div style={{ overflowX: "auto" }}>
-      <table className="data-table">
+      <table className="data-table fixed">
         <colgroup>
           <col style={{ width: "7%" }} />
           <col style={{ width: "9%" }} />
@@ -219,7 +218,6 @@ export default function ProductionManagerPage() {
 
   return (
     <>
-      <TabNav active="/production-manager" />
       {message && <div className="warn">{message}</div>}
 
       <Collapsible

@@ -156,10 +156,11 @@ create table if not exists job_orders (
   po_attachment_path text, -- restricted visibility, see above
   po_attachment_filename text, -- original uploaded file name, for display
 
-  serial_no text not null default '', -- filled by Production Manager at acknowledge
+  serial_numbers text[] not null default '{}', -- one entry per unit (qty), filled by Production Manager
   finish_estimation date, -- filled by Production Manager at acknowledge
   finish_date timestamptz, -- auto-set when production clicks Finish
 
+  current_station_name text, -- last station scanned on the Production floor page (display-only, not part of the status state machine)
   ready_for_production boolean not null default false, -- ticked by Production Manager once BOM/material is confirmed ready
 
   costing_done boolean not null default false, -- ticked by Sales Support Supervisor once costing is finished (external system); irreversible in the UI
@@ -205,13 +206,15 @@ create table if not exists job_order_bom (
   created_at timestamptz not null default now()
 );
 
--- Production floor scan log - drives step tracking. scanned_by references
--- a real production_accounts login (these ARE real accounts).
+-- Production floor scan log - drives step tracking. Production login is
+-- bypassed for now (scanned_by_label carries a plain text label instead);
+-- scanned_by stays for when real per-account login is wired in later.
 create table if not exists production_logs (
   id uuid primary key default gen_random_uuid(),
   job_order_id uuid not null references job_orders(id) on delete cascade,
   station_id uuid not null references station_codes(id),
-  scanned_by uuid not null references production_accounts(id),
+  scanned_by uuid references production_accounts(id), -- null while Production login is bypassed (see CLAUDE.md)
+  scanned_by_label text, -- e.g. "Production" - used in place of a real account while login is bypassed
   results jsonb not null default '[]'::jsonb, -- [{parameter, actual}] - one scan covers every parameter configured for that station
   scanned_at timestamptz not null default now()
 );

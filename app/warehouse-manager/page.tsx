@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import TabNav from "@/app/components/TabNav";
 import Collapsible from "@/app/components/Collapsible";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
@@ -145,7 +144,6 @@ export default function WarehouseManagerPage() {
 
   return (
     <>
-      <TabNav active="/warehouse-manager" />
 
       <Collapsible
         title="Material To Be Prepared"

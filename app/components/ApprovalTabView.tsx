@@ -5,7 +5,7 @@ import { JobOrder, joMatchesSearch } from "@/lib/jobOrders";
 import JoListTable from "@/app/components/JoListTable";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
-import Collapsible from "@/app/components/Collapsible";
+import ToggleSwitch from "@/app/components/ToggleSwitch";
 
 export default function ApprovalTabView({ tab, layer, label }: { tab: string; layer: 1 | 2 | 3; label: string }) {
   const [allJobOrders, setAllJobOrders] = useState<JobOrder[] | null>(null);
@@ -55,7 +55,7 @@ export default function ApprovalTabView({ tab, layer, label }: { tab: string; la
   if (!allJobOrders) return <p className="subtle">Loading...</p>;
 
   const pending = allJobOrders.filter((j) => j.status === "pending_approval" && j.current_approval_layer === layer);
-  const passedThisLayer = allJobOrders.filter((j) => {
+  const approvedHere = allJobOrders.filter((j) => {
     if (j.status === "rejected" || j.status === "cancelled" || j.status === "draft") return false;
     if (j.status === "pending_approval") return (j.current_approval_layer ?? 0) > layer;
     return true;
@@ -63,44 +63,65 @@ export default function ApprovalTabView({ tab, layer, label }: { tab: string; la
   const rejected = allJobOrders.filter((j) => j.status === "rejected");
   const expandedJo = expanded ? pending.find((j) => j.id === expanded) : null;
 
-  return <ApprovalTabViewInner {...{ pending, passedThisLayer, rejected, expandedJo, message, comment, setComment, acting, toggleExpand, act, viewFile, expanded, label }} />;
+  return (
+    <ApprovalTabViewInner
+      {...{ pending, approvedHere, rejected, expandedJo, message, comment, setComment, acting, toggleExpand, act, viewFile, expanded, label }}
+    />
+  );
 }
 
 function ApprovalTabViewInner({
-  pending, passedThisLayer, rejected, expandedJo, message, comment, setComment, acting, toggleExpand, act, viewFile, expanded, label,
+  pending, approvedHere, rejected, expandedJo, message, comment, setComment, acting, toggleExpand, act, viewFile, expanded, label,
 }: {
-  pending: JobOrder[]; passedThisLayer: JobOrder[]; rejected: JobOrder[]; expandedJo: JobOrder | null | undefined;
+  pending: JobOrder[]; approvedHere: JobOrder[]; rejected: JobOrder[]; expandedJo: JobOrder | null | undefined;
   message: string | null; comment: string; setComment: (v: string) => void; acting: boolean;
   toggleExpand: (id: string) => void; act: (id: string, action: "approve" | "reject") => void;
   viewFile: (id: string, type: "drawing" | "po") => void; expanded: string | null; label: string;
 }) {
-  const pendingPaged = usePagedSearch(pending, joMatchesSearch);
-  const passedPaged = usePagedSearch(passedThisLayer, joMatchesSearch);
-  const rejectedPaged = usePagedSearch(rejected, joMatchesSearch);
+  const [showActionRequired, setShowActionRequired] = useState(true);
+  const [showApproved, setShowApproved] = useState(false);
+  const [showRejected, setShowRejected] = useState(false);
+
+  // One combined list instead of 3 separate tables - which buckets feed it
+  // is controlled by the 3 toggles above, default to just Action Required.
+  const combined = [
+    ...(showActionRequired ? pending : []),
+    ...(showApproved ? approvedHere : []),
+    ...(showRejected ? rejected : []),
+  ];
+  const combinedPaged = usePagedSearch(combined, joMatchesSearch);
 
   return (
     <>
-      <Collapsible
-        title={`${label} — Pending Approval`}
-        count={pending.length}
-        actions={pending.length > 0 && <span className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em" }}>Action Required</span>}
-      >
+      <div className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
+          <h2 style={{ margin: 0 }}>Job Order Request ({combined.length})</h2>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+            <ToggleSwitch checked={showActionRequired} onChange={setShowActionRequired} label={`Action Required (${pending.length})`} />
+            <ToggleSwitch checked={showApproved} onChange={setShowApproved} label={`Approved (${approvedHere.length})`} />
+            <ToggleSwitch checked={showRejected} onChange={setShowRejected} label={`Rejected (${rejected.length})`} />
+          </div>
+        </div>
+
         {message && <div className="warn">{message}</div>}
-        {pending.length === 0 ? (
-          <p className="subtle">Nothing waiting on you right now.</p>
+
+        {combined.length === 0 ? (
+          <p className="subtle">Nothing to show for the selected filters.</p>
         ) : (
           <>
-            <SearchBox value={pendingPaged.search} onChange={pendingPaged.setSearch} />
+            <SearchBox value={combinedPaged.search} onChange={combinedPaged.setSearch} />
             <JoListTable
-              items={pendingPaged.pageItems}
+              items={combinedPaged.pageItems}
               onView={viewFile}
               renderActions={(jo) => (
-                <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 10px" }} onClick={() => toggleExpand(jo.id)}>
-                  {expanded === jo.id ? "Cancel" : "Approve / Reject"}
-                </button>
+                pending.some((p) => p.id === jo.id) ? (
+                  <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 10px" }} onClick={() => toggleExpand(jo.id)}>
+                    {expanded === jo.id ? "Cancel" : "Approve / Reject"}
+                  </button>
+                ) : null
               )}
             />
-            <Pager page={pendingPaged.page} totalPages={pendingPaged.totalPages} totalCount={pendingPaged.totalCount} onChange={pendingPaged.setPage} />
+            <Pager page={combinedPaged.page} totalPages={combinedPaged.totalPages} totalCount={combinedPaged.totalCount} onChange={combinedPaged.setPage} />
           </>
         )}
 
@@ -125,27 +146,7 @@ function ApprovalTabViewInner({
             </div>
           </div>
         )}
-      </Collapsible>
-
-      <Collapsible title={`Approved by ${label}`} count={passedThisLayer.length}>
-        {passedThisLayer.length === 0 ? <p className="subtle">None yet.</p> : (
-          <>
-            <SearchBox value={passedPaged.search} onChange={passedPaged.setSearch} />
-            <JoListTable items={passedPaged.pageItems} onView={viewFile} />
-            <Pager page={passedPaged.page} totalPages={passedPaged.totalPages} totalCount={passedPaged.totalCount} onChange={passedPaged.setPage} />
-          </>
-        )}
-      </Collapsible>
-
-      <Collapsible title="Rejected" count={rejected.length}>
-        {rejected.length === 0 ? <p className="subtle">None.</p> : (
-          <>
-            <SearchBox value={rejectedPaged.search} onChange={rejectedPaged.setSearch} />
-            <JoListTable items={rejectedPaged.pageItems} onView={viewFile} />
-            <Pager page={rejectedPaged.page} totalPages={rejectedPaged.totalPages} totalCount={rejectedPaged.totalCount} onChange={rejectedPaged.setPage} />
-          </>
-        )}
-      </Collapsible>
+      </div>
     </>
   );
 }

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import QRCode from "qrcode";
-import TabNav from "@/app/components/TabNav";
 import DateField from "@/app/components/DateField";
 import QrImage from "@/app/components/QrImage";
 import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, fmtDate, fmtDateTime } from "@/lib/jobOrders";
@@ -84,7 +83,7 @@ export default function ProductionJobOrderDetailPage() {
       (log.results.length > 0 ? log.results : [{ parameter: "-", actual: "-" }]).map((r) => `
         <tr>
           <td>${esc(fmtDateTime(log.scanned_at))}</td><td>${esc(log.station?.station_name ?? "-")}</td>
-          <td>${esc(r.parameter)}</td><td>${esc(r.actual || "-")}</td><td>${esc(log.account?.full_name ?? "-")}</td>
+          <td>${esc(r.parameter)}</td><td>${esc(r.actual || "-")}</td><td>${esc(log.account?.full_name ?? log.scanned_by_label ?? "-")}</td>
         </tr>`)
     ).join("");
 
@@ -264,14 +263,13 @@ export default function ProductionJobOrderDetailPage() {
   }
 
   if (!jobOrder) {
-    return (<><TabNav active="/production-manager" /><p className="subtle">Loading...</p></>);
+    return <p className="subtle">Loading...</p>;
   }
 
   const minFinishDate = jobOrder.jo_date ? jobOrder.jo_date.slice(0, 10) : jobOrder.created_at.slice(0, 10);
 
   return (
     <>
-      <TabNav active="/production-manager" />
       <p style={{ marginBottom: 10 }}>
         <a
           href="/production-manager"
@@ -370,7 +368,7 @@ export default function ProductionJobOrderDetailPage() {
 
         {bom.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No items yet.</p> : (
           <div style={{ overflowX: "auto", marginTop: 10 }}>
-            <table className="data-table">
+            <table className="data-table fixed">
               <colgroup>
                 <col style={{ width: "10%" }} />
                 <col style={{ width: "30%" }} />
@@ -468,7 +466,7 @@ export default function ProductionJobOrderDetailPage() {
                       <td>{log.station?.station_name ?? "-"}</td>
                       <td>{r.parameter}</td>
                       <td>{r.actual || "-"}</td>
-                      <td>{log.account?.full_name ?? "-"}</td>
+                      <td>{log.account?.full_name ?? log.scanned_by_label ?? "-"}</td>
                     </tr>
                   ))
                 )}

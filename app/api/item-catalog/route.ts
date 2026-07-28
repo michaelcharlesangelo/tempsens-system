@@ -17,6 +17,24 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ items: data });
 }
 
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const itemNo = typeof body.itemNo === "string" ? body.itemNo.trim() : "";
+  const description = typeof body.description === "string" ? body.description.trim() : "";
+  const unit = typeof body.unit === "string" && body.unit.trim() ? body.unit.trim() : "pcs";
+  const kind = body.kind === "finished" ? "finished" : "material";
+  if (!itemNo) return NextResponse.json({ error: "Item code is required." }, { status: 400 });
+
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("item_catalog")
+    .insert({ item_no: itemNo, description, unit, kind })
+    .select()
+    .single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ item: data });
+}
+
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const itemNo = typeof body.itemNo === "string" ? body.itemNo.trim() : "";

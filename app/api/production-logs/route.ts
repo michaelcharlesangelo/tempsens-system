@@ -10,21 +10,22 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const jobOrderId = typeof body.jobOrderId === "string" ? body.jobOrderId : "";
   const stationId = typeof body.stationId === "string" ? body.stationId : "";
-  const scannedBy = typeof body.scannedBy === "string" ? body.scannedBy : "";
   const results = Array.isArray(body.results)
     ? (body.results as ResultInput[])
         .map((r) => ({ parameter: String(r.parameter ?? ""), actual: String(r.actual ?? "").trim() }))
         .filter((r) => r.parameter)
     : [];
 
-  if (!jobOrderId || !stationId || !scannedBy) {
-    return NextResponse.json({ error: "Job order, station, and scanned-by account are required." }, { status: 400 });
+  if (!jobOrderId || !stationId) {
+    return NextResponse.json({ error: "Job order and station are required." }, { status: 400 });
   }
 
+  // Production login is bypassed for now (see CLAUDE.md) - every scan is
+  // attributed to the "Production" label rather than a real account.
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
     .from("production_logs")
-    .insert({ job_order_id: jobOrderId, station_id: stationId, scanned_by: scannedBy, results })
+    .insert({ job_order_id: jobOrderId, station_id: stationId, scanned_by_label: "Production", results })
     .select("*, station:station_codes(station_name), account:production_accounts(full_name)")
     .single();
 

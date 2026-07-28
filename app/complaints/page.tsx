@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import TabNav from "@/app/components/TabNav";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import { Complaint, JobOrder, SalesPerson, complaintMatchesSearch, fmtDate } from "@/lib/jobOrders";
@@ -110,7 +109,7 @@ function ComplaintTable({
             <>
               <SearchBox value={search} onChange={setSearch} />
               <div style={{ overflowX: "auto" }}>
-                <table className="data-table">
+                <table className="data-table fixed">
                   <colgroup>
                     <col style={{ width: "8%" }} /><col style={{ width: "12%" }} /><col style={{ width: "8%" }} />
                     <col style={{ width: "14%" }} /><col style={{ width: "5%" }} /><col style={{ width: "18%" }} />
@@ -138,7 +137,7 @@ function ComplaintTable({
             <>
               <SearchBox value={historyPaged.search} onChange={historyPaged.setSearch} />
               <div style={{ overflowX: "auto" }}>
-                <table className="data-table">
+                <table className="data-table fixed">
                   <colgroup>
                     <col style={{ width: "9%" }} /><col style={{ width: "13%" }} /><col style={{ width: "9%" }} />
                     <col style={{ width: "15%" }} /><col style={{ width: "6%" }} /><col style={{ width: "20%" }} />
@@ -304,7 +303,6 @@ export default function ComplaintsPage() {
 
   return (
     <>
-      <TabNav active="/complaints" />
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
