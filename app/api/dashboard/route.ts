@@ -13,7 +13,7 @@ export async function GET() {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: activeRaw, error: activeErr } = await admin
     .from("job_orders")
-    .select("id, jo_number, jo_date, customer_name, so_no, item_category, item_description, quantity, item_no, sales_person_name, deadline, urgent, serial_no, finish_estimation, finish_date, status, current_approval_layer, created_at")
+    .select("id, jo_number, jo_date, customer_name, so_no, item_category, item_description, quantity, item_no, sales_person_name, deadline, urgent, serial_numbers, finish_estimation, finish_date, status, current_station_name, current_approval_layer, created_at")
     .not("status", "in", "(cancelled,rejected)")
     .or(`status.neq.completed,finish_date.gte.${sevenDaysAgo}`)
     .order("created_at", { ascending: false });

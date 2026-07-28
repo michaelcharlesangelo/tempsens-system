@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
+import Collapsible from "@/app/components/Collapsible";
 import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
 // Shared between Sales Support (finish-costing-only) and Sales Support
@@ -98,8 +99,7 @@ export default function CostingTables({ tab, includeToBeCosting = true }: { tab:
       {message && <div className="warn">{message}</div>}
 
       {includeToBeCosting && (
-        <div className="card">
-          <h2>Job Orders To Be Costing ({toBeCosting.length})</h2>
+        <Collapsible title="Job Orders To Be Costing" count={toBeCosting.length}>
           <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
             Ready items from production, waiting on costing in the separate costing system.
           </p>
@@ -134,11 +134,10 @@ export default function CostingTables({ tab, includeToBeCosting = true }: { tab:
               <Pager page={toBeCostingPaged.page} totalPages={toBeCostingPaged.totalPages} totalCount={toBeCostingPaged.totalCount} onChange={toBeCostingPaged.setPage} />
             </>
           )}
-        </div>
+        </Collapsible>
       )}
 
-      <div className="card">
-        <h2>Job Order Finish Costing ({finishedCosting.length})</h2>
+      <Collapsible title="Job Order Finish Costing" count={finishedCosting.length}>
         {!completed ? <p className="subtle">Loading...</p> : finishedCosting.length === 0 ? <p className="subtle">None yet.</p> : (
           <>
             <SearchBox value={finishedCostingPaged.search} onChange={finishedCostingPaged.setSearch} />
@@ -167,7 +166,7 @@ export default function CostingTables({ tab, includeToBeCosting = true }: { tab:
             <Pager page={finishedCostingPaged.page} totalPages={finishedCostingPaged.totalPages} totalCount={finishedCostingPaged.totalCount} onChange={finishedCostingPaged.setPage} />
           </>
         )}
-      </div>
+      </Collapsible>
     </>
   );
 }

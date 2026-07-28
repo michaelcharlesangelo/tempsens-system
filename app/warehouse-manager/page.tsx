@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import TabNav from "@/app/components/TabNav";
+import Collapsible from "@/app/components/Collapsible";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import { fmtDate } from "@/lib/jobOrders";
@@ -146,12 +147,11 @@ export default function WarehouseManagerPage() {
     <>
       <TabNav active="/warehouse-manager" />
 
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <h2 style={{ margin: 0 }}>Material To Be Prepared ({toPrepareAll.reduce((n, b) => n + b.items.length, 0)})</h2>
-          <button className="btn secondary" onClick={() => setShowRecap((s) => !s)}>{showRecap ? "Hide recap" : "Recap"}</button>
-        </div>
-
+      <Collapsible
+        title="Material To Be Prepared"
+        count={toPrepareAll.reduce((n, b) => n + b.items.length, 0)}
+        actions={<button className="btn secondary" onClick={() => setShowRecap((s) => !s)}>{showRecap ? "Hide recap" : "Recap"}</button>}
+      >
         {showRecap && (
           <table className="data-table" style={{ marginBottom: 14, background: "var(--panel-muted)" }}>
             <thead><tr><th>Item Code</th><th>SO Number</th><th>Description</th><th>Total Needed</th></tr></thead>
@@ -220,10 +220,9 @@ export default function WarehouseManagerPage() {
         {items && toPrepareAll.length > 0 && (
           <Pager page={toPreparePaged.page} totalPages={toPreparePaged.totalPages} totalCount={toPreparePaged.totalCount} onChange={toPreparePaged.setPage} />
         )}
-      </div>
+      </Collapsible>
 
-      <div className="card">
-        <h2>Not Available — Needs Purchase ({notAvailable?.length ?? "..."})</h2>
+      <Collapsible title="Not Available — Needs Purchase" count={notAvailable?.length}>
         {!notAvailable ? <p className="subtle">Loading...</p> : notAvailable.length === 0 ? <p className="subtle">Nothing flagged right now.</p> : (
           <>
           <SearchBox value={notAvailablePaged.search} onChange={notAvailablePaged.setSearch} />
@@ -252,10 +251,9 @@ export default function WarehouseManagerPage() {
           <Pager page={notAvailablePaged.page} totalPages={notAvailablePaged.totalPages} totalCount={notAvailablePaged.totalCount} onChange={notAvailablePaged.setPage} />
           </>
         )}
-      </div>
+      </Collapsible>
 
-      <div className="card">
-        <h2>Prepared ({preparedAll.reduce((n, b) => n + b.items.length, 0)})</h2>
+      <Collapsible title="Prepared" count={preparedAll.reduce((n, b) => n + b.items.length, 0)}>
         {!items ? <p className="subtle">Loading...</p> : preparedAll.length === 0 ? <p className="subtle">Nothing prepared yet.</p> : (
           <SearchBox value={preparedPaged.search} onChange={preparedPaged.setSearch} />
         )}
@@ -295,7 +293,7 @@ export default function WarehouseManagerPage() {
         {items && preparedAll.length > 0 && (
           <Pager page={preparedPaged.page} totalPages={preparedPaged.totalPages} totalCount={preparedPaged.totalCount} onChange={preparedPaged.setPage} />
         )}
-      </div>
+      </Collapsible>
     </>
   );
 }

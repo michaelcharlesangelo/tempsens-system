@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import TabNav from "@/app/components/TabNav";
+import Collapsible from "@/app/components/Collapsible";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
@@ -221,28 +222,27 @@ export default function ProductionManagerPage() {
       <TabNav active="/production-manager" />
       {message && <div className="warn">{message}</div>}
 
-      <div className="card">
-        <h2>Not Yet Acknowledged ({notAcknowledged.length})</h2>
-        {notAcknowledged.length > 0 && <p className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em", marginTop: -6 }}>Action Required</p>}
+      <Collapsible
+        title="Not Yet Acknowledged"
+        count={notAcknowledged.length}
+        actions={notAcknowledged.length > 0 && <span className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em" }}>Action Required</span>}
+      >
         {notAcknowledged.length === 0 ? <p className="subtle">Nothing waiting.</p> : <PagedJoSection items={notAcknowledged} mode="not_acknowledged" {...sharedProps} />}
-      </div>
+      </Collapsible>
 
-      <div className="card">
-        <h2>Acknowledged ({acknowledged.length})</h2>
+      <Collapsible title="Acknowledged" count={acknowledged.length}>
         {acknowledged.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={acknowledged} mode="open" {...sharedProps} />}
-      </div>
+      </Collapsible>
 
-      <div className="card">
-        <h2>Ready for Production ({readyForProduction.length})</h2>
+      <Collapsible title="Ready for Production" count={readyForProduction.length}>
         {readyForProduction.length === 0 ? <p className="subtle">None yet.</p> : (
           <PagedJoSection items={readyForProduction} mode="open" {...sharedProps} finishing={finishing} onFinish={finishProduction} />
         )}
-      </div>
+      </Collapsible>
 
-      <div className="card">
-        <h2>Finished Production ({finishedProduction.length})</h2>
+      <Collapsible title="Finished Production" count={finishedProduction.length}>
         {finishedProduction.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={finishedProduction} mode="open" {...sharedProps} />}
-      </div>
+      </Collapsible>
     </>
   );
 }

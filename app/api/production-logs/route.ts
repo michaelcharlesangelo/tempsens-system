@@ -29,5 +29,14 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Drives the Dashboard's "Under Production - <Station> Station" label -
+  // last station scanned, not a workflow state, so it doesn't touch
+  // job_orders.status (which the approval/production state machine owns).
+  const stationName = (data as { station?: { station_name?: string } }).station?.station_name;
+  if (stationName) {
+    await admin.from("job_orders").update({ current_station_name: stationName }).eq("id", jobOrderId);
+  }
+
   return NextResponse.json({ log: data });
 }

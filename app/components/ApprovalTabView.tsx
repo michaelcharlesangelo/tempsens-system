@@ -5,6 +5,7 @@ import { JobOrder, joMatchesSearch } from "@/lib/jobOrders";
 import JoListTable from "@/app/components/JoListTable";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
+import Collapsible from "@/app/components/Collapsible";
 
 export default function ApprovalTabView({ tab, layer, label }: { tab: string; layer: 1 | 2 | 3; label: string }) {
   const [allJobOrders, setAllJobOrders] = useState<JobOrder[] | null>(null);
@@ -79,9 +80,11 @@ function ApprovalTabViewInner({
 
   return (
     <>
-      <div className="card">
-        <h2>{label} — Pending Approval ({pending.length})</h2>
-        {pending.length > 0 && <p className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em", marginTop: -6 }}>Action Required</p>}
+      <Collapsible
+        title={`${label} — Pending Approval`}
+        count={pending.length}
+        actions={pending.length > 0 && <span className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em" }}>Action Required</span>}
+      >
         {message && <div className="warn">{message}</div>}
         {pending.length === 0 ? (
           <p className="subtle">Nothing waiting on you right now.</p>
@@ -122,10 +125,9 @@ function ApprovalTabViewInner({
             </div>
           </div>
         )}
-      </div>
+      </Collapsible>
 
-      <div className="card">
-        <h2>Approved by {label}</h2>
+      <Collapsible title={`Approved by ${label}`} count={passedThisLayer.length}>
         {passedThisLayer.length === 0 ? <p className="subtle">None yet.</p> : (
           <>
             <SearchBox value={passedPaged.search} onChange={passedPaged.setSearch} />
@@ -133,10 +135,9 @@ function ApprovalTabViewInner({
             <Pager page={passedPaged.page} totalPages={passedPaged.totalPages} totalCount={passedPaged.totalCount} onChange={passedPaged.setPage} />
           </>
         )}
-      </div>
+      </Collapsible>
 
-      <div className="card">
-        <h2>Rejected</h2>
+      <Collapsible title="Rejected" count={rejected.length}>
         {rejected.length === 0 ? <p className="subtle">None.</p> : (
           <>
             <SearchBox value={rejectedPaged.search} onChange={rejectedPaged.setSearch} />
@@ -144,7 +145,7 @@ function ApprovalTabViewInner({
             <Pager page={rejectedPaged.page} totalPages={rejectedPaged.totalPages} totalCount={rejectedPaged.totalCount} onChange={rejectedPaged.setPage} />
           </>
         )}
-      </div>
+      </Collapsible>
     </>
   );
 }

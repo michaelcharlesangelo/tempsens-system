@@ -47,12 +47,15 @@ export interface JobOrder {
   urgent: boolean;
   po_attachment_path?: string | null; // omitted by the API for unauthorized tabs
   po_attachment_filename?: string | null;
-  serial_no: string;
+  // One entry per unit produced - a JO's quantity can be >1, so this is
+  // an array (Postgres text[]) rather than a single serial_no field.
+  serial_numbers: string[];
   finish_estimation: string | null;
   finish_date: string | null;
   ready_for_production: boolean;
   costing_done: boolean;
   barcode: string | null;
+  current_station_name: string | null;
   status: JobOrderStatus;
   current_approval_layer: 1 | 2 | 3 | null;
   created_at: string;
@@ -248,11 +251,13 @@ export function complaintMatchesSearch(c: Complaint, term: string): boolean {
 
 // Simplified 3-bucket status label for the Dashboard, per Michael's spec:
 // not yet fully approved / approved / actually being built.
-export function dashboardStatusLabel(status: JobOrderStatus): string {
+export function dashboardStatusLabel(status: JobOrderStatus, currentStation?: string | null): string {
   if (status === "draft" || status === "pending_approval") return "Draft";
   if (status === "approved") return "Approved";
   if (status === "acknowledged") return "Preparing Item";
-  if (status === "in_progress" || status === "qc") return "Under Production";
+  if (status === "in_progress" || status === "qc") {
+    return currentStation ? `Under Production - ${currentStation} Station` : "Under Production";
+  }
   if (status === "completed") return "Finish Production";
   return status;
 }

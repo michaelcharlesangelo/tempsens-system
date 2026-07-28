@@ -8,6 +8,159 @@ import { Complaint, JobOrder, SalesPerson, complaintMatchesSearch, fmtDate } fro
 
 type ComplaintType = "indonesia" | "traded";
 
+// Module-scope (not defined inside ComplaintsPage's render body) so typing
+// in the parent's action-text input doesn't redefine this component and
+// force a remount every keystroke - see CLAUDE.md's "table components at
+// module scope" convention.
+function ComplaintTable({
+  items, title, showFinish, historyItems, historyTitle,
+  viewPhoto, updateStatus, editingActionId, actionText, setEditingActionId, setActionText, saveAction,
+  finishing, finishComplaint,
+}: {
+  items: Complaint[]; title: string; showFinish: boolean;
+  historyItems: Complaint[]; historyTitle: string;
+  viewPhoto: (path: string) => void;
+  updateStatus: (id: string, status: string) => void;
+  editingActionId: string | null; actionText: string;
+  setEditingActionId: (id: string | null) => void; setActionText: (t: string) => void;
+  saveAction: (id: string) => void;
+  finishing: string | null; finishComplaint: (c: Complaint) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch);
+  const historyPaged = usePagedSearch(historyItems, complaintMatchesSearch);
+
+  // A plain function (not a nested component) - called directly inside
+  // .map() below rather than as a JSX tag, so it doesn't introduce a new
+  // component identity that would remount on every parent re-render (e.g.
+  // every keystroke while editing actionText).
+  function renderRow(c: Complaint, editable: boolean) {
+    return (
+      <tr key={c.id}>
+        <td>{fmtDate(c.created_at)}</td>
+        <td>{c.customer_name}</td>
+        <td>{c.so_no}</td>
+        <td>{c.item_description}</td>
+        <td>{c.quantity}</td>
+        <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
+        <td>
+          {c.photo_paths.map((p, i) => (
+            <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+          ))}
+        </td>
+        <td>
+          {editable ? (
+            <select value={c.status} onChange={(e) => updateStatus(c.id, e.target.value)}>
+              <option value="not_done">Not Done</option>
+              <option value="in_progress">In Progress</option>
+              <option value="done">Done</option>
+            </select>
+          ) : (
+            c.status === "done" ? "Done" : c.status === "in_progress" ? "In Progress" : "Not Done"
+          )}
+        </td>
+        <td style={{ minWidth: 180 }}>
+          {editable && editingActionId === c.id ? (
+            <div style={{ display: "flex", gap: 4 }}>
+              <input type="text" value={actionText} onChange={(e) => setActionText(e.target.value)} />
+              <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => saveAction(c.id)}>Save</button>
+            </div>
+          ) : editable ? (
+            <span onClick={() => { setEditingActionId(c.id); setActionText(c.suggested_action); }} style={{ cursor: "pointer" }}>
+              {c.suggested_action || <span className="subtle">Click to add...</span>}
+            </span>
+          ) : (
+            c.suggested_action || <span className="subtle">-</span>
+          )}
+        </td>
+        {showFinish && (
+          <td style={{ textAlign: "center" }}>
+            {editable && c.status === "done" && (
+              <input
+                type="checkbox"
+                checked={false}
+                disabled={finishing === c.id}
+                onChange={() => finishComplaint(c)}
+                style={{ width: 20, height: 20, accentColor: "var(--good)" }}
+                title="Tick once resolved to move this complaint to History"
+              />
+            )}
+          </td>
+        )}
+      </tr>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ margin: 0, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 6 }} onClick={() => setOpen((v) => !v)}>
+          <span style={{ display: "inline-block", fontSize: "0.75em", transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+          {title} ({items.length})
+        </h2>
+        <button className="btn secondary" onClick={() => setHistoryOpen((v) => !v)}>
+          {historyOpen ? "Hide History" : `History (${historyItems.length})`}
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          {items.length === 0 ? <p className="subtle">None.</p> : (
+            <>
+              <SearchBox value={search} onChange={setSearch} />
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table">
+                  <colgroup>
+                    <col style={{ width: "8%" }} /><col style={{ width: "12%" }} /><col style={{ width: "8%" }} />
+                    <col style={{ width: "14%" }} /><col style={{ width: "5%" }} /><col style={{ width: "18%" }} />
+                    <col style={{ width: "8%" }} /><col style={{ width: "10%" }} /><col style={{ width: "12%" }} />
+                    {showFinish && <col style={{ width: "5%" }} />}
+                  </colgroup>
+                  <thead>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th>{showFinish && <th>Finish</th>}</tr>
+                  </thead>
+                  <tbody>
+                    {pageItems.map((c) => renderRow(c, true))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+            </>
+          )}
+        </div>
+      )}
+
+      {historyOpen && (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+          <h3 style={{ margin: "0 0 8px" }}>{historyTitle} ({historyItems.length})</h3>
+          {historyItems.length === 0 ? <p className="subtle">None yet.</p> : (
+            <>
+              <SearchBox value={historyPaged.search} onChange={historyPaged.setSearch} />
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table">
+                  <colgroup>
+                    <col style={{ width: "9%" }} /><col style={{ width: "13%" }} /><col style={{ width: "9%" }} />
+                    <col style={{ width: "15%" }} /><col style={{ width: "6%" }} /><col style={{ width: "20%" }} />
+                    <col style={{ width: "9%" }} /><col style={{ width: "10%" }} /><col style={{ width: "9%" }} />
+                  </colgroup>
+                  <thead>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
+                  </thead>
+                  <tbody>
+                    {historyPaged.pageItems.map((c) => renderRow(c, false))}
+                  </tbody>
+                </table>
+              </div>
+              <Pager page={historyPaged.page} totalPages={historyPaged.totalPages} totalCount={historyPaged.totalCount} onChange={historyPaged.setPage} />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ComplaintsPage() {
   const [complaints, setComplaints] = useState<Complaint[] | null>(null);
   const [salesPeople, setSalesPeople] = useState<SalesPerson[]>([]);
@@ -32,7 +185,6 @@ export default function ComplaintsPage() {
   const [editingActionId, setEditingActionId] = useState<string | null>(null);
   const [actionText, setActionText] = useState("");
   const [finishing, setFinishing] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
 
   async function load() {
     const res = await fetch("/api/complaints", { cache: "no-store" });
@@ -129,78 +281,6 @@ export default function ComplaintsPage() {
     }
   }
 
-  function ComplaintTable({ items, title, showFinish = false }: { items: Complaint[]; title: string; showFinish?: boolean }) {
-    const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch);
-    return (
-      <div className="card">
-        <h2>{title} ({items.length})</h2>
-        {items.length === 0 ? <p className="subtle">None.</p> : (
-          <>
-          <SearchBox value={search} onChange={setSearch} />
-          <div style={{ overflowX: "auto" }}>
-            <table className="data-table">
-              <thead>
-                <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th>{showFinish && <th>Finish</th>}</tr>
-              </thead>
-              <tbody>
-                {pageItems.map((c) => (
-                  <tr key={c.id}>
-                    <td>{fmtDate(c.created_at)}</td>
-                    <td>{c.customer_name}</td>
-                    <td>{c.so_no}</td>
-                    <td>{c.item_description}</td>
-                    <td>{c.quantity}</td>
-                    <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
-                    <td>
-                      {c.photo_paths.map((p, i) => (
-                        <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
-                      ))}
-                    </td>
-                    <td>
-                      <select value={c.status} onChange={(e) => updateStatus(c.id, e.target.value)}>
-                        <option value="not_done">Not Done</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="done">Done</option>
-                      </select>
-                    </td>
-                    <td style={{ minWidth: 180 }}>
-                      {editingActionId === c.id ? (
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <input type="text" value={actionText} onChange={(e) => setActionText(e.target.value)} />
-                          <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => saveAction(c.id)}>Save</button>
-                        </div>
-                      ) : (
-                        <span onClick={() => { setEditingActionId(c.id); setActionText(c.suggested_action); }} style={{ cursor: "pointer" }}>
-                          {c.suggested_action || <span className="subtle">Click to add...</span>}
-                        </span>
-                      )}
-                    </td>
-                    {showFinish && (
-                      <td style={{ textAlign: "center" }}>
-                        {c.status === "done" && (
-                          <input
-                            type="checkbox"
-                            checked={false}
-                            disabled={finishing === c.id}
-                            onChange={() => finishComplaint(c)}
-                            style={{ width: 20, height: 20, accentColor: "var(--good)" }}
-                            title="Tick once resolved to move this complaint to History"
-                          />
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
-          </>
-        )}
-      </div>
-    );
-  }
-
   // Done complaints drop off the main table 7 days after resolution even
   // without a manual Finish tick, matching the Dashboard's auto-archive.
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -218,22 +298,13 @@ export default function ComplaintsPage() {
 
   const canSubmit = complaintType && customerName.trim() && !saving;
 
+  const tableProps = {
+    viewPhoto, updateStatus, editingActionId, actionText, setEditingActionId, setActionText, saveAction, finishing, finishComplaint,
+  };
+
   return (
     <>
       <TabNav active="/complaints" />
-
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-        <button className="btn secondary" onClick={() => setHistoryOpen((v) => !v)}>
-          {historyOpen ? "Hide History" : `History (${history.length})`}
-        </button>
-      </div>
-
-      {historyOpen && (
-        <>
-          <ComplaintTable items={historyIndonesia} title="History — Tempsens Indonesia" />
-          <ComplaintTable items={historyTraded} title="History — Traded Item" />
-        </>
-      )}
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -339,8 +410,16 @@ export default function ComplaintsPage() {
 
       {!complaints ? <p className="subtle">Loading...</p> : (
         <>
-          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" showFinish />
-          <ComplaintTable items={traded} title="Complaints — Traded Item" showFinish />
+          <ComplaintTable
+            items={indonesia} title="Complaints — Tempsens Indonesia" showFinish
+            historyItems={historyIndonesia} historyTitle="History — Tempsens Indonesia"
+            {...tableProps}
+          />
+          <ComplaintTable
+            items={traded} title="Complaints — Traded Item" showFinish
+            historyItems={historyTraded} historyTitle="History — Traded Item"
+            {...tableProps}
+          />
         </>
       )}
     </>

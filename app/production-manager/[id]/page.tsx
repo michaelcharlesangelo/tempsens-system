@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import TabNav from "@/app/components/TabNav";
 import DateField from "@/app/components/DateField";
@@ -12,6 +12,7 @@ interface CatalogItem { item_no: string; description: string; unit?: string; }
 
 export default function ProductionJobOrderDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [jobOrder, setJobOrder] = useState<JobOrder | null>(null);
@@ -21,7 +22,9 @@ export default function ProductionJobOrderDetailPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [savedRowId, setSavedRowId] = useState<string | null>(null);
 
-  const [serialNo, setSerialNo] = useState("");
+  // One entry per unit (padded/truncated to match quantity) - a JO with
+  // qty>1 needs a serial number per unit, not a single value.
+  const [serialNumbers, setSerialNumbers] = useState<string[]>([]);
   const [finishDate, setFinishDate] = useState("");
 
   const [newItemNo, setNewItemNo] = useState("");
@@ -45,7 +48,9 @@ export default function ProductionJobOrderDetailPage() {
     setBom([...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
     setHistory(data.history ?? []);
     setProductionLogs(data.productionLogs ?? []);
-    setSerialNo(data.jobOrder?.serial_no || "");
+    const qty = Math.max(1, Number(data.jobOrder?.quantity) || 1);
+    const existing: string[] = data.jobOrder?.serial_numbers ?? [];
+    setSerialNumbers(Array.from({ length: qty }, (_, i) => existing[i] ?? ""));
     setFinishDate(data.jobOrder?.finish_date ? data.jobOrder.finish_date.slice(0, 10) : "");
   }
 
@@ -54,28 +59,36 @@ export default function ProductionJobOrderDetailPage() {
   async function printJobOrder() {
     if (!jobOrder) return;
 
+    // QC parameter names/values routinely contain <, >, & (e.g. "IR > 100MΩ")
+    // - interpolated raw into this HTML string, those characters break the
+    // markup and garble the printed page. React escapes automatically for
+    // the on-screen table; this string template doesn't, so it must be done
+    // by hand for every dynamic value below.
+    const esc = (value: unknown): string =>
+      String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+
     const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(jobOrder.barcode, { width: 110, margin: 1 }) : "";
 
     const bomRows = bom.map((b) => `
       <tr>
-        <td>${b.item_no}</td><td>${b.description}</td><td>${b.qty}</td><td>${b.unit}</td>
-        <td>${b.actual_qty ?? "-"}</td><td>${b.actual_unit ?? "-"}</td><td>${b.comment || "-"}</td>
+        <td>${esc(b.item_no)}</td><td>${esc(b.description)}</td><td>${esc(b.qty)}</td><td>${esc(b.unit)}</td>
+        <td>${esc(b.actual_qty ?? "-")}</td><td>${esc(b.actual_unit ?? "-")}</td><td>${esc(b.comment || "-")}</td>
       </tr>`).join("");
 
     const comments = history.filter((h) => h.comment);
     const commentRows = comments.length
-      ? comments.map((h) => `<div class="comment"><b>${h.changed_by}</b> <span class="muted">(${fmtDateTime(h.changed_at)})</span>: ${h.comment}</div>`).join("")
+      ? comments.map((h) => `<div class="comment"><b>${esc(h.changed_by)}</b> <span class="muted">(${esc(fmtDateTime(h.changed_at))})</span>: ${esc(h.comment)}</div>`).join("")
       : `<div class="muted">None.</div>`;
 
     const qcRows = productionLogs.flatMap((log) =>
       (log.results.length > 0 ? log.results : [{ parameter: "-", actual: "-" }]).map((r) => `
         <tr>
-          <td>${fmtDateTime(log.scanned_at)}</td><td>${log.station?.station_name ?? "-"}</td>
-          <td>${r.parameter}</td><td>${r.actual || "-"}</td><td>${log.account?.full_name ?? "-"}</td>
+          <td>${esc(fmtDateTime(log.scanned_at))}</td><td>${esc(log.station?.station_name ?? "-")}</td>
+          <td>${esc(r.parameter)}</td><td>${esc(r.actual || "-")}</td><td>${esc(log.account?.full_name ?? "-")}</td>
         </tr>`)
     ).join("");
 
-    const title = `Job Order, ${jobOrder.so_no}`;
+    const title = `Job Order, ${esc(jobOrder.so_no)}`;
     const html = `
       <html><head><title>${title}</title>
       <style>
@@ -105,12 +118,12 @@ export default function ProductionJobOrderDetailPage() {
           </div>
         </div>
         <table class="info">
-          <tr><td class="label">Customer Name</td><td>${jobOrder.customer_name}</td><td class="label">Item Code</td><td>${jobOrder.item_no}</td></tr>
-          <tr><td class="label">SO Number</td><td>${jobOrder.so_no}</td><td class="label">JO Date</td><td>${fmtDate(jobOrder.created_at)}</td></tr>
-          <tr><td class="label">Item Description</td><td>${jobOrder.item_description}</td><td class="label">Deadline</td><td>${fmtDate(jobOrder.deadline)}</td></tr>
-          <tr><td class="label">Category</td><td>${jobOrder.item_category}</td><td class="label">Drawing Number</td><td>${jobOrder.drawing_number || "-"}</td></tr>
-          <tr><td class="label">Quantity</td><td>${jobOrder.quantity}</td><td class="label">Sales</td><td>${jobOrder.sales_person_name}</td></tr>
-          <tr><td class="label">Serial Number</td><td>${jobOrder.serial_no || "-"}</td><td class="label">Finish Date</td><td>${fmtDate(jobOrder.finish_date)}</td></tr>
+          <tr><td class="label">Customer Name</td><td>${esc(jobOrder.customer_name)}</td><td class="label">Item Code</td><td>${esc(jobOrder.item_no)}</td></tr>
+          <tr><td class="label">SO Number</td><td>${esc(jobOrder.so_no)}</td><td class="label">JO Date</td><td>${esc(fmtDate(jobOrder.created_at))}</td></tr>
+          <tr><td class="label">Item Description</td><td>${esc(jobOrder.item_description)}</td><td class="label">Deadline</td><td>${esc(fmtDate(jobOrder.deadline))}</td></tr>
+          <tr><td class="label">Category</td><td>${esc(jobOrder.item_category)}</td><td class="label">Drawing Number</td><td>${esc(jobOrder.drawing_number || "-")}</td></tr>
+          <tr><td class="label">Quantity</td><td>${esc(jobOrder.quantity)}</td><td class="label">Sales</td><td>${esc(jobOrder.sales_person_name)}</td></tr>
+          <tr><td class="label">Serial Number(s)</td><td>${esc((jobOrder.serial_numbers ?? []).filter(Boolean).join(", ") || "-")}</td><td class="label">Finish Date</td><td>${esc(fmtDate(jobOrder.finish_date))}</td></tr>
         </table>
 
         <div class="section-title">Comments</div>
@@ -144,7 +157,7 @@ export default function ProductionJobOrderDetailPage() {
   async function saveDetails() {
     const res = await fetch(`/api/job-orders/${id}/details`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ serialNo, finishDate }),
+      body: JSON.stringify({ serialNumbers, finishDate }),
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error || "Failed to save."); return; }
@@ -259,7 +272,23 @@ export default function ProductionJobOrderDetailPage() {
   return (
     <>
       <TabNav active="/production-manager" />
-      <p style={{ marginBottom: 10 }}><a href="/production-manager" className="subtle">← Back to Production Manager</a></p>
+      <p style={{ marginBottom: 10 }}>
+        <a
+          href="/production-manager"
+          className="subtle"
+          onClick={(e) => {
+            // Goes back to whichever tab actually linked here (Sales
+            // Support Supervisor's costing table, Production Manager's own
+            // list, etc.) instead of always landing on Production Manager.
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              e.preventDefault();
+              router.back();
+            }
+          }}
+        >
+          ← Back
+        </a>
+      </p>
       {message && <div className="warn">{message}</div>}
 
       <div className="card">
@@ -305,13 +334,29 @@ export default function ProductionJobOrderDetailPage() {
 
         <div className="form-sheet" style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
           <div className="form-sheet-col">
-            <div className="form-row"><label>Serial Number</label><span>:</span><input type="text" value={serialNo} onChange={(e) => setSerialNo(e.target.value)} /></div>
+            <div className="form-row" style={{ alignItems: serialNumbers.length > 1 ? "flex-start" : "center" }}>
+              <label style={{ paddingTop: serialNumbers.length > 1 ? 6 : 0 }}>Serial Number{serialNumbers.length > 1 ? "s" : ""}</label>
+              <span>:</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {serialNumbers.map((sn, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    {serialNumbers.length > 1 && <span className="subtle" style={{ fontSize: "0.72rem" }}>#{i + 1}</span>}
+                    <input
+                      type="text"
+                      value={sn}
+                      onChange={(e) => setSerialNumbers((cur) => cur.map((v, vi) => (vi === i ? e.target.value : v)))}
+                      style={serialNumbers.length > 1 ? { width: 110 } : undefined}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="form-sheet-col">
-            <div className="form-row"><label>Finish Date</label><span>:</span><DateField value={finishDate} onChange={setFinishDate} min={minFinishDate} /></div>
+            <div className="form-row"><label>Est. Finish Date</label><span>:</span><DateField value={finishDate} onChange={setFinishDate} min={minFinishDate} /></div>
           </div>
         </div>
-        <button className="btn secondary" style={{ marginTop: 10 }} onClick={saveDetails}>Save Serial No. / Finish Date</button>
+        <button className="btn secondary" style={{ marginTop: 10 }} onClick={saveDetails}>Save Serial Number(s) / Est. Finish Date</button>
       </div>
 
       <div className="card">

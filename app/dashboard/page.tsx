@@ -39,11 +39,38 @@ export default function DashboardPage() {
     if (data.url) window.open(data.url, "_blank");
   }
 
-  function ComplaintTable({ items, title }: { items: Complaint[]; title: string }) {
+  function complaintRows(items: Complaint[]) {
+    return items.map((c) => (
+      <tr key={c.id}>
+        <td>{fmtDate(c.created_at)}</td>
+        <td>{c.customer_name}</td>
+        <td>{c.so_no}</td>
+        <td>{c.item_description}</td>
+        <td>{c.quantity}</td>
+        <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
+        <td>
+          {c.photo_paths.map((p, i) => (
+            <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+          ))}
+        </td>
+        <td>{c.status === "not_done" ? "Not Done" : c.status === "in_progress" ? "In Progress" : "Done"}</td>
+        <td style={{ minWidth: 180 }}>{c.suggested_action || <span className="subtle">-</span>}</td>
+      </tr>
+    ));
+  }
+
+  function ComplaintTable({ items, title, historyItems, historyTitle }: { items: Complaint[]; title: string; historyItems: Complaint[]; historyTitle: string }) {
     const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch);
+    const [historyOpen, setHistoryOpen] = useState(false);
+    const historyPaged = usePagedSearch(historyItems, complaintMatchesSearch);
     return (
       <div className="card">
-        <h2>{title} ({items.length})</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <h2 style={{ margin: 0 }}>{title} ({items.length})</h2>
+          <button className="btn secondary" onClick={() => setHistoryOpen((v) => !v)}>
+            {historyOpen ? "Hide History" : `History (${historyItems.length})`}
+          </button>
+        </div>
         {items.length === 0 ? <p className="subtle">None.</p> : (
           <>
           <SearchBox value={search} onChange={setSearch} />
@@ -52,29 +79,30 @@ export default function DashboardPage() {
               <thead>
                 <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
               </thead>
-              <tbody>
-                {pageItems.map((c) => (
-                  <tr key={c.id}>
-                    <td>{fmtDate(c.created_at)}</td>
-                    <td>{c.customer_name}</td>
-                    <td>{c.so_no}</td>
-                    <td>{c.item_description}</td>
-                    <td>{c.quantity}</td>
-                    <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
-                    <td>
-                      {c.photo_paths.map((p, i) => (
-                        <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
-                      ))}
-                    </td>
-                    <td>{c.status === "not_done" ? "Not Done" : c.status === "in_progress" ? "In Progress" : "Done"}</td>
-                    <td style={{ minWidth: 180 }}>{c.suggested_action || <span className="subtle">-</span>}</td>
-                  </tr>
-                ))}
-              </tbody>
+              <tbody>{complaintRows(pageItems)}</tbody>
             </table>
           </div>
           <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
           </>
+        )}
+        {historyOpen && (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+            <h3 style={{ margin: "0 0 8px" }}>{historyTitle} ({historyItems.length})</h3>
+            {historyItems.length === 0 ? <p className="subtle">None yet.</p> : (
+              <>
+              <SearchBox value={historyPaged.search} onChange={historyPaged.setSearch} />
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
+                  </thead>
+                  <tbody>{complaintRows(historyPaged.pageItems)}</tbody>
+                </table>
+              </div>
+              <Pager page={historyPaged.page} totalPages={historyPaged.totalPages} totalCount={historyPaged.totalCount} onChange={historyPaged.setPage} />
+              </>
+            )}
+          </div>
         )}
       </div>
     );
@@ -105,7 +133,7 @@ export default function DashboardPage() {
                   <td>{jo.quantity}</td>
                   <td>{daysSince(jo.jo_date)}</td>
                   <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>
-                  <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status)}</span></td>
+                  <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status, jo.current_station_name)}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -123,8 +151,11 @@ export default function DashboardPage() {
     return c.status === "done" && !!c.resolved_at && Date.now() - new Date(c.resolved_at).getTime() > SEVEN_DAYS_MS;
   }
   const visibleComplaints = (complaints ?? []).filter((c) => !c.archived && !isExpired(c));
+  const historyComplaints = (complaints ?? []).filter((c) => c.archived || isExpired(c));
   const indonesia = visibleComplaints.filter((c) => !c.is_traded);
   const traded = visibleComplaints.filter((c) => c.is_traded);
+  const historyIndonesia = historyComplaints.filter((c) => !c.is_traded);
+  const historyTraded = historyComplaints.filter((c) => c.is_traded);
 
   return (
     <>
@@ -151,8 +182,8 @@ export default function DashboardPage() {
 
       {!complaints ? <p className="subtle">Loading...</p> : (
         <>
-          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" />
-          <ComplaintTable items={traded} title="Complaints — Traded Item" />
+          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" historyItems={historyIndonesia} historyTitle="History — Tempsens Indonesia" />
+          <ComplaintTable items={traded} title="Complaints — Traded Item" historyItems={historyTraded} historyTitle="History — Traded Item" />
         </>
       )}
     </>

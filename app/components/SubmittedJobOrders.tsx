@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import JoListTable from "@/app/components/JoListTable";
+import Collapsible from "@/app/components/Collapsible";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import { JobOrder, joMatchesSearch, salesSupportProgressLabel } from "@/lib/jobOrders";
@@ -65,11 +66,11 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(jobOrders ?? [], joMatchesSearch);
 
   return (
-    <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <h2 style={{ margin: 0 }}>Job Orders I've Submitted</h2>
-        <a href={`/jo-input?by=${encodeURIComponent(by)}`} className="btn">+ New Job Order</a>
-      </div>
+    <Collapsible
+      title="Job Orders I've Submitted"
+      count={jobOrders?.length}
+      actions={<a href={`/jo-input?by=${encodeURIComponent(by)}`} className="btn">+ New Job Order</a>}
+    >
       {message && <div className="warn">{message}</div>}
       {!jobOrders ? <p className="subtle">Loading...</p> : jobOrders.length === 0 ? <p className="subtle">None yet.</p> : (
         <>
@@ -93,6 +94,6 @@ export default function SubmittedJobOrders({ tab, by }: { tab: string; by: strin
           <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
         </>
       )}
-    </div>
+    </Collapsible>
   );
 }

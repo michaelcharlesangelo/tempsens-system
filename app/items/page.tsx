@@ -46,23 +46,28 @@ export default function ItemsPage() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Description</th><th></th>
+                    <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Serial Number(s)</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((jo) => (
+                  {rows.map((jo) => {
+                    const serials = (jo.serial_numbers ?? []).filter(Boolean);
+                    return (
                     <tr key={jo.id}>
                       <td>{fmtDate(jo.jo_date)}</td>
                       <td>{jo.so_no}</td>
                       <td>{jo.item_no}</td>
                       <td>{jo.item_description}</td>
+                      <td>{jo.quantity}</td>
+                      <td>{serials.length > 0 ? serials.join(", ") : <span className="subtle">-</span>}</td>
                       <td style={{ whiteSpace: "nowrap" }}>
                         <Link className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} href={`/production-manager/${jo.id}`}>
                           View JO
                         </Link>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

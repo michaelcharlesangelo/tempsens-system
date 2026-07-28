@@ -61,11 +61,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (jobOrder.status !== "approved") {
       return NextResponse.json({ error: `Can't acknowledge a job order that's "${jobOrder.status}".` }, { status: 400 });
     }
-    const serialNo = typeof body.serialNo === "string" ? body.serialNo.trim() : "";
     const finishEstimation = typeof body.finishEstimation === "string" && body.finishEstimation ? body.finishEstimation : null;
     newStatus = "acknowledged";
     updates.status = newStatus;
-    updates.serial_no = serialNo;
     updates.finish_estimation = finishEstimation;
     updates.acknowledged_at = new Date().toISOString();
   } else if (action === "send_to_qc") {
