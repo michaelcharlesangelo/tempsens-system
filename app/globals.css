@@ -232,6 +232,9 @@ table.data-table a { color: var(--accent-dark); text-decoration: none; font-weig
   flex: 1;
   text-align: center;
 }
+.pill-toggle button + button, .pill-toggle a + a, .pill-toggle button + a, .pill-toggle a + button {
+  border-left: 1px solid var(--border);
+}
 .pill-toggle button.active, .pill-toggle a.active {
   background: var(--accent);
   color: white;

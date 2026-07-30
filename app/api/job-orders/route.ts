@@ -48,8 +48,12 @@ export async function GET(req: NextRequest) {
       byJo.set(row.job_order_id, list);
     }
     for (const id of jobOrderIds) {
-      const rows = (byJo.get(id) ?? []).filter((r) => r.material_ready);
-      materialPreparedMap.set(id, rows.length > 0 && rows.every((r) => r.material_prepared));
+      // A Not Available row (material_ready: false) must count against
+      // "everything's ready" too, not be silently excluded - otherwise
+      // adding a new N/A item to an already-ready JO left the stage pill
+      // stuck on "Material Ready" instead of reverting to "Preparing".
+      const rows = byJo.get(id) ?? [];
+      materialPreparedMap.set(id, rows.length > 0 && rows.every((r) => r.material_ready && r.material_prepared));
     }
   }
 
@@ -71,6 +75,7 @@ export async function POST(req: NextRequest) {
   const itemNo = (formData.get("itemNo") as string || "").trim().toUpperCase();
   const salesPersonName = (formData.get("salesPersonName") as string || "").trim();
   const salesSupportName = (formData.get("salesSupportName") as string || "").trim();
+  const salesSupportAccountId = (formData.get("salesSupportAccountId") as string || "").trim() || null;
   const deadlineRaw = formData.get("deadline") as string | null;
   const deadline = deadlineRaw && deadlineRaw.length > 0 ? deadlineRaw : null;
   const urgent = formData.get("urgent") === "true";
@@ -105,6 +110,7 @@ export async function POST(req: NextRequest) {
       item_no: itemNo,
       sales_person_name: salesPersonName,
       sales_support_name: salesSupportName,
+      sales_support_account_id: salesSupportAccountId,
       deadline,
       urgent,
       drawing_number: drawingNumber,

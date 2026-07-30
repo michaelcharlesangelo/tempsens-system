@@ -47,7 +47,7 @@ function JoTable({
           <tr>
             <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Sales</th><th>Customer</th>
             <th>Item Description</th><th>Qty</th><th>Deadline</th><th>Drawing</th><th>Status</th><th>Comments</th>
-            <th></th>
+            <th>JO</th>
           </tr>
         </thead>
         <tbody>

@@ -96,7 +96,7 @@ export default function ProductionJobOrderDetailPage() {
 
     const title = `Job Order, ${esc(jobOrder.so_no)}`;
     const html = `
-      <html><head><title>${title}</title>
+      <html><head><meta charset="utf-8"><title>${title}</title>
       <style>
         @page { size: A4 portrait; margin: 14mm; }
         body { font-family: Arial, sans-serif; font-size: 11px; color: #111; line-height: 1.45; }
@@ -146,7 +146,7 @@ export default function ProductionJobOrderDetailPage() {
           <tbody>${bomRows || `<tr><td colspan="7">No items yet.</td></tr>`}</tbody>
         </table>
 
-        <div class="section-title">QC — Parameter</div>
+        <div class="section-title">QC Parameter</div>
         <table class="qc">
           <colgroup>
             <col style="width:16%"><col style="width:16%"><col style="width:30%"><col style="width:20%"><col style="width:18%">
@@ -160,7 +160,7 @@ export default function ProductionJobOrderDetailPage() {
     // Blob URL instead of window.open("") + document.write - gives the
     // print window a real URL/title instead of "about:blank" in the
     // browser's own print header/footer.
-    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
     window.open(blobUrl, "_blank", "width=850,height=1100");
   }
 
@@ -518,7 +518,7 @@ export default function ProductionJobOrderDetailPage() {
       </div>
 
       <div className="card">
-        <h2>QC — Parameter</h2>
+        <h2>QC Parameter</h2>
         {productionLogs.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No station scans yet.</p> : (
           <div style={{ overflowX: "auto", marginTop: 10 }}>
             <table className="data-table">

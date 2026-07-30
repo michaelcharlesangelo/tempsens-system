@@ -45,6 +45,22 @@ function daysSince(dateStr: string): number {
   return Math.max(0, Math.round((today - start) / (1000 * 60 * 60 * 24)));
 }
 
+function daysBetween(startStr: string, endStr: string): number {
+  const [y1, m1, d1] = startStr.slice(0, 10).split("-").map(Number);
+  const [y2, m2, d2] = endStr.slice(0, 10).split("-").map(Number);
+  const start = Date.UTC(y1, m1 - 1, d1);
+  const end = Date.UTC(y2, m2 - 1, d2);
+  return Math.max(0, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+}
+
+// Once a JO is finished, its Days count freezes at the jo_date -> finish_date
+// span instead of continuing to climb every day it lingers in the 7-day
+// post-finish window.
+function daysCount(jo: JobOrder): number {
+  if (jo.status === "completed" && jo.finish_date) return daysBetween(jo.jo_date, jo.finish_date);
+  return daysSince(jo.jo_date);
+}
+
 // Read-only view of the PO OUT RECAP table - no Edit, status badge only
 // opens the history (no way to change it from here, that's Exim's page).
 // Kept at module scope like the rest of the app's list-table components.
@@ -234,7 +250,7 @@ export default function DashboardPage() {
         <td>{c.quantity}</td>
         <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
         <td>
-          {c.photo_paths.map((p, i) => (
+          {c.photo_paths.length === 0 ? <span className="subtle">-</span> : c.photo_paths.map((p, i) => (
             <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
           ))}
         </td>
@@ -316,7 +332,7 @@ export default function DashboardPage() {
                   <td>{jo.customer_name}</td>
                   <td>{jo.item_description}</td>
                   <td>{jo.quantity}</td>
-                  <td>{daysSince(jo.jo_date)}</td>
+                  <td>{daysCount(jo)}</td>
                   <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>
                   <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status, jo.current_station_name, jo.status === "completed" && jo.finish_date ? daysSince(jo.finish_date) : undefined)}</span></td>
                 </tr>

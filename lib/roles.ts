@@ -13,7 +13,7 @@ export const ROLE_LINKS = [
   { href: "/warehouse-manager", label: "Warehouse Manager", initials: "WM" },
   { href: "/production", label: "Production", initials: "PR" },
   { href: "/exim", label: "Export Import", initials: "EXIM" },
-  { href: "/complaints", label: "Engineering", initials: "ENG" },
+  { href: "/engineering", label: "Engineering", initials: "ENG" },
 ];
 
 // GM acts as the de-facto admin of this page for now, so it's the default

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
@@ -12,8 +12,12 @@ import { JobOrder, JobOrderStatus, joMatchesSearch, fmtDate, formatSerialRange }
 // automatically once status is "completed", so linking there is safe.
 const VISIBLE_STATUSES: JobOrderStatus[] = ["completed"];
 
+type SortCol = "jo_date" | "so_no" | "customer_name" | "item_no" | "item_description" | "quantity";
+
 export default function WorkHistoryPage() {
   const [jobOrders, setJobOrders] = useState<JobOrder[] | null>(null);
+  const [sortCol, setSortCol] = useState<SortCol>("jo_date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
     fetch("/api/job-orders", { cache: "no-store" })
@@ -21,12 +25,31 @@ export default function WorkHistoryPage() {
       .then((d) => setJobOrders(d.jobOrders ?? []));
   }, []);
 
+  function sortBy(col: SortCol) {
+    if (sortCol === col) { setSortDir((d) => (d === "asc" ? "desc" : "asc")); return; }
+    setSortCol(col);
+    setSortDir("asc");
+  }
+
   const sorted = useMemo(() => {
     const visible = (jobOrders ?? []).filter((jo) => VISIBLE_STATUSES.includes(jo.status));
-    return [...visible].sort((a, b) => (a.jo_date < b.jo_date ? 1 : -1));
-  }, [jobOrders]);
+    return [...visible].sort((a, b) => {
+      const av = a[sortCol];
+      const bv = b[sortCol];
+      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av ?? "").localeCompare(String(bv ?? ""));
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [jobOrders, sortCol, sortDir]);
 
   const { search, setSearch, page, setPage, totalPages, pageItems: rows, totalCount } = usePagedSearch(sorted, joMatchesSearch);
+
+  function SortHeader({ col, children }: { col: SortCol; children: ReactNode }) {
+    return (
+      <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy(col)}>
+        {children} {sortCol === col ? (sortDir === "asc" ? "▲" : "▼") : ""}
+      </th>
+    );
+  }
 
   return (
     <>
@@ -45,7 +68,13 @@ export default function WorkHistoryPage() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>JO Date</th><th>SO Number</th><th>Customer Name</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Serial Number(s)</th><th></th>
+                    <SortHeader col="jo_date">JO Date</SortHeader>
+                    <SortHeader col="so_no">SO Number</SortHeader>
+                    <SortHeader col="customer_name">Customer Name</SortHeader>
+                    <SortHeader col="item_no">Item Code</SortHeader>
+                    <SortHeader col="item_description">Description</SortHeader>
+                    <SortHeader col="quantity">Qty</SortHeader>
+                    <th>Serial Number(s)</th><th></th>
                   </tr>
                 </thead>
                 <tbody>

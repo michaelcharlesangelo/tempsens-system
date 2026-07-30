@@ -1,31 +1,34 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
-import { Complaint, JobOrder, complaintMatchesSearch, fmtDate } from "@/lib/jobOrders";
+import { Complaint, JobOrder, COMPLAINT_STATUSES, complaintMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
 interface SalesAccount { id: string; full_name: string; }
 
 type ComplaintType = "indonesia" | "traded";
+
+interface EditDraft {
+  customerName: string; soNo: string; itemDescription: string; quantity: string; problemDescription: string; suggestedAction: string;
+}
 
 // Module-scope (not defined inside ComplaintsPage's render body) so typing
 // in the parent's action-text input doesn't redefine this component and
 // force a remount every keystroke - see CLAUDE.md's "table components at
 // module scope" convention.
 function ComplaintTable({
-  items, title, showFinish, historyItems, historyTitle,
-  viewPhoto, updateStatus, editingActionId, actionText, setEditingActionId, setActionText, saveAction,
-  finishing, finishComplaint,
+  items, title, historyItems, historyTitle,
+  viewPhoto, editingId, editDraft, startEdit, setEditDraft, saveEdit, deleteComplaint, saving,
+  logOpenId, setLogOpenId,
 }: {
-  items: Complaint[]; title: string; showFinish: boolean;
+  items: Complaint[]; title: string;
   historyItems: Complaint[]; historyTitle: string;
   viewPhoto: (path: string) => void;
-  updateStatus: (id: string, status: string) => void;
-  editingActionId: string | null; actionText: string;
-  setEditingActionId: (id: string | null) => void; setActionText: (t: string) => void;
-  saveAction: (id: string) => void;
-  finishing: string | null; finishComplaint: (c: Complaint) => void;
+  editingId: string | null; editDraft: EditDraft | null;
+  startEdit: (c: Complaint) => void; setEditDraft: (d: EditDraft) => void;
+  saveEdit: (id: string) => void; deleteComplaint: (id: string) => void; saving: boolean;
+  logOpenId: string | null; setLogOpenId: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -34,62 +37,61 @@ function ComplaintTable({
 
   // A plain function (not a nested component) - called directly inside
   // .map() below rather than as a JSX tag, so it doesn't introduce a new
-  // component identity that would remount on every parent re-render (e.g.
-  // every keystroke while editing actionText).
+  // component identity that would remount on every parent re-render.
   function renderRow(c: Complaint, editable: boolean) {
+    const isEditing = editable && editingId === c.id;
+    const d = editDraft;
+    const meta = COMPLAINT_STATUSES.find((s) => s.value === c.status)!;
     return (
-      <tr key={c.id}>
-        <td>{fmtDate(c.created_at)}</td>
-        <td>{c.customer_name}</td>
-        <td>{c.so_no}</td>
-        <td>{c.item_description}</td>
-        <td>{c.quantity}</td>
-        <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
-        <td>
-          {c.photo_paths.map((p, i) => (
-            <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
-          ))}
-        </td>
-        <td>
-          {editable ? (
-            <select value={c.status} onChange={(e) => updateStatus(c.id, e.target.value)}>
-              <option value="not_done">Not Done</option>
-              <option value="in_progress">In Progress</option>
-              <option value="done">Done</option>
-            </select>
-          ) : (
-            c.status === "done" ? "Done" : c.status === "in_progress" ? "In Progress" : "Not Done"
-          )}
-        </td>
-        <td style={{ minWidth: 180 }}>
-          {editable && editingActionId === c.id ? (
-            <div style={{ display: "flex", gap: 4 }}>
-              <input type="text" value={actionText} onChange={(e) => setActionText(e.target.value)} />
-              <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => saveAction(c.id)}>Save</button>
-            </div>
-          ) : editable ? (
-            <span onClick={() => { setEditingActionId(c.id); setActionText(c.suggested_action); }} style={{ cursor: "pointer" }}>
-              {c.suggested_action || <span className="subtle">Click to add...</span>}
-            </span>
-          ) : (
-            c.suggested_action || <span className="subtle">-</span>
-          )}
-        </td>
-        {showFinish && (
-          <td style={{ textAlign: "center" }}>
-            {editable && c.status === "done" && (
-              <input
-                type="checkbox"
-                checked={false}
-                disabled={finishing === c.id}
-                onChange={() => finishComplaint(c)}
-                style={{ width: 20, height: 20, accentColor: "var(--good)" }}
-                title="Tick once resolved to move this complaint to History"
-              />
-            )}
+      <Fragment key={c.id}>
+        <tr>
+          <td>{fmtDate(c.created_at)}</td>
+          <td>{isEditing && d ? <input type="text" value={d.customerName} onChange={(e) => setEditDraft({ ...d, customerName: e.target.value })} style={{ fontSize: "0.82rem" }} /> : c.customer_name}</td>
+          <td>{isEditing && d ? <input type="text" value={d.soNo} onChange={(e) => setEditDraft({ ...d, soNo: e.target.value.toUpperCase() })} style={{ fontSize: "0.82rem" }} /> : c.so_no}</td>
+          <td>{isEditing && d ? <input type="text" value={d.itemDescription} onChange={(e) => setEditDraft({ ...d, itemDescription: e.target.value })} style={{ fontSize: "0.82rem" }} /> : c.item_description}</td>
+          <td>{isEditing && d ? <input type="number" value={d.quantity} onChange={(e) => setEditDraft({ ...d, quantity: e.target.value })} style={{ fontSize: "0.82rem", width: 60 }} /> : c.quantity}</td>
+          <td style={{ maxWidth: 180 }}>{isEditing && d ? <input type="text" value={d.problemDescription} onChange={(e) => setEditDraft({ ...d, problemDescription: e.target.value })} style={{ fontSize: "0.82rem" }} /> : c.problem_description}</td>
+          <td>
+            {c.photo_paths.length === 0 ? <span className="subtle">-</span> : c.photo_paths.map((p, i) => (
+              <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+            ))}
           </td>
+          <td>
+            <span className="pill" style={{ background: meta.color, color: "white", cursor: editable ? "pointer" : "default" }} onClick={() => editable && setLogOpenId(logOpenId === c.id ? null : c.id)}>
+              {meta.label}
+            </span>
+          </td>
+          <td style={{ minWidth: 160 }}>
+            {isEditing && d ? <input type="text" value={d.suggestedAction} onChange={(e) => setEditDraft({ ...d, suggestedAction: e.target.value })} style={{ fontSize: "0.82rem" }} /> : (c.suggested_action || <span className="subtle">-</span>)}
+          </td>
+          {editable && (
+            <td style={{ whiteSpace: "nowrap" }}>
+              {isEditing ? (
+                <>
+                  <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} disabled={saving} onClick={() => saveEdit(c.id)}>Save</button>{" "}
+                  <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => deleteComplaint(c.id)}>Delete</button>
+                </>
+              ) : (
+                <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startEdit(c)}>Edit</button>
+              )}
+            </td>
+          )}
+        </tr>
+        {editable && logOpenId === c.id && (
+          <tr>
+            <td colSpan={9} style={{ background: "var(--panel-muted)" }}>
+              <div style={{ padding: "8px 2px" }}>
+                <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Updates from Engineering</div>
+                {c.history.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : c.history.map((h) => (
+                  <div key={h.id} style={{ fontSize: "0.82rem", padding: "3px 0" }}>
+                    <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                  </div>
+                ))}
+              </div>
+            </td>
+          </tr>
         )}
-      </tr>
+      </Fragment>
     );
   }
 
@@ -111,15 +113,9 @@ function ComplaintTable({
             <>
               <SearchBox value={search} onChange={setSearch} />
               <div style={{ overflowX: "auto" }}>
-                <table className="data-table fixed">
-                  <colgroup>
-                    <col style={{ width: "8%" }} /><col style={{ width: "12%" }} /><col style={{ width: "8%" }} />
-                    <col style={{ width: "14%" }} /><col style={{ width: "5%" }} /><col style={{ width: "18%" }} />
-                    <col style={{ width: "8%" }} /><col style={{ width: "10%" }} /><col style={{ width: "12%" }} />
-                    {showFinish && <col style={{ width: "5%" }} />}
-                  </colgroup>
+                <table className="data-table">
                   <thead>
-                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th>{showFinish && <th>Finish</th>}</tr>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th><th></th></tr>
                   </thead>
                   <tbody>
                     {pageItems.map((c) => renderRow(c, true))}
@@ -139,12 +135,7 @@ function ComplaintTable({
             <>
               <SearchBox value={historyPaged.search} onChange={historyPaged.setSearch} />
               <div style={{ overflowX: "auto" }}>
-                <table className="data-table fixed">
-                  <colgroup>
-                    <col style={{ width: "9%" }} /><col style={{ width: "13%" }} /><col style={{ width: "9%" }} />
-                    <col style={{ width: "15%" }} /><col style={{ width: "6%" }} /><col style={{ width: "20%" }} />
-                    <col style={{ width: "9%" }} /><col style={{ width: "10%" }} /><col style={{ width: "9%" }} />
-                  </colgroup>
+                <table className="data-table">
                   <thead>
                     <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
                   </thead>
@@ -181,11 +172,12 @@ export default function ComplaintsPage() {
   const [fileInputKey, setFileInputKey] = useState(0);
 
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [editingActionId, setEditingActionId] = useState<string | null>(null);
-  const [actionText, setActionText] = useState("");
-  const [finishing, setFinishing] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [logOpenId, setLogOpenId] = useState<string | null>(null);
 
   async function load() {
     const res = await fetch("/api/complaints", { cache: "no-store" });
@@ -257,36 +249,49 @@ export default function ComplaintsPage() {
     if (data.url) window.open(data.url, "_blank");
   }
 
-  async function updateStatus(id: string, status: string) {
-    await fetch(`/api/complaints/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+  function startEdit(c: Complaint) {
+    setEditingId(c.id);
+    setEditDraft({
+      customerName: c.customer_name, soNo: c.so_no, itemDescription: c.item_description,
+      quantity: String(c.quantity), problemDescription: c.problem_description, suggestedAction: c.suggested_action,
     });
-    load();
+    setLogOpenId(null);
   }
 
-  async function saveAction(id: string) {
-    await fetch(`/api/complaints/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ suggestedAction: actionText }),
-    });
-    setEditingActionId(null);
-    load();
-  }
-
-  async function finishComplaint(c: Complaint) {
-    if (!confirm(`Mark this complaint (SO ${c.so_no}) as finished? It will move to History.`)) return;
-    setFinishing(c.id);
+  async function saveEdit(id: string) {
+    if (!editDraft) return;
+    setSaving(true);
     try {
-      await fetch(`/api/complaints/${c.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archived: true }),
+      const res = await fetch(`/api/complaints/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: editDraft.customerName, soNo: editDraft.soNo, itemDescription: editDraft.itemDescription,
+          quantity: editDraft.quantity, problemDescription: editDraft.problemDescription, suggestedAction: editDraft.suggestedAction,
+        }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMessage(data.error || "Failed to save changes."); return; }
+      setEditingId(null);
+      setEditDraft(null);
       load();
     } finally {
-      setFinishing(null);
+      setSaving(false);
     }
   }
 
+  async function deleteComplaint(id: string) {
+    if (!confirm("Delete this complaint? This can't be undone.")) return;
+    const res = await fetch(`/api/complaints/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { setMessage(data.error || "Failed to delete."); return; }
+    setEditingId(null);
+    setEditDraft(null);
+    load();
+  }
+
   // Done complaints drop off the main table 7 days after resolution even
-  // without a manual Finish tick, matching the Dashboard's auto-archive.
+  // without Engineering explicitly finishing it, matching the Dashboard's
+  // auto-archive.
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
   function isExpired(c: Complaint): boolean {
     return c.status === "done" && !!c.resolved_at && Date.now() - new Date(c.resolved_at).getTime() > SEVEN_DAYS_MS;
@@ -303,11 +308,13 @@ export default function ComplaintsPage() {
   const canSubmit = complaintType && customerName.trim() && !saving;
 
   const tableProps = {
-    viewPhoto, updateStatus, editingActionId, actionText, setEditingActionId, setActionText, saveAction, finishing, finishComplaint,
+    viewPhoto, editingId, editDraft, startEdit, setEditDraft, saveEdit, deleteComplaint, saving, logOpenId, setLogOpenId,
   };
 
   return (
     <>
+
+      {message && <div className="warn">{message}</div>}
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -419,12 +426,12 @@ export default function ComplaintsPage() {
       {!complaints ? <p className="subtle">Loading...</p> : (
         <>
           <ComplaintTable
-            items={indonesia} title="Complaints — Tempsens Indonesia" showFinish
+            items={indonesia} title="Complaints — Tempsens Indonesia"
             historyItems={historyIndonesia} historyTitle="History — Tempsens Indonesia"
             {...tableProps}
           />
           <ComplaintTable
-            items={traded} title="Complaints — Traded Item" showFinish
+            items={traded} title="Complaints — Traded Item"
             historyItems={historyTraded} historyTitle="History — Traded Item"
             {...tableProps}
           />

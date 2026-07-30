@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
+import ToggleSwitch from "@/app/components/ToggleSwitch";
 import { PurchaseForm, PurchaseFormItem, FORM_A_CODES, EXPENSE_CODES, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
 
@@ -75,7 +76,7 @@ function printForm(form: PurchaseForm) {
   ` : "";
 
   const html = `
-    <html><head><title>${esc(title)} - ${esc(form.name)}</title>
+    <html><head><meta charset="utf-8"><title>${esc(title)} - ${esc(form.name)}</title>
     <style>
       @page { size: A4 portrait; margin: 14mm; }
       body { font-family: Arial, sans-serif; font-size: 11px; color: #111; line-height: 1.45; }
@@ -114,7 +115,7 @@ function printForm(form: PurchaseForm) {
       ${commentRows}
     </body></html>
   `;
-  const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
   window.open(blobUrl, "_blank", "width=850,height=1100");
 }
 
@@ -281,12 +282,10 @@ function FormPageInner() {
 
   return (
     <>
+      {sourceTag === "warehouse_local_purchase" && showForm && (
+        <p style={{ marginBottom: 10 }}><a href="/warehouse-manager" className="subtle">← Back to Warehouse Manager</a></p>
+      )}
       <div className="card">
-        {sourceTag === "warehouse_local_purchase" && showForm && (
-          <p style={{ marginTop: 0, marginBottom: 10 }}>
-            <a href="/warehouse-manager" style={{ fontSize: "0.85rem" }}>&larr; Back to Warehouse Manager</a>
-          </p>
-        )}
         {justSubmittedFromWarehouse && (
           <div className="warn" style={{ marginTop: 0, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span>Form submitted for approval.</span>
@@ -451,13 +450,36 @@ function FormList({
   title: string; items: PurchaseForm[]; onViewFile: (path: string) => void;
   onEdit: (f: PurchaseForm) => void; onCancel: (id: string) => void; onPrint: (f: PurchaseForm) => void;
 }) {
-  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, formMatches);
+  const [showPending, setShowPending] = useState(true);
+  const [showApproved, setShowApproved] = useState(false);
+  const [showRejected, setShowRejected] = useState(false);
+  const [showCancelled, setShowCancelled] = useState(false);
+
+  const filtered = items.filter((f) => (
+    (f.status === "pending_approval" && showPending) ||
+    (f.status === "approved" && showApproved) ||
+    (f.status === "rejected" && showRejected) ||
+    (f.status === "cancelled" && showCancelled)
+  ));
+
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(filtered, formMatches);
   const [openId, setOpenId] = useState<string | null>(null);
   const [commentsOpenId, setCommentsOpenId] = useState<string | null>(null);
 
   return (
-    <Collapsible title={title} count={items.length}>
-      {items.length === 0 ? <p className="subtle">None yet.</p> : (
+    <Collapsible
+      title={title}
+      count={items.length}
+      actions={
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+          <ToggleSwitch checked={showPending} onChange={setShowPending} label={`Pending (${items.filter((f) => f.status === "pending_approval").length})`} />
+          <ToggleSwitch checked={showApproved} onChange={setShowApproved} label={`Approved (${items.filter((f) => f.status === "approved").length})`} color="var(--good)" />
+          <ToggleSwitch checked={showRejected} onChange={setShowRejected} label={`Rejected (${items.filter((f) => f.status === "rejected").length})`} color="var(--bad)" />
+          <ToggleSwitch checked={showCancelled} onChange={setShowCancelled} label={`Cancelled (${items.filter((f) => f.status === "cancelled").length})`} />
+        </div>
+      }
+    >
+      {filtered.length === 0 ? <p className="subtle">Nothing to show for the selected filters.</p> : (
         <>
           <SearchBox value={search} onChange={setSearch} />
           <div style={{ overflowX: "auto" }}>

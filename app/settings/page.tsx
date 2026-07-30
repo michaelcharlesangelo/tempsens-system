@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import QrImage from "@/app/components/QrImage";
 import PasswordField from "@/app/components/PasswordField";
-import { StationCode, ProductionAccount, ItemCategory, Position, Supplier, SUPPLIER_TAB_CATEGORIES } from "@/lib/jobOrders";
+import { StationCode, ProductionAccount, ItemCategory, Position, Supplier, SUPPLIER_TAB_CATEGORIES, SalesTeam } from "@/lib/jobOrders";
 
 type SettingsTab = "production" | "account" | "product" | "supplier";
 
@@ -26,6 +26,11 @@ export default function SettingsPage() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [newPositionName, setNewPositionName] = useState("");
 
+  const [teams, setTeams] = useState<SalesTeam[]>([]);
+  const [newTeamSalesSupportId, setNewTeamSalesSupportId] = useState("");
+  const [newTeamSalesManagerId, setNewTeamSalesManagerId] = useState("");
+  const [newTeamMemberIds, setNewTeamMemberIds] = useState<string[]>([]);
+
   const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
@@ -46,6 +51,9 @@ export default function SettingsPage() {
   async function loadPositions() {
     setPositions((await (await fetch("/api/positions", { cache: "no-store" })).json()).positions ?? []);
   }
+  async function loadTeams() {
+    setTeams((await (await fetch("/api/sales-teams", { cache: "no-store" })).json()).teams ?? []);
+  }
   async function loadCategories() {
     setCategories((await (await fetch("/api/item-categories", { cache: "no-store" })).json()).categories ?? []);
   }
@@ -54,7 +62,7 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    loadStations(); loadAccounts(); loadCategories(); loadPositions(); loadSuppliers();
+    loadStations(); loadAccounts(); loadCategories(); loadPositions(); loadSuppliers(); loadTeams();
   }, []);
 
   async function addStation() {
@@ -157,6 +165,30 @@ export default function SettingsPage() {
     await fetch(`/api/positions/${id}`, { method: "DELETE" });
     loadPositions();
     loadAccounts();
+  }
+
+  async function addTeam() {
+    const res = await fetch("/api/sales-teams", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        salesSupportAccountId: newTeamSalesSupportId, salesManagerAccountId: newTeamSalesManagerId || null,
+        memberIds: newTeamMemberIds,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMessage(data.error); return; }
+    setNewTeamSalesSupportId(""); setNewTeamSalesManagerId(""); setNewTeamMemberIds([]);
+    loadTeams();
+  }
+
+  function toggleNewTeamMember(id: string) {
+    setNewTeamMemberIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }
+
+  async function deleteTeam(id: string) {
+    if (!confirm("Delete this team?")) return;
+    await fetch(`/api/sales-teams/${id}`, { method: "DELETE" });
+    loadTeams();
   }
 
   async function addCategory() {
@@ -388,6 +420,72 @@ export default function SettingsPage() {
               </table>
             )}
           </div>
+
+          {(() => {
+            const salesSupportId = positions.find((p) => p.name === "Sales Support")?.id;
+            const salesManagerId = positions.find((p) => p.name === "Sales Manager")?.id;
+            const salesRepId = positions.find((p) => p.name === "Sales")?.id;
+            const salesSupportAccounts = accounts.filter((a) => a.position_id && a.position_id === salesSupportId);
+            const salesManagerAccounts = accounts.filter((a) => a.position_id && a.position_id === salesManagerId);
+            const salesRepAccounts = accounts.filter((a) => a.position_id && a.position_id === salesRepId);
+            const nameOf = (id: string | null) => accounts.find((a) => a.id === id)?.full_name ?? <span className="subtle">-</span>;
+            return (
+              <div className="card">
+                <h2>Teams</h2>
+                <p className="subtle">
+                  Groups one Sales Support person with the Sales reps and the single Sales Manager they route to.
+                  When that Sales Support person submits a JO (picked on the JO Input form), it's routed to their
+                  team's Sales Manager instead of the shared queue.
+                </p>
+                <div className="grid">
+                  <div className="field">
+                    <label>Sales Support</label>
+                    <select value={newTeamSalesSupportId} onChange={(e) => setNewTeamSalesSupportId(e.target.value)}>
+                      <option value="">Select...</option>
+                      {salesSupportAccounts.map((a) => <option key={a.id} value={a.id}>{a.full_name}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Sales Manager</label>
+                    <select value={newTeamSalesManagerId} onChange={(e) => setNewTeamSalesManagerId(e.target.value)}>
+                      <option value="">Select...</option>
+                      {salesManagerAccounts.map((a) => <option key={a.id} value={a.id}>{a.full_name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {salesRepAccounts.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div className="subtle" style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Sales reps on this team</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                      {salesRepAccounts.map((a) => (
+                        <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.82rem", cursor: "pointer" }}>
+                          <input type="checkbox" checked={newTeamMemberIds.includes(a.id)} onChange={() => toggleNewTeamMember(a.id)} />
+                          {a.full_name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button className="btn" onClick={addTeam} disabled={!newTeamSalesSupportId}>Add team</button>
+
+                {teams.length > 0 && (
+                  <table className="data-table" style={{ marginTop: 14 }}>
+                    <thead><tr><th>Sales Support</th><th>Sales Manager</th><th>Sales Reps</th><th></th></tr></thead>
+                    <tbody>
+                      {teams.map((t) => (
+                        <tr key={t.id}>
+                          <td>{nameOf(t.sales_support_account_id)}</td>
+                          <td>{nameOf(t.sales_manager_account_id)}</td>
+                          <td>{t.member_ids.length === 0 ? <span className="subtle">-</span> : t.member_ids.map((id) => nameOf(id)).join(", ")}</td>
+                          <td><button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteTeam(t.id)}>Delete</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
 

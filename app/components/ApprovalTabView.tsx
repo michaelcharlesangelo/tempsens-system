@@ -7,7 +7,14 @@ import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
 
-export default function ApprovalTabView({ tab, layer, label }: { tab: string; layer: 1 | 2 | 3; label: string }) {
+export default function ApprovalTabView({
+  tab, layer, label, filterJobOrders,
+}: {
+  tab: string; layer: 1 | 2 | 3; label: string;
+  // Optional team-based visibility filter - only /sales-manager uses this,
+  // to scope the shared queue down to one Sales Manager's own team.
+  filterJobOrders?: (jos: JobOrder[]) => JobOrder[];
+}) {
   const [allJobOrders, setAllJobOrders] = useState<JobOrder[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [comment, setComment] = useState("");
@@ -54,13 +61,14 @@ export default function ApprovalTabView({ tab, layer, label }: { tab: string; la
 
   if (!allJobOrders) return <p className="subtle">Loading...</p>;
 
-  const pending = allJobOrders.filter((j) => j.status === "pending_approval" && j.current_approval_layer === layer);
-  const approvedHere = allJobOrders.filter((j) => {
+  const visibleJobOrders = filterJobOrders ? filterJobOrders(allJobOrders) : allJobOrders;
+  const pending = visibleJobOrders.filter((j) => j.status === "pending_approval" && j.current_approval_layer === layer);
+  const approvedHere = visibleJobOrders.filter((j) => {
     if (j.status === "rejected" || j.status === "cancelled" || j.status === "draft") return false;
     if (j.status === "pending_approval") return (j.current_approval_layer ?? 0) > layer;
     return true;
   });
-  const rejected = allJobOrders.filter((j) => j.status === "rejected");
+  const rejected = visibleJobOrders.filter((j) => j.status === "rejected");
   const expandedJo = expanded ? pending.find((j) => j.id === expanded) : null;
 
   return (

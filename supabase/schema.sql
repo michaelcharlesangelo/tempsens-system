@@ -38,6 +38,31 @@ create table if not exists production_accounts (
 );
 
 -- ---------------------------------------------------------------------------
+-- Sales teams - groups one Sales Support person with the Sales reps and
+-- the single Sales Manager they route to. When that Sales Support person
+-- submits a JO (picked on the JO Input form), it's routed to their team's
+-- Sales Manager instead of the shared, unfiltered queue. A Sales Support
+-- person with no team (or a JO with no submitter picked) stays visible to
+-- every Sales Manager - see /sales-manager's "Viewing as" filter.
+-- ---------------------------------------------------------------------------
+create table if not exists sales_teams (
+  id uuid primary key default gen_random_uuid(),
+  sales_support_account_id uuid references production_accounts(id) on delete cascade,
+  sales_manager_account_id uuid references production_accounts(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (sales_support_account_id)
+);
+
+create table if not exists sales_team_members (
+  team_id uuid not null references sales_teams(id) on delete cascade,
+  sales_account_id uuid not null references production_accounts(id) on delete cascade,
+  primary key (team_id, sales_account_id)
+);
+
+alter table sales_teams enable row level security;
+alter table sales_team_members enable row level security;
+
+-- ---------------------------------------------------------------------------
 -- Sales people - lightweight reference list so the JO Input tab can
 -- attribute "who created this" without needing real accounts yet.
 -- ---------------------------------------------------------------------------
@@ -151,6 +176,11 @@ create table if not exists job_orders (
   item_no text not null default '',
   sales_person_name text not null default '',
   sales_support_name text not null default '', -- who at Sales Support actually created the JO (distinct from the Sales rep)
+  -- Which specific Sales Support person submitted this (picked on the JO
+  -- Input form) - drives team-based routing to that person's Sales
+  -- Manager. Null for JOs created before this existed, or from tabs other
+  -- than Sales Support - those fall back to visible-to-everyone.
+  sales_support_account_id uuid references production_accounts(id) on delete set null,
   deadline date,
   urgent boolean not null default false,
   po_attachment_path text, -- restricted visibility, see above
@@ -249,8 +279,24 @@ create table if not exists complaints (
   suggested_action text not null default '', -- filled by QC Manager
   submitted_by text not null default '', -- sales person name, free text
   created_at timestamptz not null default now(),
-  resolved_at timestamptz
+  resolved_at timestamptz,
+  archived boolean not null default false
 );
+
+-- Engineering's status/progress log (app/engineering) - separate page from
+-- the main Complaints table, same pattern as po_out_history/Exim: each
+-- entry pairs a status with a free-text comment, attributed and timestamped.
+create table if not exists complaint_history (
+  id uuid primary key default gen_random_uuid(),
+  complaint_id uuid not null references complaints(id) on delete cascade,
+  changed_by text not null default '',
+  comment text not null default '',
+  status text,
+  changed_at timestamptz not null default now()
+);
+
+create index if not exists idx_complaint_history_complaint on complaint_history(complaint_id);
+alter table complaint_history enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- Purchase request forms - Form A (Inventory/Service) and Form B (Expense),

@@ -43,6 +43,7 @@ export interface JobOrder {
   item_no: string;
   sales_person_name: string;
   sales_support_name: string;
+  sales_support_account_id: string | null;
   deadline: string | null;
   urgent: boolean;
   po_attachment_path?: string | null; // omitted by the API for unauthorized tabs
@@ -167,6 +168,17 @@ export interface ProductionAccount {
 // dropdown on the JO Input and Complaints pages.
 export const SALES_QUALIFYING_POSITIONS = ["Sales", "Sales Manager", "General Manager"];
 
+// Groups one Sales Support account with the Sales reps and the single
+// Sales Manager account they route to - see /settings (Account tab) and
+// /sales-manager's "Viewing as" filter.
+export interface SalesTeam {
+  id: string;
+  sales_support_account_id: string | null;
+  sales_manager_account_id: string | null;
+  member_ids: string[];
+  created_at: string;
+}
+
 export interface SalesPerson {
   id: string;
   name: string;
@@ -219,6 +231,21 @@ export function generateShortCode(): string {
 
 export type ComplaintStatus = "not_done" | "in_progress" | "done";
 
+export const COMPLAINT_STATUSES: { value: ComplaintStatus; label: string; color: string }[] = [
+  { value: "not_done", label: "Not Done", color: "#ef4444" },
+  { value: "in_progress", label: "In Progress", color: "#3b82f6" },
+  { value: "done", label: "Done", color: "#22c55e" },
+];
+
+export interface ComplaintHistoryEntry {
+  id: string;
+  complaint_id: string;
+  changed_by: string;
+  comment: string;
+  status: ComplaintStatus | null;
+  changed_at: string;
+}
+
 export interface Complaint {
   id: string;
   customer_name: string;
@@ -234,6 +261,7 @@ export interface Complaint {
   created_at: string;
   resolved_at: string | null;
   archived: boolean;
+  history: ComplaintHistoryEntry[];
 }
 
 // Shared search predicates for the paged/searchable list tables - term is

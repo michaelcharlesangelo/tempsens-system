@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
-import { PurchaseForm, fmtDate } from "@/lib/jobOrders";
+import { PurchaseForm, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
 function formMatches(f: PurchaseForm, term: string): boolean {
   return (
@@ -25,6 +25,7 @@ export default function FormApprovalView({ layer, label }: { layer: 1 | 2; label
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
+  const [commentsOpenId, setCommentsOpenId] = useState<string | null>(null);
 
   async function load() {
     const res = await fetch("/api/purchase-forms", { cache: "no-store" });
@@ -89,11 +90,12 @@ export default function FormApprovalView({ layer, label }: { layer: 1 | 2; label
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead>
-                <tr><th>Date</th><th>Type</th><th>Name</th><th>Customer</th><th>PO/SO</th><th>Purpose</th><th>Total</th><th></th></tr>
+                <tr><th>Date</th><th>Type</th><th>Name</th><th>Customer</th><th>PO/SO</th><th>Purpose</th><th>Total</th><th>Comments</th><th></th></tr>
               </thead>
               <tbody>
                 {pageItems.map((f) => {
                   const total = f.items.reduce((n, it) => n + Number(it.budget || 0), 0);
+                  const commented = f.history.filter((h) => h.comment);
                   return (
                     <Fragment key={f.id}>
                       <tr>
@@ -105,14 +107,34 @@ export default function FormApprovalView({ layer, label }: { layer: 1 | 2; label
                         <td>{f.purpose}</td>
                         <td>Rp {total.toLocaleString("id-ID")}</td>
                         <td>
+                          <button
+                            className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }}
+                            onClick={() => setCommentsOpenId(commentsOpenId === f.id ? null : f.id)}
+                            disabled={commented.length === 0}
+                          >
+                            {commentsOpenId === f.id ? "Hide" : `View (${commented.length})`}
+                          </button>
+                        </td>
+                        <td>
                           <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 10px" }} onClick={() => toggleExpand(f.id)}>
                             {expanded === f.id ? "Cancel" : "Review"}
                           </button>
                         </td>
                       </tr>
+                      {commentsOpenId === f.id && commented.length > 0 && (
+                        <tr>
+                          <td colSpan={9} style={{ background: "var(--panel-muted)" }}>
+                            {commented.map((h) => (
+                              <div key={h.id} style={{ fontSize: "0.82rem", padding: "4px 0" }}>
+                                <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      )}
                       {expanded === f.id && (
                         <tr>
-                          <td colSpan={8} style={{ background: "var(--panel-muted)" }}>
+                          <td colSpan={9} style={{ background: "var(--panel-muted)" }}>
                             <div style={{ overflowX: "auto" }}>
                               <table className="data-table">
                                 <thead><tr><th>Description</th><th>Budget</th><th>PPN</th><th>Supplier</th><th>Code</th><th>Attachment</th></tr></thead>

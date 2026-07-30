@@ -31,7 +31,7 @@ function poMatches(p: PoOut, term: string): boolean {
   );
 }
 
-type SortKey = "po_number" | "item_code" | "sales" | "customer_name" | "supplier";
+type SortKey = "po_date" | "po_number" | "item_code" | "sales" | "customer_name" | "supplier" | "shipment";
 
 interface FieldsDraft { oc: string; origin: string; shipment: string; }
 
@@ -170,6 +170,16 @@ export default function EximPage() {
     loadShipments();
   }
 
+  async function deleteShipment(id: string) {
+    if (!confirm("Delete this shipment? This can't be undone.")) return;
+    const res = await fetch(`/api/shipments/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { setMessage(data.error || "Failed to delete."); return; }
+    setEditingShipmentId(null);
+    setEditShipmentDraft(null);
+    loadShipments();
+  }
+
   async function viewFile(path: string) {
     const res = await fetch(`/api/purchase-forms/file?path=${encodeURIComponent(path)}`, { cache: "no-store" });
     const data = await res.json();
@@ -242,9 +252,12 @@ export default function EximPage() {
       {message && <div className="warn">{message}</div>}
 
       <Collapsible title="Shipment Plan" count={shipments?.length} defaultOpen>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: showShipmentForm ? 0 : 10 }}>
-          {!showShipmentForm && <button className="btn" onClick={() => setShowShipmentForm(true)}>+ New Shipment</button>}
-        </div>
+        {!showShipmentForm && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            {shipments && shipments.length > 0 ? <SearchBox value={shipmentsPaged.search} onChange={shipmentsPaged.setSearch} /> : <div />}
+            <button className="btn" onClick={() => setShowShipmentForm(true)}>+ New Shipment</button>
+          </div>
+        )}
 
         {showShipmentForm && (
           <div style={{ marginBottom: 18 }}>
@@ -271,7 +284,7 @@ export default function EximPage() {
               </div>
             </div>
 
-            <div className="form-sheet" style={{ marginTop: 4 }}>
+            <div className="form-sheet" style={{ marginTop: 18 }}>
               <div className="form-sheet-col">
                 <div className="form-row">
                   <label>AWB/BL</label><span>:</span>
@@ -296,7 +309,6 @@ export default function EximPage() {
 
         {!shipments ? <p className="subtle">Loading...</p> : shipments.length === 0 ? <p className="subtle">No shipments drafted yet.</p> : (
           <>
-            <SearchBox value={shipmentsPaged.search} onChange={shipmentsPaged.setSearch} />
             <div style={{ overflowX: "auto" }}>
               <table className="data-table">
                 <thead>
@@ -346,7 +358,10 @@ export default function EximPage() {
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           {isEditing ? (
-                            <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveShipmentEdit(s.id)}>Save</button>
+                            <>
+                              <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveShipmentEdit(s.id)}>Save</button>{" "}
+                              <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => deleteShipment(s.id)}>Delete</button>
+                            </>
                           ) : (
                             <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startShipmentEdit(s)}>Edit</button>
                           )}
@@ -391,14 +406,17 @@ export default function EximPage() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>PO Date</th><th>Days</th><th>Deadline</th>
+                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("po_date")}>PO Date {sortKey === "po_date" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
+                    <th>Days</th><th>Deadline</th>
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("po_number")}>PO Number {sortKey === "po_number" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("item_code")}>Item Code {sortKey === "item_code" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("sales")}>Sales {sortKey === "sales" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("customer_name")}>Customer Name {sortKey === "customer_name" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
                     <th>Item Description</th><th>Qty</th><th>Unit</th>
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("supplier")}>Supplier {sortKey === "supplier" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
-                    <th>Status</th><th>OC</th><th>Origin</th><th>Shipment</th><th></th>
+                    <th>Status</th><th>OC</th><th>Origin</th>
+                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("shipment")}>Shipment {sortKey === "shipment" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -434,7 +452,14 @@ export default function EximPage() {
                           </td>
                           <td>{isEditingFields && fd ? <input type="text" value={fd.oc} onChange={(e) => setFieldsDraft({ ...fd, oc: e.target.value })} style={{ fontSize: "0.8rem", width: 90 }} /> : (p.oc || <span className="subtle">-</span>)}</td>
                           <td>{isEditingFields && fd ? <input type="text" value={fd.origin} onChange={(e) => setFieldsDraft({ ...fd, origin: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : (p.origin || <span className="subtle">-</span>)}</td>
-                          <td>{isEditingFields && fd ? <input type="text" value={fd.shipment} onChange={(e) => setFieldsDraft({ ...fd, shipment: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : (p.shipment || <span className="subtle">-</span>)}</td>
+                          <td>
+                            {isEditingFields && fd ? (
+                              <select value={fd.shipment} onChange={(e) => setFieldsDraft({ ...fd, shipment: e.target.value })} style={{ fontSize: "0.8rem" }}>
+                                <option value="">Select...</option>
+                                {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
+                              </select>
+                            ) : (p.shipment || <span className="subtle">-</span>)}
+                          </td>
                           <td style={{ whiteSpace: "nowrap" }}>
                             {isEditingFields ? (
                               <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveFieldsEdit(p.id)}>Save</button>

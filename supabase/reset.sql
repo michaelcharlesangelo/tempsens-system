@@ -14,6 +14,8 @@ drop table if exists station_codes cascade;
 drop table if exists item_catalog cascade;
 drop table if exists item_categories cascade;
 drop table if exists sales_people cascade;
+drop table if exists sales_team_members cascade;
+drop table if exists sales_teams cascade;
 drop table if exists production_accounts cascade;
 drop table if exists back_office cascade;
 drop table if exists positions cascade;

@@ -12,8 +12,15 @@ import {
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
 
-function esc(value: unknown): string {
-  return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+// Same convention as Form page's Budget field - "." thousand separators as
+// you type, digits-only underneath so it parses back cleanly on submit.
+function formatPrice(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  return Number(digits).toLocaleString("id-ID");
+}
+function parsePrice(display: string): string {
+  return display.replace(/\D/g, "");
 }
 
 interface SalesAccount { id: string; full_name: string; }
@@ -82,20 +89,17 @@ function poCellText(p: PoOut, key: string): string {
   }
 }
 
-// Zero-dependency "export to Excel" - Excel opens an HTML table saved with
-// a .xls extension natively, no real xlsx binary needed.
-function exportPoOutToExcel(rows: PoOut[], columns: { key: string; label: string }[]) {
-  const headerRow = columns.map((c) => `<th>${esc(c.label)}</th>`).join("");
-  const bodyRows = rows.map((p) => `<tr>${columns.map((c) => `<td>${esc(poCellText(p, c.key))}</td>`).join("")}</tr>`).join("");
-  const html = `<html><head><meta charset="utf-8"></head><body><table border="1">
-    <thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
-  const blob = new Blob([html], { type: "application/vnd.ms-excel" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `po-out-recap-${new Date().toISOString().slice(0, 10)}.xls`;
-  a.click();
-  URL.revokeObjectURL(url);
+// Real .xlsx (not the old HTML-table-as-.xls trick, which modern Excel
+// flags with a "format doesn't match extension" warning) via SheetJS,
+// loaded lazily so it's only pulled into the bundle when actually used.
+async function exportPoOutToExcel(rows: PoOut[], columns: { key: string; label: string }[]) {
+  const XLSX = await import("xlsx");
+  const header = columns.map((c) => c.label);
+  const body = rows.map((p) => columns.map((c) => poCellText(p, c.key)));
+  const sheet = XLSX.utils.aoa_to_sheet([header, ...body]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "PO Out Recap");
+  XLSX.writeFile(workbook, `po-out-recap-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 // Kept at module scope so re-renders elsewhere on the page never remount
@@ -163,8 +167,8 @@ function CurrencyInput({
         {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_SYMBOLS[c]}</option>)}
       </select>
       <input
-        type="text" inputMode="decimal" readOnly={readOnly} value={value}
-        onChange={(e) => onValueChange?.(e.target.value.replace(/[^\d.]/g, ""))}
+        type="text" inputMode="numeric" readOnly={readOnly} value={value}
+        onChange={(e) => onValueChange?.(formatPrice(e.target.value))}
         style={{ border: "none", flex: 1, minWidth: 0, width: "100%", fontSize: compact ? "0.8rem" : undefined }}
       />
     </div>
@@ -237,7 +241,7 @@ export default function PoOutPage() {
     setMoreItems(false);
   }
 
-  const totalPrice = (Number(draft.qty) || 0) * (Number(draft.unitPrice) || 0);
+  const totalPrice = (Number(draft.qty) || 0) * (Number(parsePrice(draft.unitPrice)) || 0);
 
   async function submit() {
     if (!draft.poNumber.trim() || !draft.supplier) { setError("PO Number and Supplier are required."); return; }
@@ -246,7 +250,10 @@ export default function PoOutPage() {
     try {
       const res = await fetch("/api/po-out", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, submittedBy: currentRole.label }),
+        body: JSON.stringify({
+          ...draft, unitPrice: parsePrice(draft.unitPrice), unitSellingPrice: parsePrice(draft.unitSellingPrice),
+          submittedBy: currentRole.label,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to save."); return; }
@@ -274,8 +281,8 @@ export default function PoOutPage() {
       poDate: p.po_date.slice(0, 10), deadline: p.deadline ? p.deadline.slice(0, 10) : "", urgent: p.urgent,
       poNumber: p.po_number, itemCode: p.item_code, sales: p.sales, customerName: p.customer_name,
       itemDescription: p.item_description, qty: String(p.qty), unit: p.unit,
-      unitPrice: String(p.unit_price), unitPriceCurrency: p.unit_price_currency,
-      unitSellingPrice: String(p.unit_selling_price), unitSellingPriceCurrency: p.unit_selling_price_currency,
+      unitPrice: formatPrice(String(p.unit_price)), unitPriceCurrency: p.unit_price_currency,
+      unitSellingPrice: formatPrice(String(p.unit_selling_price)), unitSellingPriceCurrency: p.unit_selling_price_currency,
       supplier: p.supplier,
     });
   }
@@ -283,7 +290,8 @@ export default function PoOutPage() {
   async function saveRowEdit(id: string) {
     if (!editDraft) return;
     const res = await fetch(`/api/po-out/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editDraft),
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...editDraft, unitPrice: parsePrice(editDraft.unitPrice), unitSellingPrice: parsePrice(editDraft.unitSellingPrice) }),
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error || "Failed to save changes."); return; }
@@ -372,7 +380,7 @@ export default function PoOutPage() {
       {
         key: "totalPrice",
         node: isEditing && d ? (
-          <CurrencyInput value={((Number(d.qty) || 0) * (Number(d.unitPrice) || 0)).toLocaleString("id-ID")} currency={d.unitPriceCurrency} readOnly compact />
+          <CurrencyInput value={((Number(d.qty) || 0) * (Number(parsePrice(d.unitPrice)) || 0)).toLocaleString("id-ID")} currency={d.unitPriceCurrency} readOnly compact />
         ) : `${CURRENCY_SYMBOLS[p.unit_price_currency]} ${Number(p.total_price).toLocaleString("id-ID")}`,
       },
       {

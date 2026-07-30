@@ -134,11 +134,13 @@ export default function WarehouseManagerPage() {
   }
 
   function printRecap() {
+    // Blank "Actual" column on purpose - filled in by hand after printing,
+    // once the physical quantity gathered is known.
     const rows = recap.map((r) => `
-      <tr><td>${r.itemNo}</td><td>${r.soNo}</td><td>${r.description}</td><td>${r.totalQty} ${r.unit}</td><td>${r.comments.join("; ") || "-"}</td></tr>
+      <tr><td>${r.itemNo}</td><td>${r.soNo}</td><td>${r.description}</td><td>${r.totalQty} ${r.unit}</td><td></td><td>${r.comments.join("; ") || "-"}</td></tr>
     `).join("");
     const html = `
-      <html><head><title>Material Recap</title>
+      <html><head><meta charset="utf-8"><title>Material Recap</title>
       <style>
         @page { size: A4 portrait; margin: 14mm; }
         body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 16px; line-height: 1.4; }
@@ -150,12 +152,12 @@ export default function WarehouseManagerPage() {
       </head><body onload="window.focus();window.print();">
         <h1>Material To Be Prepared — Recap</h1>
         <table>
-          <thead><tr><th>Item Code</th><th>SO Number</th><th>Description</th><th>Total Needed</th><th>Comment</th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="5">Nothing to prepare right now.</td></tr>`}</tbody>
+          <thead><tr><th>Item Code</th><th>SO Number</th><th>Description</th><th>Total Needed</th><th>Actual</th><th>Comment</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="6">Nothing to prepare right now.</td></tr>`}</tbody>
         </table>
       </body></html>
     `;
-    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
     window.open(blobUrl, "_blank", "width=750,height=1000");
   }
 
@@ -166,7 +168,11 @@ export default function WarehouseManagerPage() {
       await Promise.all(block.items.map((row) =>
         fetch(`/api/job-orders/${row.job_order_id}/bom/${row.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ actualQty: qtyDraft[row.id], actualUnit: row.unit, materialPrepared: true }),
+          // materialReady: true too, in case this row started out as a Not
+          // Available/"Pending item code" row - once it's actually prepared
+          // it's resolved, so it should land in Prepared (sourced from
+          // ready=true rows) and drop off Not Available for good.
+          body: JSON.stringify({ actualQty: qtyDraft[row.id], actualUnit: row.unit, materialReady: true, materialPrepared: true }),
         })
       ));
       // One SO block can span multiple job orders - note it on each so
@@ -178,7 +184,7 @@ export default function WarehouseManagerPage() {
           body: JSON.stringify({ changedBy: "Warehouse Manager", comment: "Material has been prepared." }),
         })
       ));
-      await loadPrepare();
+      await Promise.all([loadPrepare(), loadNotAvailable()]);
     } finally {
       setSavingBlock(null);
     }
@@ -320,10 +326,25 @@ export default function WarehouseManagerPage() {
                     <td>{i.description}</td>
                     <td>{i.qty} {i.unit}</td>
                     <td>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button className={i.procurement_method === "local_purchase" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => goLocalPurchase(i)}>Local Purchase</button>
-                        <button className={i.procurement_method === "import" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "import")}>Import</button>
-                      </div>
+                      {i.item_no ? (
+                        // Item code registered - procurement is settled, so
+                        // the choice locks in (no more accidental re-clicks)
+                        // and reads as resolved rather than an open action.
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <button
+                            className="btn" disabled
+                            style={{ fontSize: "0.75rem", padding: "4px 8px", background: "var(--good)", borderColor: "var(--good)", opacity: 1, cursor: "default" }}
+                          >
+                            {i.procurement_method === "import" ? "Import" : "Local Purchase"}
+                          </button>
+                          <span className="pill pill-approved">Approved</span>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button className={i.procurement_method === "local_purchase" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => goLocalPurchase(i)}>Local Purchase</button>
+                          <button className={i.procurement_method === "import" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "import")}>Import</button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
