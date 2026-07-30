@@ -94,8 +94,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") window.localStorage.setItem(ROLE_STORAGE_KEY, r.href);
   }
 
-  const isGm = role.href === "/gm";
-
   const sidebarLinks = [
     { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
     { href: role.href, label: role.label, icon: "user" },
@@ -137,7 +135,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <span className="account-dropdown-name">{role.label}</span>
                 </div>
 
-                {isGm && (
+                {(
+                  // Switch account / Settings open to every role for now
+                  // while there's no real login yet and testing needs to
+                  // move between roles freely - narrow this back to GM
+                  // once real per-account login exists.
                   <>
                     <button className="account-menu-item" onClick={() => setSwitchOpen((v) => !v)}>
                       <Icon name="swap" /> Switch account
