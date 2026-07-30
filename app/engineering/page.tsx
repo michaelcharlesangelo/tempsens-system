@@ -50,8 +50,8 @@ function EngineeringTable({
             ))}
           </td>
           <td>
-            {c.engineering_photo_paths.length === 0 ? <span className="subtle">-</span> : c.engineering_photo_paths.map((p, i) => (
-              <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.engineering_photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+            {(c.engineering_photo_paths ?? []).length === 0 ? <span className="subtle">-</span> : (c.engineering_photo_paths ?? []).map((p, i) => (
+              <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{(c.engineering_photo_paths ?? []).length > 1 ? ` ${i + 1}` : ""}</button>
             ))}
           </td>
           <td>
