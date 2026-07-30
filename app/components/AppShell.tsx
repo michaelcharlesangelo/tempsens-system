@@ -34,6 +34,8 @@ function Icon({ name }: { name: string }) {
       return <svg {...common}><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z" /><path d="M3.5 7.5 12 12l8.5-4.5" /><path d="M12 12v9" /></svg>;
     case "alert":
       return <svg {...common}><path d="M12 3 2 20h20L12 3Z" /><path d="M12 10v4" /><path d="M12 17h.01" /></svg>;
+    case "file":
+      return <svg {...common}><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M14 3v5h5" /><path d="M9 13h6" /><path d="M9 17h6" /></svg>;
     case "user":
       return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" /></svg>;
     case "bell":
@@ -100,6 +102,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { href: "/work-history", label: "Work History", icon: "history" },
     { href: "/items", label: "Items", icon: "box" },
     { href: "/complaints", label: "Complaints", icon: "alert" },
+    { href: "/form", label: "Form", icon: "file" },
   ];
 
   return (

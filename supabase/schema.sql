@@ -252,6 +252,40 @@ create table if not exists complaints (
   resolved_at timestamptz
 );
 
+-- ---------------------------------------------------------------------------
+-- Purchase request forms - Form A (Inventory/Service) and Form B (Expense),
+-- based on the paper "Pengajuan Pembelian Barang" forms. One header row
+-- with N line items each carrying its own budget/supplier/code/attachment.
+-- ---------------------------------------------------------------------------
+create table if not exists purchase_forms (
+  id uuid primary key default gen_random_uuid(),
+  form_type text not null check (form_type in ('A','B')),
+  request_date date not null default current_date,
+  name text not null default '',
+  customer_name text not null default '', -- Form A only, shown blank for Form B
+  po_so_number text not null default '', -- Form A only
+  purpose text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists purchase_form_items (
+  id uuid primary key default gen_random_uuid(),
+  purchase_form_id uuid not null references purchase_forms(id) on delete cascade,
+  seq smallint not null default 0,
+  description text not null default '',
+  budget numeric not null default 0,
+  ppn boolean not null default false,
+  supplier_name text not null default '',
+  code text not null default '', -- Form A: INVENTORY/SERVICE - Form B: letter A-M (see EXPENSE_CODES)
+  attachment_path text,
+  attachment_filename text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_purchase_form_items_form on purchase_form_items(purchase_form_id);
+alter table purchase_forms enable row level security;
+alter table purchase_form_items enable row level security;
+
 create index if not exists idx_job_orders_status on job_orders(status);
 create index if not exists idx_job_order_bom_job on job_order_bom(job_order_id);
 create index if not exists idx_production_logs_job on production_logs(job_order_id);

@@ -124,26 +124,26 @@ export default function ItemsPage() {
             <div style={{ overflowX: "auto" }}>
               <table className="data-table fixed">
                 <colgroup>
-                  <col style={{ width: "12%" }} /><col style={{ width: "8%" }} /><col style={{ width: "20%" }} /><col style={{ width: "60%" }} />
+                  <col style={{ width: "12%" }} /><col style={{ width: "58%" }} /><col style={{ width: "8%" }} /><col style={{ width: "22%" }} />
                 </colgroup>
                 <thead>
                   <tr>
                     <SortHeader col="item_no">Item Code</SortHeader>
+                    <SortHeader col="description">Description</SortHeader>
                     <th>Unit</th>
                     <th></th>
-                    <SortHeader col="description">Description</SortHeader>
                   </tr>
                 </thead>
                 <tbody>
                   <tr style={{ background: "var(--panel-muted)" }}>
                     <td><input type="text" value={newItemNo} onChange={(e) => setNewItemNo(e.target.value.toUpperCase())} placeholder="ITEM CODE" style={{ fontSize: "0.82rem" }} /></td>
+                    <td><input type="text" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Description" style={{ fontSize: "0.82rem" }} /></td>
                     <td><input type="text" value={newUnit} onChange={(e) => setNewUnit(e.target.value)} placeholder="pcs" style={{ fontSize: "0.82rem" }} /></td>
                     <td>
                       <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={addItem} disabled={adding || !newItemNo.trim()}>
                         {adding ? "Adding..." : "+ Add"}
                       </button>
                     </td>
-                    <td><input type="text" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="Description" style={{ fontSize: "0.82rem" }} /></td>
                   </tr>
                   {totalCount === 0 ? (
                     <tr><td colSpan={4} className="subtle">No matching items.</td></tr>
@@ -152,6 +152,13 @@ export default function ItemsPage() {
                       <Fragment key={i.item_no}>
                         <tr>
                           <td>{i.item_no}</td>
+                          <td>
+                            {editingItemNo === i.item_no ? (
+                              <input type="text" value={editingDesc} onChange={(e) => setEditingDesc(e.target.value)} style={{ width: "100%" }} />
+                            ) : (
+                              i.description
+                            )}
+                          </td>
                           <td>
                             {editingItemNo === i.item_no ? (
                               <input type="text" value={editingUnit} onChange={(e) => setEditingUnit(e.target.value)} style={{ maxWidth: 70 }} />
@@ -169,13 +176,6 @@ export default function ItemsPage() {
                               {usageOpenFor === i.item_no ? "Hide Usage" : "Usage"}
                             </button>{" "}
                             <button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteItem(i.item_no)}>Delete</button>
-                          </td>
-                          <td>
-                            {editingItemNo === i.item_no ? (
-                              <input type="text" value={editingDesc} onChange={(e) => setEditingDesc(e.target.value)} style={{ width: "100%" }} />
-                            ) : (
-                              i.description
-                            )}
                           </td>
                         </tr>
                         {usageOpenFor === i.item_no && (

@@ -273,6 +273,47 @@ export function formatSerialRange(serials: string[]): string {
   return `${list[0]} – ${list[list.length - 1]} (${list.length} pcs)`;
 }
 
+// Purchase request forms (Form A - Inventory/Service, Form B - Expense).
+export const FORM_A_CODES = ["INVENTORY", "SERVICE"];
+export const EXPENSE_CODES: { code: string; label: string }[] = [
+  { code: "A", label: "Warehouse & Workshop" },
+  { code: "B", label: "Additional Part Expense" },
+  { code: "C", label: "Project Expense" },
+  { code: "D", label: "Lab Equipment Expense" },
+  { code: "E", label: "Packing, Document, Insurance" },
+  { code: "F", label: "Office Maintenance Expense" },
+  { code: "G", label: "Office Sanitary Expense" },
+  { code: "H", label: "Office Stationary Expense" },
+  { code: "I", label: "Website, Catalogue, etc" },
+  { code: "J", label: "Fixed Asset*" },
+  { code: "K", label: "Natura" },
+  { code: "L", label: "Exhibition and Seminar Expense" },
+  { code: "M", label: "Other Expense" },
+];
+
+export interface PurchaseFormItem {
+  id: string;
+  description: string;
+  budget: number;
+  ppn: boolean;
+  supplier_name: string;
+  code: string;
+  attachment_path: string | null;
+  attachment_filename: string | null;
+}
+
+export interface PurchaseForm {
+  id: string;
+  form_type: "A" | "B";
+  request_date: string;
+  name: string;
+  customer_name: string;
+  po_so_number: string;
+  purpose: string;
+  created_at: string;
+  items: PurchaseFormItem[];
+}
+
 // Splits `text` into [before, matched, after] around the first
 // case-insensitive occurrence of `term`, for bolding the matched prefix in
 // item-code suggestion lists (e.g. typing "TC" bolds "TC" in "TC.12").

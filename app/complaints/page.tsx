@@ -219,8 +219,11 @@ export default function ComplaintsPage() {
     setSoNo(jo.so_no);
     setCustomerName(jo.customer_name);
     setItemDescription(jo.item_description);
-    const matched = salesAccounts.find((a) => a.full_name === jo.sales_person_name);
-    if (matched) setSubmittedBy(matched.full_name);
+    // Prefill straight from the JO's own sales person regardless of
+    // whether that name still shows up in the current qualifying-account
+    // list (e.g. their position changed since) - a strict match here was
+    // silently leaving the field blank whenever that happened.
+    if (jo.sales_person_name) setSubmittedBy(jo.sales_person_name);
     setSoSuggestOpen(false);
   }
 
@@ -384,6 +387,11 @@ export default function ComplaintsPage() {
                     <label>Sales person</label>
                     <select value={submittedBy} onChange={(e) => setSubmittedBy(e.target.value)}>
                       <option value="">Select...</option>
+                      {/* Covers the case where the JO's sales person isn't (or is no longer) in the
+                          qualifying-position list - still shown/selected instead of silently blank. */}
+                      {submittedBy && !salesAccounts.some((a) => a.full_name === submittedBy) && (
+                        <option value={submittedBy}>{submittedBy}</option>
+                      )}
                       {salesAccounts.map((a) => <option key={a.id} value={a.full_name}>{a.full_name}</option>)}
                     </select>
                   </div>
