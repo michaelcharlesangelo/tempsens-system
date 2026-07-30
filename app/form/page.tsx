@@ -6,17 +6,30 @@ import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
-import { PurchaseForm, PurchaseFormItem, FORM_A_CODES, EXPENSE_CODES, fmtDate, fmtDateTime } from "@/lib/jobOrders";
+import { PurchaseForm, PurchaseFormItem, FORM_A_CODES, FORM_C_CODES, FORM_D_CODES, EXPENSE_CODES, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
 
-type FormType = "A" | "B";
+type FormType = "A" | "B" | "C" | "D";
+// Form A/B items carry description/budget/ppn/supplierName/code/file - Form
+// C/D items carry itemCode/description/qty/unit/code/remarks instead. One
+// draft shape covers both so the table/edit code doesn't need to branch on
+// which fields exist, just which columns to show.
 interface DraftItem {
   description: string; budget: string; ppn: boolean; supplierName: string; code: string;
   file: File | null; existingPath?: string | null; existingFilename?: string | null;
+  itemCode: string; qty: string; unit: string; remarks: string;
 }
 
+const ITEM_SHAPE_FORMS: FormType[] = ["C", "D"];
+const FORM_TYPE_LABELS: Record<FormType, string> = {
+  A: "Form A (Inventory/Service)", B: "Form B (Expense)", C: "Form C (Inventory Out)", D: "Form D (Stock Request)",
+};
+const FORM_TYPE_TITLES: Record<FormType, string> = {
+  A: "FORM A (INVENTORY/SERVICE)", B: "FORM B (EXPENSE)", C: "FORM C (INVENTORY OUT)", D: "FORM D (STOCK REQUEST)",
+};
+
 function blankItem(): DraftItem {
-  return { description: "", budget: "", ppn: false, supplierName: "", code: "", file: null };
+  return { description: "", budget: "", ppn: false, supplierName: "", code: "", file: null, itemCode: "", qty: "1", unit: "pcs", remarks: "" };
 }
 
 function formatBudget(value: string): string {
@@ -55,25 +68,35 @@ function esc(value: unknown): string {
 }
 
 function printForm(form: PurchaseForm) {
-  const rows = form.items.map((it) => `
-    <tr>
-      <td>${esc(it.description)}</td><td>Rp ${esc(Number(it.budget).toLocaleString("id-ID"))}</td>
-      <td>${it.ppn ? "Yes" : "-"}</td><td>${esc(it.supplier_name)}</td><td>${esc(it.code)}</td>
-    </tr>`).join("");
+  const isItemShape = ITEM_SHAPE_FORMS.includes(form.form_type);
+  const rows = isItemShape
+    ? form.items.map((it) => `
+      <tr>
+        <td>${esc(it.item_code || "-")}</td><td>${esc(it.description)}</td><td>${esc(it.qty)}</td>
+        <td>${esc(it.unit)}</td><td>${esc(it.code)}</td><td>${esc(it.remarks || "-")}</td>
+      </tr>`).join("")
+    : form.items.map((it) => `
+      <tr>
+        <td>${esc(it.description)}</td><td>Rp ${esc(Number(it.budget).toLocaleString("id-ID"))}</td>
+        <td>${it.ppn ? "Yes" : "-"}</td><td>${esc(it.supplier_name)}</td><td>${esc(it.code)}</td>
+      </tr>`).join("");
   const total = form.items.reduce((n, it) => n + Number(it.budget || 0), 0);
-  const title = form.form_type === "A" ? "FORM A (INVENTORY/SERVICE)" : "FORM B (EXPENSE)";
+  const title = FORM_TYPE_TITLES[form.form_type];
 
   const comments = form.history.filter((h) => h.comment);
   const commentRows = comments.length
     ? comments.map((h) => `<div class="comment"><b>${esc(h.changed_by)}</b> <span class="muted">(${esc(fmtDateTime(h.changed_at))})</span>: ${esc(h.comment)}</div>`).join("")
     : `<div class="muted">None.</div>`;
 
-  const expenseCodeSection = form.form_type === "B" ? `
-    <div class="section-title">Expense Code</div>
+  const codeLegend = (codes: { code: string; label: string }[], heading: string) => `
+    <div class="section-title">${esc(heading)}</div>
     <div class="expense-codes">
-      ${EXPENSE_CODES.map((e) => `<div>${e.code === "J" ? "<b>J)</b> Fixed Asset*<div class=\"muted\" style=\"font-size:8.5px;padding-left:12px;\">*Fixed Asset price is &ge; Rp.1.000.000</div>" : `<b>${esc(e.code)})</b> ${esc(e.label)}`}</div>`).join("")}
+      ${codes.map((e) => `<div>${e.code === "J" ? "<b>J)</b> Fixed Asset*<div class=\"muted\" style=\"font-size:8.5px;padding-left:12px;\">*Fixed Asset price is &ge; Rp.1.000.000</div>" : `<b>${esc(e.code)})</b> ${esc(e.label)}`}</div>`).join("")}
     </div>
-  ` : "";
+  `;
+  const expenseCodeSection = form.form_type === "B" ? codeLegend(EXPENSE_CODES, "Expense Code")
+    : form.form_type === "C" ? codeLegend(FORM_C_CODES, "Code")
+    : "";
 
   const html = `
     <html><head><meta charset="utf-8"><title>${esc(title)} - ${esc(form.name)}</title>
@@ -106,10 +129,12 @@ function printForm(form: PurchaseForm) {
       ${expenseCodeSection}
 
       <table class="items" style="margin-top:10px">
-        <thead><tr><th>Item Description</th><th>Budget (IDR)</th><th>PPN</th><th>Supplier Name</th><th>Code</th></tr></thead>
+        <thead><tr>${isItemShape
+          ? "<th>Item Code</th><th>Item Description</th><th>Qty</th><th>Unit</th><th>Code</th><th>Remarks</th>"
+          : "<th>Item Description</th><th>Budget (IDR)</th><th>PPN</th><th>Supplier Name</th><th>Code</th>"}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      <div class="total">Total Budget: Rp ${total.toLocaleString("id-ID")}</div>
+      ${isItemShape ? "" : `<div class="total">Total Budget: Rp ${total.toLocaleString("id-ID")}</div>`}
 
       <div class="section-title">Comments</div>
       ${commentRows}
@@ -200,6 +225,7 @@ function FormPageInner() {
       description: it.description, budget: it.budget ? Number(it.budget).toLocaleString("id-ID") : "",
       ppn: it.ppn, supplierName: it.supplier_name, code: it.code, file: null,
       existingPath: it.attachment_path, existingFilename: it.attachment_filename,
+      itemCode: it.item_code, qty: it.qty ? String(it.qty) : "1", unit: it.unit || "pcs", remarks: it.remarks,
     })) : [blankItem()]);
     setShowForm(true);
     setError(null);
@@ -246,6 +272,7 @@ function FormPageInner() {
       formData.append("items", JSON.stringify(items.map((it) => ({
         description: it.description, budget: parseBudget(it.budget), ppn: it.ppn, supplierName: it.supplierName, code: it.code,
         existingPath: it.existingPath ?? null, existingFilename: it.existingFilename ?? null,
+        itemCode: it.itemCode, qty: it.qty, unit: it.unit, remarks: it.remarks,
       }))));
       items.forEach((it, i) => { if (it.file) formData.append(`attachment_${i}`, it.file); });
 
@@ -273,12 +300,19 @@ function FormPageInner() {
     load();
   }
 
-  const codeOptions = formType === "B" ? EXPENSE_CODES.map((e) => ({ value: e.code, label: `${e.code} - ${e.label}` })) : FORM_A_CODES.map((c) => ({ value: c, label: c }));
+  const isItemShape = formType ? ITEM_SHAPE_FORMS.includes(formType) : false;
+  const codeOptions =
+    formType === "B" ? EXPENSE_CODES.map((e) => ({ value: e.code, label: `${e.code} - ${e.label}` }))
+    : formType === "C" ? FORM_C_CODES.map((e) => ({ value: e.code, label: `${e.code} - ${e.label}` }))
+    : formType === "D" ? FORM_D_CODES.map((c) => ({ value: c, label: c }))
+    : FORM_A_CODES.map((c) => ({ value: c, label: c }));
   const canSubmit = formType && name.trim() && items.some((it) => it.description.trim())
     && items.every((it) => !it.description.trim() || it.code) && !saving;
 
   const formsA = (forms ?? []).filter((f) => f.form_type === "A");
   const formsB = (forms ?? []).filter((f) => f.form_type === "B");
+  const formsC = (forms ?? []).filter((f) => f.form_type === "C");
+  const formsD = (forms ?? []).filter((f) => f.form_type === "D");
 
   return (
     <>
@@ -305,12 +339,14 @@ function FormPageInner() {
                 <div className="pill-toggle equal-width">
                   <button onClick={() => setFormType("A")}>Form A (Inventory/Service)</button>
                   <button onClick={() => setFormType("B")}>Form B (Expense)</button>
+                  <button onClick={() => setFormType("C")}>Form C (Inventory Out)</button>
+                  <button onClick={() => setFormType("D")}>Form D (Stock Request)</button>
                 </div>
               </div>
             ) : (
               <>
                 <p className="subtle" style={{ marginTop: -4 }}>
-                  {formType === "A" ? "Form A (Inventory/Service)" : "Form B (Expense)"} —{" "}
+                  {FORM_TYPE_LABELS[formType]} —{" "}
                   <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => { setFormType(null); setItems([blankItem()]); }}>
                     change type
                   </span>
@@ -319,15 +355,17 @@ function FormPageInner() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
                   <div style={{ width: 140 }} />
                   <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>
-                    {formType === "A" ? "FORM A (INVENTORY/SERVICE)" : "FORM B (EXPENSE)"}
+                    {FORM_TYPE_TITLES[formType]}
                   </h2>
                   <div className="subtle" style={{ fontSize: "0.8rem", width: 140, textAlign: "right", whiteSpace: "nowrap" }}>
                     Request Date: {fmtDate(todayIso)}
                   </div>
                 </div>
-                <p className="subtle" style={{ textAlign: "center", marginTop: 4 }}>
-                  {formType === "A" ? "Accurate Module: RI - PI" : "Accurate Module: OP - JV"}
-                </p>
+                {(formType === "A" || formType === "B") && (
+                  <p className="subtle" style={{ textAlign: "center", marginTop: 4 }}>
+                    {formType === "A" ? "Accurate Module: RI - PI" : "Accurate Module: OP - JV"}
+                  </p>
+                )}
 
                 <div className="form-sheet" style={{ marginTop: 18 }}>
                   <div className="form-sheet-col">
@@ -340,71 +378,112 @@ function FormPageInner() {
                   </div>
                 </div>
 
-                {formType === "B" && (
-                  <div className="card" style={{ background: "var(--panel-muted)", marginTop: 14 }}>
-                    <div className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase", marginBottom: 8 }}>Expense Code</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 24px" }}>
-                      <div>
-                        {EXPENSE_CODES.slice(0, 7).map((e) => (
-                          <div key={e.code} style={{ fontSize: "0.82rem", padding: "3px 0" }}><b>{e.code})</b> {e.label}</div>
-                        ))}
-                      </div>
-                      <div>
-                        {EXPENSE_CODES.slice(7).map((e) => (
-                          <Fragment key={e.code}>
-                            <div style={{ fontSize: "0.82rem", padding: "3px 0" }}><b>{e.code})</b> {e.label}</div>
-                            {e.code === "J" && (
-                              <div className="subtle" style={{ fontSize: "0.74rem", paddingLeft: 22 }}>*Fixed Asset price is &ge; Rp.1.000.000</div>
-                            )}
-                          </Fragment>
-                        ))}
+                {(formType === "B" || formType === "C") && (() => {
+                  const codes = formType === "B" ? EXPENSE_CODES : FORM_C_CODES;
+                  const heading = formType === "B" ? "Expense Code" : "Code";
+                  const half = Math.ceil(codes.length / 2);
+                  return (
+                    <div className="card" style={{ background: "var(--panel-muted)", marginTop: 14 }}>
+                      <div className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase", marginBottom: 8 }}>{heading}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 24px" }}>
+                        <div>
+                          {codes.slice(0, half).map((e) => (
+                            <div key={e.code} style={{ fontSize: "0.82rem", padding: "3px 0" }}><b>{e.code})</b> {e.label}</div>
+                          ))}
+                        </div>
+                        <div>
+                          {codes.slice(half).map((e) => (
+                            <Fragment key={e.code}>
+                              <div style={{ fontSize: "0.82rem", padding: "3px 0" }}><b>{e.code})</b> {e.label}</div>
+                              {e.code === "J" && (
+                                <div className="subtle" style={{ fontSize: "0.74rem", paddingLeft: 22 }}>*Fixed Asset price is &ge; Rp.1.000.000</div>
+                              )}
+                            </Fragment>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 <div style={{ overflowX: "auto", marginTop: 14 }}>
                   <table className="data-table fixed">
-                    <colgroup>
-                      <col style={{ width: "4%" }} /><col style={{ width: "29%" }} /><col style={{ width: "10%" }} />
-                      <col style={{ width: "7%" }} /><col style={{ width: "16%" }} /><col style={{ width: "14%" }} />
-                      <col style={{ width: "14%" }} /><col style={{ width: "6%" }} />
-                    </colgroup>
+                    {isItemShape ? (
+                      <colgroup>
+                        <col style={{ width: "4%" }} /><col style={{ width: "13%" }} /><col style={{ width: "26%" }} />
+                        <col style={{ width: "8%" }} /><col style={{ width: "10%" }} /><col style={{ width: "14%" }} />
+                        <col style={{ width: "19%" }} /><col style={{ width: "6%" }} />
+                      </colgroup>
+                    ) : (
+                      <colgroup>
+                        <col style={{ width: "4%" }} /><col style={{ width: "29%" }} /><col style={{ width: "10%" }} />
+                        <col style={{ width: "7%" }} /><col style={{ width: "16%" }} /><col style={{ width: "14%" }} />
+                        <col style={{ width: "14%" }} /><col style={{ width: "6%" }} />
+                      </colgroup>
+                    )}
                     <thead>
-                      <tr>
-                        <th>No.</th><th>Item Description</th><th>Budget (IDR)</th><th style={{ textAlign: "center", paddingLeft: 10 }}>PPN</th>
-                        <th>Supplier Name</th><th>Code</th><th>Attachment</th><th></th>
-                      </tr>
+                      {isItemShape ? (
+                        <tr>
+                          <th>No.</th><th>Item Code</th><th>Item Description</th><th>Qty</th>
+                          <th>Unit</th><th>Code</th><th>Remarks</th><th></th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <th>No.</th><th>Item Description</th><th>Budget (IDR)</th><th style={{ textAlign: "center", paddingLeft: 10 }}>PPN</th>
+                          <th>Supplier Name</th><th>Code</th><th>Attachment</th><th></th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody>
                       {items.map((it, i) => (
                         <tr key={i}>
                           <td>{i + 1}</td>
-                          <td><input type="text" value={it.description} onChange={(e) => updateItem(i, { description: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
-                          <td>
-                            <input
-                              type="text" inputMode="numeric" value={it.budget}
-                              onChange={(e) => updateItem(i, { budget: formatBudget(e.target.value) })}
-                              placeholder="0" style={{ fontSize: "0.82rem" }}
-                            />
-                          </td>
-                          <td style={{ textAlign: "center", verticalAlign: "middle", paddingLeft: 10 }}>
-                            <input type="checkbox" checked={it.ppn} onChange={(e) => updateItem(i, { ppn: e.target.checked })} style={{ width: 16, height: 16 }} />
-                          </td>
-                          <td><input type="text" value={it.supplierName} onChange={(e) => updateItem(i, { supplierName: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
-                          <td>
-                            <select
-                              value={it.code} onChange={(e) => updateItem(i, { code: e.target.value })}
-                              style={{ fontSize: "0.78rem", borderColor: it.description.trim() && !it.code ? "#dc2626" : undefined }}
-                            >
-                              <option value="">Select...</option>
-                              {codeOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                            </select>
-                          </td>
-                          <td>
-                            <input type="file" accept="application/pdf,image/*" onChange={(e) => updateItem(i, { file: e.target.files?.[0] || null })} style={{ fontSize: "0.72rem" }} />
-                            {it.existingFilename && !it.file && <div className="subtle" style={{ fontSize: "0.68rem" }}>Current: {it.existingFilename}</div>}
-                          </td>
+                          {isItemShape ? (
+                            <>
+                              <td><input type="text" value={it.itemCode} onChange={(e) => updateItem(i, { itemCode: e.target.value.toUpperCase() })} style={{ fontSize: "0.82rem" }} /></td>
+                              <td><input type="text" value={it.description} onChange={(e) => updateItem(i, { description: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
+                              <td><input type="number" value={it.qty} onChange={(e) => updateItem(i, { qty: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
+                              <td><input type="text" value={it.unit} onChange={(e) => updateItem(i, { unit: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
+                              <td>
+                                <select
+                                  value={it.code} onChange={(e) => updateItem(i, { code: e.target.value })}
+                                  style={{ fontSize: "0.78rem", borderColor: it.description.trim() && !it.code ? "#dc2626" : undefined }}
+                                >
+                                  <option value="">Select...</option>
+                                  {codeOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                </select>
+                              </td>
+                              <td><input type="text" value={it.remarks} onChange={(e) => updateItem(i, { remarks: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
+                            </>
+                          ) : (
+                            <>
+                              <td><input type="text" value={it.description} onChange={(e) => updateItem(i, { description: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
+                              <td>
+                                <input
+                                  type="text" inputMode="numeric" value={it.budget}
+                                  onChange={(e) => updateItem(i, { budget: formatBudget(e.target.value) })}
+                                  placeholder="0" style={{ fontSize: "0.82rem" }}
+                                />
+                              </td>
+                              <td style={{ textAlign: "center", verticalAlign: "middle", paddingLeft: 10 }}>
+                                <input type="checkbox" checked={it.ppn} onChange={(e) => updateItem(i, { ppn: e.target.checked })} style={{ width: 16, height: 16 }} />
+                              </td>
+                              <td><input type="text" value={it.supplierName} onChange={(e) => updateItem(i, { supplierName: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
+                              <td>
+                                <select
+                                  value={it.code} onChange={(e) => updateItem(i, { code: e.target.value })}
+                                  style={{ fontSize: "0.78rem", borderColor: it.description.trim() && !it.code ? "#dc2626" : undefined }}
+                                >
+                                  <option value="">Select...</option>
+                                  {codeOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                </select>
+                              </td>
+                              <td>
+                                <input type="file" accept="application/pdf,image/*" onChange={(e) => updateItem(i, { file: e.target.files?.[0] || null })} style={{ fontSize: "0.72rem" }} />
+                                {it.existingFilename && !it.file && <div className="subtle" style={{ fontSize: "0.68rem" }}>Current: {it.existingFilename}</div>}
+                              </td>
+                            </>
+                          )}
                           <td>
                             <button className="btn danger" style={{ padding: "3px 7px", fontSize: "0.7rem" }} onClick={() => removeItemRow(i)} disabled={items.length === 1}>×</button>
                           </td>
@@ -415,9 +494,11 @@ function FormPageInner() {
                 </div>
                 <button className="btn secondary" style={{ marginTop: 10 }} onClick={addItemRow}>+ Add item</button>
 
-                <div style={{ textAlign: "right", marginTop: 10, fontWeight: 700 }}>
-                  Total Budget: Rp {totalBudget.toLocaleString("id-ID")}
-                </div>
+                {!isItemShape && (
+                  <div style={{ textAlign: "right", marginTop: 10, fontWeight: 700 }}>
+                    Total Budget: Rp {totalBudget.toLocaleString("id-ID")}
+                  </div>
+                )}
 
                 {error && <p className="error-text">{error}</p>}
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -436,6 +517,8 @@ function FormPageInner() {
         <>
           <FormList title="Form A — Inventory/Service" items={formsA} onViewFile={viewFile} onEdit={startEdit} onCancel={cancelForm} onPrint={printForm} />
           <FormList title="Form B — Expense" items={formsB} onViewFile={viewFile} onEdit={startEdit} onCancel={cancelForm} onPrint={printForm} />
+          <FormList title="Form C — Inventory Out" items={formsC} onViewFile={viewFile} onEdit={startEdit} onCancel={cancelForm} onPrint={printForm} itemShape />
+          <FormList title="Form D — Stock Request" items={formsD} onViewFile={viewFile} onEdit={startEdit} onCancel={cancelForm} onPrint={printForm} itemShape />
         </>
       )}
     </>
@@ -445,10 +528,11 @@ function FormPageInner() {
 // Kept at module scope (not nested in FormPageInner) so re-renders from
 // typing in the submission form above never remount this list.
 function FormList({
-  title, items, onViewFile, onEdit, onCancel, onPrint,
+  title, items, onViewFile, onEdit, onCancel, onPrint, itemShape = false,
 }: {
   title: string; items: PurchaseForm[]; onViewFile: (path: string) => void;
   onEdit: (f: PurchaseForm) => void; onCancel: (id: string) => void; onPrint: (f: PurchaseForm) => void;
+  itemShape?: boolean;
 }) {
   const [showPending, setShowPending] = useState(true);
   const [showApproved, setShowApproved] = useState(false);
@@ -468,6 +552,7 @@ function FormList({
     <Collapsible
       title={title}
       count={items.length}
+      defaultOpen
       actions={
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
           <ToggleSwitch checked={showPending} onChange={setShowPending} label={`Pending (${items.filter((f) => f.status === "pending_approval").length})`} />
@@ -482,13 +567,18 @@ function FormList({
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead>
-                <tr><th>Date</th><th>Name</th><th>Customer</th><th>PO/SO</th><th>Purpose</th><th>Total</th><th>Status</th><th>Comments</th><th></th></tr>
+                <tr>
+                  <th>Date</th><th>Name</th><th>Customer</th><th>PO/SO</th><th>Purpose</th>
+                  {!itemShape && <th>Total</th>}
+                  <th>Status</th><th>Comments</th><th></th>
+                </tr>
               </thead>
               <tbody>
                 {pageItems.map((f) => {
                   const total = f.items.reduce((n, it) => n + Number(it.budget || 0), 0);
                   const commented = f.history.filter((h) => h.comment);
                   const sc = statusColor(f);
+                  const colSpan = itemShape ? 8 : 9;
                   return (
                     <Fragment key={f.id}>
                       <tr>
@@ -497,7 +587,7 @@ function FormList({
                         <td>{f.customer_name || <span className="subtle">-</span>}</td>
                         <td>{f.po_so_number || <span className="subtle">-</span>}</td>
                         <td>{f.purpose}</td>
-                        <td>Rp {total.toLocaleString("id-ID")}</td>
+                        {!itemShape && <td>Rp {total.toLocaleString("id-ID")}</td>}
                         <td><span className="pill" style={{ background: sc.bg, color: sc.fg }}>{statusLabel(f)}</span></td>
                         <td>
                           <button
@@ -525,7 +615,7 @@ function FormList({
                       </tr>
                       {commentsOpenId === f.id && commented.length > 0 && (
                         <tr>
-                          <td colSpan={9} style={{ background: "var(--panel-muted)" }}>
+                          <td colSpan={colSpan} style={{ background: "var(--panel-muted)" }}>
                             {commented.map((h) => (
                               <div key={h.id} style={{ fontSize: "0.82rem", padding: "4px 0" }}>
                                 <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
@@ -536,26 +626,46 @@ function FormList({
                       )}
                       {openId === f.id && (
                         <tr>
-                          <td colSpan={9} style={{ background: "var(--panel-muted)" }}>
+                          <td colSpan={colSpan} style={{ background: "var(--panel-muted)" }}>
                             <div style={{ overflowX: "auto" }}>
                               <table className="data-table">
-                                <thead><tr><th>Description</th><th>Budget</th><th>PPN</th><th>Supplier</th><th>Code</th><th>Attachment</th></tr></thead>
-                                <tbody>
-                                  {f.items.map((it: PurchaseFormItem) => (
-                                    <tr key={it.id}>
-                                      <td>{it.description}</td>
-                                      <td>Rp {Number(it.budget).toLocaleString("id-ID")}</td>
-                                      <td>{it.ppn ? "✓" : "-"}</td>
-                                      <td>{it.supplier_name}</td>
-                                      <td>{it.code}</td>
-                                      <td>
-                                        {it.attachment_path ? (
-                                          <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => onViewFile(it.attachment_path!)}>View</button>
-                                        ) : <span className="subtle">-</span>}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
+                                {itemShape ? (
+                                  <>
+                                    <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Code</th><th>Remarks</th></tr></thead>
+                                    <tbody>
+                                      {f.items.map((it: PurchaseFormItem) => (
+                                        <tr key={it.id}>
+                                          <td>{it.item_code || <span className="subtle">-</span>}</td>
+                                          <td>{it.description}</td>
+                                          <td>{it.qty}</td>
+                                          <td>{it.unit}</td>
+                                          <td>{it.code}</td>
+                                          <td>{it.remarks || <span className="subtle">-</span>}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </>
+                                ) : (
+                                  <>
+                                    <thead><tr><th>Description</th><th>Budget</th><th>PPN</th><th>Supplier</th><th>Code</th><th>Attachment</th></tr></thead>
+                                    <tbody>
+                                      {f.items.map((it: PurchaseFormItem) => (
+                                        <tr key={it.id}>
+                                          <td>{it.description}</td>
+                                          <td>Rp {Number(it.budget).toLocaleString("id-ID")}</td>
+                                          <td>{it.ppn ? "✓" : "-"}</td>
+                                          <td>{it.supplier_name}</td>
+                                          <td>{it.code}</td>
+                                          <td>
+                                            {it.attachment_path ? (
+                                              <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => onViewFile(it.attachment_path!)}>View</button>
+                                            ) : <span className="subtle">-</span>}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </>
+                                )}
                               </table>
                             </div>
                           </td>

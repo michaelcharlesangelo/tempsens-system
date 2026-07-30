@@ -6,6 +6,8 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
 import { PurchaseForm, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
+const ITEM_SHAPE_TYPES = ["C", "D"];
+
 function formMatches(f: PurchaseForm, term: string): boolean {
   return (
     f.name.toLowerCase().includes(term) ||
@@ -94,6 +96,7 @@ export default function FormApprovalView({ layer, label }: { layer: 1 | 2; label
               </thead>
               <tbody>
                 {pageItems.map((f) => {
+                  const isItemShape = ITEM_SHAPE_TYPES.includes(f.form_type);
                   const total = f.items.reduce((n, it) => n + Number(it.budget || 0), 0);
                   const commented = f.history.filter((h) => h.comment);
                   return (
@@ -105,7 +108,7 @@ export default function FormApprovalView({ layer, label }: { layer: 1 | 2; label
                         <td>{f.customer_name || <span className="subtle">-</span>}</td>
                         <td>{f.po_so_number || <span className="subtle">-</span>}</td>
                         <td>{f.purpose}</td>
-                        <td>Rp {total.toLocaleString("id-ID")}</td>
+                        <td>{isItemShape ? <span className="subtle">-</span> : `Rp ${total.toLocaleString("id-ID")}`}</td>
                         <td>
                           <button
                             className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }}
@@ -137,23 +140,43 @@ export default function FormApprovalView({ layer, label }: { layer: 1 | 2; label
                           <td colSpan={9} style={{ background: "var(--panel-muted)" }}>
                             <div style={{ overflowX: "auto" }}>
                               <table className="data-table">
-                                <thead><tr><th>Description</th><th>Budget</th><th>PPN</th><th>Supplier</th><th>Code</th><th>Attachment</th></tr></thead>
-                                <tbody>
-                                  {f.items.map((it) => (
-                                    <tr key={it.id}>
-                                      <td>{it.description}</td>
-                                      <td>Rp {Number(it.budget).toLocaleString("id-ID")}</td>
-                                      <td>{it.ppn ? "✓" : "-"}</td>
-                                      <td>{it.supplier_name}</td>
-                                      <td>{it.code}</td>
-                                      <td>
-                                        {it.attachment_path ? (
-                                          <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => viewFile(it.attachment_path!)}>View</button>
-                                        ) : <span className="subtle">-</span>}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
+                                {isItemShape ? (
+                                  <>
+                                    <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Code</th><th>Remarks</th></tr></thead>
+                                    <tbody>
+                                      {f.items.map((it) => (
+                                        <tr key={it.id}>
+                                          <td>{it.item_code || <span className="subtle">-</span>}</td>
+                                          <td>{it.description}</td>
+                                          <td>{it.qty}</td>
+                                          <td>{it.unit}</td>
+                                          <td>{it.code}</td>
+                                          <td>{it.remarks || <span className="subtle">-</span>}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </>
+                                ) : (
+                                  <>
+                                    <thead><tr><th>Description</th><th>Budget</th><th>PPN</th><th>Supplier</th><th>Code</th><th>Attachment</th></tr></thead>
+                                    <tbody>
+                                      {f.items.map((it) => (
+                                        <tr key={it.id}>
+                                          <td>{it.description}</td>
+                                          <td>Rp {Number(it.budget).toLocaleString("id-ID")}</td>
+                                          <td>{it.ppn ? "✓" : "-"}</td>
+                                          <td>{it.supplier_name}</td>
+                                          <td>{it.code}</td>
+                                          <td>
+                                            {it.attachment_path ? (
+                                              <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => viewFile(it.attachment_path!)}>View</button>
+                                            ) : <span className="subtle">-</span>}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </>
+                                )}
                               </table>
                             </div>
                           </td>

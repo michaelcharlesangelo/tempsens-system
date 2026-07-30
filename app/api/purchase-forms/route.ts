@@ -12,7 +12,13 @@ interface ItemInput {
   ppn?: boolean;
   supplierName?: string;
   code?: string;
+  itemCode?: string;
+  qty?: number | string;
+  unit?: string;
+  remarks?: string;
 }
+
+const FORM_TYPES = ["A", "B", "C", "D"];
 
 export async function GET() {
   const admin = getSupabaseAdminClient();
@@ -28,7 +34,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
-  const formType = formData.get("formType") === "B" ? "B" : "A";
+  const formTypeRaw = formData.get("formType") as string;
+  const formType = FORM_TYPES.includes(formTypeRaw) ? formTypeRaw : "A";
   const requestDate = (formData.get("requestDate") as string) || new Date().toISOString().slice(0, 10);
   const name = ((formData.get("name") as string) || "").trim();
   const customerName = ((formData.get("customerName") as string) || "").trim();
@@ -93,6 +100,10 @@ export async function POST(req: NextRequest) {
       code: String(item.code ?? "").trim(),
       attachment_path: attachmentPath,
       attachment_filename: attachmentFilename,
+      item_code: String(item.itemCode ?? "").trim().toUpperCase(),
+      qty: Number(item.qty) || 0,
+      unit: String(item.unit ?? "").trim(),
+      remarks: String(item.remarks ?? "").trim(),
     };
   }));
 

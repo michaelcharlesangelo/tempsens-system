@@ -6,11 +6,51 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
 import DateField from "@/app/components/DateField";
 import PoStatusSlider from "@/app/components/PoStatusSlider";
+import ToggleSwitch from "@/app/components/ToggleSwitch";
 import {
-  PoOut, Shipment, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PoOutStatus,
-  fmtDate, fmtDateTime,
+  PoOut, Shipment, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PoOutStatus, PO_OUT_STATUSES,
+  fmtDate, fmtDateTime, exportPoOutRecapToExcel,
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
+
+const EXIM_COLUMNS: { key: string; label: string }[] = [
+  { key: "poDate", label: "PO Date" },
+  { key: "days", label: "Days" },
+  { key: "deadline", label: "Deadline" },
+  { key: "poNumber", label: "PO Number" },
+  { key: "itemCode", label: "Item Code" },
+  { key: "sales", label: "Sales" },
+  { key: "customerName", label: "Customer Name" },
+  { key: "itemDescription", label: "Item Description" },
+  { key: "qty", label: "Qty" },
+  { key: "unit", label: "Unit" },
+  { key: "supplier", label: "Supplier" },
+  { key: "status", label: "Status" },
+  { key: "oc", label: "OC" },
+  { key: "origin", label: "Origin" },
+  { key: "shipment", label: "Shipment" },
+];
+
+function eximCellText(p: PoOut, key: string): string {
+  switch (key) {
+    case "poDate": return fmtDate(p.po_date);
+    case "days": return String(daysSince(p.po_date));
+    case "deadline": return fmtDate(p.deadline) + (p.urgent ? " (URGENT)" : "");
+    case "poNumber": return p.po_number;
+    case "itemCode": return p.item_code;
+    case "sales": return p.sales;
+    case "customerName": return p.customer_name;
+    case "itemDescription": return p.item_description;
+    case "qty": return String(p.qty);
+    case "unit": return p.unit;
+    case "supplier": return p.supplier;
+    case "status": return PO_OUT_STATUSES.find((s) => s.value === p.status)?.label ?? p.status;
+    case "oc": return p.oc;
+    case "origin": return p.origin;
+    case "shipment": return p.shipment;
+    default: return "";
+  }
+}
 
 // Calendar-day difference, same convention as Dashboard's daysSince.
 function daysSince(dateStr: string): number {
@@ -33,7 +73,7 @@ function poMatches(p: PoOut, term: string): boolean {
 
 type SortKey = "po_date" | "po_number" | "item_code" | "sales" | "customer_name" | "supplier" | "shipment";
 
-interface FieldsDraft { oc: string; origin: string; shipment: string; }
+interface FieldsDraft { oc: string; origin: string; }
 
 interface ShipmentDraft {
   shipmentNumber: string; supplier: string; shipmentVia: string; incoterms: string; invoice: string;
@@ -68,6 +108,9 @@ export default function EximPage() {
   const [pos, setPos] = useState<PoOut[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [activeTab, setActiveTab] = useState<SupplierTabCategory | "ALL">("ALL");
+  const [showProduction, setShowProduction] = useState(true);
+  const [showShipment, setShowShipment] = useState(true);
+  const [showArrived, setShowArrived] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [updatesOpenId, setUpdatesOpenId] = useState<string | null>(null);
@@ -216,7 +259,7 @@ export default function EximPage() {
 
   function startFieldsEdit(p: PoOut) {
     setEditingFieldsId(p.id);
-    setFieldsDraft({ oc: p.oc, origin: p.origin, shipment: p.shipment });
+    setFieldsDraft({ oc: p.oc, origin: p.origin });
   }
 
   async function saveFieldsEdit(id: string) {
@@ -231,6 +274,17 @@ export default function EximPage() {
     loadPos();
   }
 
+  // Shipment is its own standalone dropdown (not gated behind the OC/Origin
+  // Edit flow) - picking a value saves immediately.
+  async function updateShipment(id: string, shipment: string) {
+    const res = await fetch(`/api/po-out/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shipment }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMessage(data.error || "Failed to save."); return; }
+    loadPos();
+  }
+
   function sortBy(key: SortKey) {
     if (sortKey === key) { setSortDir((d) => (d === "asc" ? "desc" : "asc")); return; }
     setSortKey(key);
@@ -238,7 +292,8 @@ export default function EximPage() {
   }
 
   const supplierCategory = new Map(suppliers.map((s) => [s.name, s.tab_category]));
-  const filtered = (pos ?? []).filter((p) => activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab);
+  const statusVisible: Record<PoOutStatus, boolean> = { production: showProduction, shipment: showShipment, arrived: showArrived };
+  const filtered = (pos ?? []).filter((p) => (activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab) && statusVisible[p.status]);
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
         const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""));
@@ -377,7 +432,24 @@ export default function EximPage() {
         )}
       </Collapsible>
 
-      <Collapsible title="PO Out Recap" count={pos?.length} defaultOpen>
+      <Collapsible
+        title="PO Out Recap"
+        count={pos?.length}
+        defaultOpen
+        actions={
+          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+            <ToggleSwitch checked={showProduction} onChange={setShowProduction} label="Production" color={PO_OUT_STATUSES[0].color} />
+            <ToggleSwitch checked={showShipment} onChange={setShowShipment} label="Shipment" color={PO_OUT_STATUSES[1].color} />
+            <ToggleSwitch checked={showArrived} onChange={setShowArrived} label="Arrived" color={PO_OUT_STATUSES[2].color} />
+            <button
+              className="btn secondary" style={{ fontSize: "0.75rem" }}
+              onClick={() => exportPoOutRecapToExcel("exim-po-out-recap", sorted, EXIM_COLUMNS, eximCellText, suppliers)}
+            >
+              Export to Excel
+            </button>
+          </div>
+        }
+      >
         {!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
           <>
             <div style={{ display: "flex", gap: 2, marginBottom: 14, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
@@ -453,12 +525,10 @@ export default function EximPage() {
                           <td>{isEditingFields && fd ? <input type="text" value={fd.oc} onChange={(e) => setFieldsDraft({ ...fd, oc: e.target.value })} style={{ fontSize: "0.8rem", width: 90 }} /> : (p.oc || <span className="subtle">-</span>)}</td>
                           <td>{isEditingFields && fd ? <input type="text" value={fd.origin} onChange={(e) => setFieldsDraft({ ...fd, origin: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : (p.origin || <span className="subtle">-</span>)}</td>
                           <td>
-                            {isEditingFields && fd ? (
-                              <select value={fd.shipment} onChange={(e) => setFieldsDraft({ ...fd, shipment: e.target.value })} style={{ fontSize: "0.8rem" }}>
-                                <option value="">Select...</option>
-                                {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
-                              </select>
-                            ) : (p.shipment || <span className="subtle">-</span>)}
+                            <select value={p.shipment} onChange={(e) => updateShipment(p.id, e.target.value)} style={{ fontSize: "0.8rem" }}>
+                              <option value="">Select...</option>
+                              {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
+                            </select>
                           </td>
                           <td style={{ whiteSpace: "nowrap" }}>
                             {isEditingFields ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Collapsible from "@/app/components/Collapsible";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
@@ -9,6 +9,50 @@ import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime, 
 import { printFileUrl } from "@/lib/printFile";
 
 type AllJoSortCol = "jo_date" | "so_no" | "customer_name" | "item_no" | "serial_number";
+
+const ALL_JO_COLUMNS: { key: string; label: string; sortCol?: AllJoSortCol }[] = [
+  { key: "jo_date", label: "JO Date", sortCol: "jo_date" },
+  { key: "so_no", label: "SO Number", sortCol: "so_no" },
+  { key: "customer_name", label: "Customer Name", sortCol: "customer_name" },
+  { key: "item_no", label: "Item Code", sortCol: "item_no" },
+  { key: "item_description", label: "Description" },
+  { key: "quantity", label: "Qty" },
+  { key: "serial_number", label: "Serial Number(s)", sortCol: "serial_number" },
+  { key: "status", label: "Status" },
+  { key: "category", label: "Category" },
+  { key: "sales", label: "Sales" },
+  { key: "deadline", label: "Deadline" },
+];
+// The extra detail columns start hidden - the default view stays the
+// original compact list, with the rest available via Columns.
+const ALL_JO_DEFAULT_HIDDEN = new Set(["status", "category", "sales", "deadline"]);
+
+function allJoCellText(jo: JobOrder, key: string): string {
+  switch (key) {
+    case "jo_date": return fmtDate(jo.jo_date);
+    case "so_no": return jo.so_no;
+    case "customer_name": return jo.customer_name;
+    case "item_no": return jo.item_no;
+    case "item_description": return jo.item_description;
+    case "quantity": return String(jo.quantity);
+    case "serial_number": return formatSerialRange(jo.serial_numbers ?? []);
+    case "status": return jo.status;
+    case "category": return jo.item_category;
+    case "sales": return jo.sales_person_name;
+    case "deadline": return fmtDate(jo.deadline);
+    default: return "";
+  }
+}
+
+async function exportAllJobOrdersToExcel(rows: JobOrder[], columns: { key: string; label: string }[]) {
+  const XLSX = await import("xlsx");
+  const header = columns.map((c) => c.label);
+  const body = rows.map((jo) => columns.map((c) => allJoCellText(jo, c.key)));
+  const sheet = XLSX.utils.aoa_to_sheet([header, ...body]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "All Job Orders");
+  XLSX.writeFile(workbook, `all-job-orders-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
 
 // Reference table for the whole job order history (any status) - lets
 // Production look up the most recent serial number for an item before
@@ -19,11 +63,31 @@ function AllJobOrdersSection({ jobOrders }: { jobOrders: JobOrder[] }) {
   const [offCategories, setOffCategories] = useState<Set<string>>(new Set());
   const [sortCol, setSortCol] = useState<AllJoSortCol>("jo_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(ALL_JO_DEFAULT_HIDDEN);
+  const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
+  const columnsMenuRef = useRef<HTMLDivElement>(null);
 
   const categories = useMemo(
     () => Array.from(new Set(jobOrders.map((jo) => jo.item_category).filter(Boolean))).sort(),
     [jobOrders]
   );
+
+  useEffect(() => {
+    if (!columnsMenuOpen) return;
+    function handlePointerDown(e: MouseEvent) {
+      if (columnsMenuRef.current && !columnsMenuRef.current.contains(e.target as Node)) setColumnsMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [columnsMenuOpen]);
+
+  function toggleColumn(key: string) {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   function sortBy(col: AllJoSortCol) {
     if (sortCol === col) { setSortDir((d) => (d === "asc" ? "desc" : "asc")); return; }
@@ -42,13 +106,14 @@ function AllJobOrdersSection({ jobOrders }: { jobOrders: JobOrder[] }) {
   }, [jobOrders, offCategories, sortCol, sortDir]);
 
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(sorted, joMatchesSearch);
+  const visibleCols = ALL_JO_COLUMNS.filter((c) => !hiddenCols.has(c.key));
 
-  function SortHeader({ col, children }: { col: AllJoSortCol; children: ReactNode }) {
-    return (
-      <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy(col)}>
-        {children} {sortCol === col ? (sortDir === "asc" ? "▲" : "▼") : ""}
-      </th>
-    );
+  function cellFor(jo: JobOrder, key: string) {
+    if (key === "serial_number") {
+      const serialLabel = formatSerialRange(jo.serial_numbers ?? []);
+      return serialLabel === "-" ? <span className="subtle">-</span> : serialLabel;
+    }
+    return allJoCellText(jo, key);
   }
 
   return (
@@ -56,57 +121,76 @@ function AllJobOrdersSection({ jobOrders }: { jobOrders: JobOrder[] }) {
       <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
         Every job order regardless of status - use this to look up the last serial number used before filling in a new one.
       </p>
-      {categories.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 12 }}>
-          {categories.map((cat) => (
-            <ToggleSwitch
-              key={cat}
-              checked={!offCategories.has(cat)}
-              label={cat}
-              onChange={(v) => setOffCategories((cur) => {
-                const next = new Set(cur);
-                if (v) next.delete(cat); else next.add(cat);
-                return next;
-              })}
-            />
-          ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
+        {categories.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+            {categories.map((cat) => (
+              <ToggleSwitch
+                key={cat}
+                checked={!offCategories.has(cat)}
+                label={cat}
+                onChange={(v) => setOffCategories((cur) => {
+                  const next = new Set(cur);
+                  if (v) next.delete(cat); else next.add(cat);
+                  return next;
+                })}
+              />
+            ))}
+          </div>
+        )}
+        <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => exportAllJobOrdersToExcel(sorted, visibleCols)}>
+          Export to Excel
+        </button>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <SearchBox value={search} onChange={setSearch} />
+        <div ref={columnsMenuRef} style={{ position: "relative" }}>
+          <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => setColumnsMenuOpen((o) => !o)}>Columns ▾</button>
+          {columnsMenuOpen && (
+            <div
+              style={{
+                position: "absolute", top: "100%", right: 0, zIndex: 15, marginTop: 4,
+                background: "var(--panel, #fff)", border: "1px solid var(--border)", borderRadius: 8,
+                boxShadow: "0 4px 16px rgba(0,0,0,0.15)", padding: 10, width: 200,
+              }}
+            >
+              {ALL_JO_COLUMNS.map((c) => (
+                <label key={c.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", padding: "3px 0", cursor: "pointer" }}>
+                  <input type="checkbox" checked={!hiddenCols.has(c.key)} onChange={() => toggleColumn(c.key)} /> {c.label}
+                </label>
+              ))}
+              <button className="btn secondary" style={{ fontSize: "0.72rem", marginTop: 6, width: "100%" }} onClick={() => setHiddenCols(new Set())}>
+                Unhide all
+              </button>
+            </div>
+          )}
         </div>
-      )}
-      <SearchBox value={search} onChange={setSearch} />
-      {totalCount === 0 ? <p className="subtle">No matching job orders.</p> : (
+      </div>
+      {totalCount === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No matching job orders.</p> : (
         <>
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto", marginTop: 8 }}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <SortHeader col="jo_date">JO Date</SortHeader>
-                  <SortHeader col="so_no">SO Number</SortHeader>
-                  <SortHeader col="customer_name">Customer Name</SortHeader>
-                  <SortHeader col="item_no">Item Code</SortHeader>
-                  <th>Description</th>
-                  <th>Qty</th>
-                  <SortHeader col="serial_number">Serial Number(s)</SortHeader>
+                  {visibleCols.map((c) => (
+                    c.sortCol ? (
+                      <th key={c.key} style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }} onClick={() => sortBy(c.sortCol!)}>
+                        {c.label} {sortCol === c.sortCol ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                      </th>
+                    ) : <th key={c.key}>{c.label}</th>
+                  ))}
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {pageItems.map((jo) => {
-                  const serialLabel = formatSerialRange(jo.serial_numbers ?? []);
-                  return (
-                    <tr key={jo.id}>
-                      <td style={{ whiteSpace: "nowrap" }}>{fmtDate(jo.jo_date)}</td>
-                      <td>{jo.so_no}</td>
-                      <td>{jo.customer_name}</td>
-                      <td>{jo.item_no}</td>
-                      <td>{jo.item_description}</td>
-                      <td>{jo.quantity}</td>
-                      <td>{serialLabel === "-" ? <span className="subtle">-</span> : serialLabel}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        <a href={`/production-manager/${jo.id}`} className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>View</a>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {pageItems.map((jo) => (
+                  <tr key={jo.id}>
+                    {visibleCols.map((c) => <td key={c.key} style={c.key === "jo_date" || c.key === "deadline" ? { whiteSpace: "nowrap" } : undefined}>{cellFor(jo, c.key)}</td>)}
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <a href={`/production-manager/${jo.id}`} className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>View</a>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -129,12 +213,15 @@ function stageOf(jo: JobOrder): { label: string; twoLine?: [string, string]; bg:
 
 function JoTable({
   items, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acking, acknowledge, finishing, onFinish,
+  commentDraft, setCommentDraft, savingCommentId, onAddComment,
 }: {
   items: JobOrder[];
   historyOpenId: string | null; setHistoryOpenId: (id: string | null) => void;
   viewDrawing: (id: string) => void; printDrawing: (id: string) => void;
   acking: string | null; acknowledge: (id: string) => void;
   finishing: string | null; onFinish: (jo: JobOrder) => void;
+  commentDraft: Record<string, string>; setCommentDraft: (fn: (cur: Record<string, string>) => Record<string, string>) => void;
+  savingCommentId: string | null; onAddComment: (jo: JobOrder) => void;
 }) {
   return (
     <div style={{ overflowX: "auto" }}>
@@ -183,7 +270,12 @@ function JoTable({
                     <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => printDrawing(jo.id)}>Print</button>
                   </td>
                   <td>
-                    <span className="pill" style={{ background: stage.bg, color: stage.fg, whiteSpace: stage.twoLine ? "normal" : "nowrap", lineHeight: 1.3 }}>
+                    <span
+                      className="pill"
+                      style={{ background: stage.bg, color: stage.fg, whiteSpace: stage.twoLine ? "normal" : "nowrap", lineHeight: 1.3, cursor: "pointer" }}
+                      onClick={() => setHistoryOpenId(historyOpenId === jo.id ? null : jo.id)}
+                      title="Click to add or view progress/comments"
+                    >
                       {stage.twoLine ? <>{stage.twoLine[0]}<br />{stage.twoLine[1]}</> : stage.label}
                     </span>
                   </td>
@@ -192,7 +284,6 @@ function JoTable({
                       className="btn secondary"
                       style={{ fontSize: "0.72rem", padding: "3px 8px" }}
                       onClick={() => setHistoryOpenId(historyOpenId === jo.id ? null : jo.id)}
-                      disabled={commented.length === 0}
                     >
                       {historyOpenId === jo.id ? "Hide" : `View (${commented.length})`}
                     </button>
@@ -223,14 +314,28 @@ function JoTable({
                     )}
                   </td>
                 </tr>
-                {historyOpenId === jo.id && commented.length > 0 && (
+                {historyOpenId === jo.id && (
                   <tr>
                     <td colSpan={12} style={{ background: "var(--panel-muted)" }}>
-                      {commented.map((h: JobOrderHistoryEntry) => (
-                        <div key={h.id} style={{ fontSize: "0.82rem", padding: "4px 0" }}>
-                          <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                      <div style={{ padding: "8px 2px" }}>
+                        <div style={{ display: "flex", gap: 8, maxWidth: 520 }}>
+                          <input
+                            type="text" placeholder="Add a comment or remark..."
+                            value={commentDraft[jo.id] ?? ""} onChange={(e) => setCommentDraft((cur) => ({ ...cur, [jo.id]: e.target.value }))}
+                            style={{ flex: 1 }}
+                          />
+                          <button className="btn secondary" disabled={savingCommentId === jo.id || !(commentDraft[jo.id] ?? "").trim()} onClick={() => onAddComment(jo)}>
+                            {savingCommentId === jo.id ? "Saving..." : "Save"}
+                          </button>
                         </div>
-                      ))}
+                        <div style={{ marginTop: 10 }}>
+                          {commented.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : commented.map((h: JobOrderHistoryEntry) => (
+                            <div key={h.id} style={{ fontSize: "0.82rem", padding: "4px 0" }}>
+                              <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -245,12 +350,15 @@ function JoTable({
 
 function PagedJoSection({
   items, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acking, acknowledge, finishing, onFinish,
+  commentDraft, setCommentDraft, savingCommentId, onAddComment,
 }: {
   items: JobOrder[];
   historyOpenId: string | null; setHistoryOpenId: (id: string | null) => void;
   viewDrawing: (id: string) => void; printDrawing: (id: string) => void;
   acking: string | null; acknowledge: (id: string) => void;
   finishing: string | null; onFinish: (jo: JobOrder) => void;
+  commentDraft: Record<string, string>; setCommentDraft: (fn: (cur: Record<string, string>) => Record<string, string>) => void;
+  savingCommentId: string | null; onAddComment: (jo: JobOrder) => void;
 }) {
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, joMatchesSearch);
   return (
@@ -260,6 +368,7 @@ function PagedJoSection({
         items={pageItems} historyOpenId={historyOpenId} setHistoryOpenId={setHistoryOpenId}
         viewDrawing={viewDrawing} printDrawing={printDrawing} acking={acking} acknowledge={acknowledge}
         finishing={finishing} onFinish={onFinish}
+        commentDraft={commentDraft} setCommentDraft={setCommentDraft} savingCommentId={savingCommentId} onAddComment={onAddComment}
       />
       <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
     </>
@@ -274,6 +383,8 @@ export default function ProductionManagerPage() {
   const [acking, setAcking] = useState<string | null>(null);
   const [finishing, setFinishing] = useState<string | null>(null);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
+  const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
 
   async function load() {
     const [approvedRes, ackRes, inProgressRes, qcRes, completedRes, allRes] = await Promise.all([
@@ -340,7 +451,28 @@ export default function ProductionManagerPage() {
     }
   }
 
-  const sharedProps = { historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acking, acknowledge, finishing, onFinish: finishProduction };
+  async function addComment(jo: JobOrder) {
+    const comment = (commentDraft[jo.id] ?? "").trim();
+    if (!comment) return;
+    setSavingCommentId(jo.id);
+    try {
+      const res = await fetch(`/api/job-orders/${jo.id}/history`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changedBy: "Production Manager", comment }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMessage(data.error || "Failed to save comment."); return; }
+      setCommentDraft((cur) => ({ ...cur, [jo.id]: "" }));
+      load();
+    } finally {
+      setSavingCommentId(null);
+    }
+  }
+
+  const sharedProps = {
+    historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acking, acknowledge, finishing, onFinish: finishProduction,
+    commentDraft, setCommentDraft, savingCommentId, onAddComment: addComment,
+  };
 
   return (
     <>

@@ -326,10 +326,14 @@ export default function WarehouseManagerPage() {
                     <td>{i.description}</td>
                     <td>{i.qty} {i.unit}</td>
                     <td>
-                      {i.item_no ? (
-                        // Item code registered - procurement is settled, so
-                        // the choice locks in (no more accidental re-clicks)
-                        // and reads as resolved rather than an open action.
+                      {i.procurement_method ? (
+                        // A choice has actually been made - lock it in (no
+                        // more accidental re-clicks), reads as resolved
+                        // rather than an open action. Not gated on item_no:
+                        // a row can arrive here already carrying a real item
+                        // code (Production Manager flagged N/A on a known
+                        // part that's just out of stock), not only via the
+                        // empty-code -> registration flow.
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <button
                             className="btn" disabled
@@ -341,8 +345,8 @@ export default function WarehouseManagerPage() {
                         </div>
                       ) : (
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button className={i.procurement_method === "local_purchase" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => goLocalPurchase(i)}>Local Purchase</button>
-                          <button className={i.procurement_method === "import" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "import")}>Import</button>
+                          <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => goLocalPurchase(i)}>Local Purchase</button>
+                          <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "import")}>Import</button>
                         </div>
                       )}
                     </td>

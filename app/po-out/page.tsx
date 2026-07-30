@@ -8,7 +8,7 @@ import DateField from "@/app/components/DateField";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
 import {
   PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, CURRENCY_SYMBOLS, PoOutStatus, PO_OUT_STATUSES,
-  fmtDate, fmtDateTime,
+  fmtDate, fmtDateTime, exportPoOutRecapToExcel,
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
 
@@ -87,19 +87,6 @@ function poCellText(p: PoOut, key: string): string {
     case "status": return PO_OUT_STATUSES.find((s) => s.value === p.status)?.label ?? p.status;
     default: return "";
   }
-}
-
-// Real .xlsx (not the old HTML-table-as-.xls trick, which modern Excel
-// flags with a "format doesn't match extension" warning) via SheetJS,
-// loaded lazily so it's only pulled into the bundle when actually used.
-async function exportPoOutToExcel(rows: PoOut[], columns: { key: string; label: string }[]) {
-  const XLSX = await import("xlsx");
-  const header = columns.map((c) => c.label);
-  const body = rows.map((p) => columns.map((c) => poCellText(p, c.key)));
-  const sheet = XLSX.utils.aoa_to_sheet([header, ...body]);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, "PO Out Recap");
-  XLSX.writeFile(workbook, `po-out-recap-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 // Kept at module scope so re-renders elsewhere on the page never remount
@@ -496,7 +483,10 @@ export default function PoOutPage() {
             <ToggleSwitch checked={showProduction} onChange={setShowProduction} label="Production" color={PO_OUT_STATUSES[0].color} />
             <ToggleSwitch checked={showShipment} onChange={setShowShipment} label="Shipment" color={PO_OUT_STATUSES[1].color} />
             <ToggleSwitch checked={showArrived} onChange={setShowArrived} label="Arrived" color={PO_OUT_STATUSES[2].color} />
-            <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => exportPoOutToExcel(sorted, COLUMNS.filter((c) => !hiddenCols.has(c.key)))}>
+            <button
+              className="btn secondary" style={{ fontSize: "0.75rem" }}
+              onClick={() => exportPoOutRecapToExcel("po-out-recap", sorted, COLUMNS.filter((c) => !hiddenCols.has(c.key)), poCellText, suppliers)}
+            >
               Export to Excel
             </button>
           </div>

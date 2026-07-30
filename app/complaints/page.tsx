@@ -170,7 +170,11 @@ export default function ComplaintsPage() {
   const [quantity, setQuantity] = useState("1");
   const [problemDescription, setProblemDescription] = useState("");
   const [submittedBy, setSubmittedBy] = useState("");
-  const [photos, setPhotos] = useState<FileList | null>(null);
+  // Staged as an array (not a single FileList) so a second file-picker
+  // round adds to what's already chosen instead of replacing it - native
+  // <input type=file> selection always replaces the FileList otherwise.
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [pendingPhotos, setPendingPhotos] = useState<FileList | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
 
   const [error, setError] = useState<string | null>(null);
@@ -198,9 +202,21 @@ export default function ComplaintsPage() {
     setSoNo(""); setSoSuggestOpen(false);
     setCustomerName(""); setItemDescription(""); setQuantity("1");
     setProblemDescription(""); setSubmittedBy("");
-    setPhotos(null);
+    setPhotos([]);
+    setPendingPhotos(null);
     setFileInputKey((k) => k + 1);
     setShowForm(false);
+  }
+
+  function addPendingPhotos() {
+    if (!pendingPhotos || pendingPhotos.length === 0) return;
+    setPhotos((cur) => [...cur, ...Array.from(pendingPhotos)]);
+    setPendingPhotos(null);
+    setFileInputKey((k) => k + 1);
+  }
+
+  function removePhoto(i: number) {
+    setPhotos((cur) => cur.filter((_, idx) => idx !== i));
   }
 
   const soSuggestions = useMemo(() => {
@@ -233,7 +249,7 @@ export default function ComplaintsPage() {
       formData.append("isTraded", String(complaintType === "traded"));
       formData.append("problemDescription", problemDescription);
       formData.append("submittedBy", submittedBy);
-      if (photos) Array.from(photos).forEach((f: File) => formData.append("photos", f));
+      photos.forEach((f) => formData.append("photos", f));
 
       const res = await fetch("/api/complaints", { method: "POST", body: formData });
       const data = await res.json();
@@ -412,7 +428,22 @@ export default function ComplaintsPage() {
                 </div>
                 <div className="field">
                   <label>Photos (PDF/JPG)</label>
-                  <input key={fileInputKey} type="file" accept="application/pdf,image/jpeg" multiple onChange={(e) => setPhotos(e.target.files)} />
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <input key={fileInputKey} type="file" accept="application/pdf,image/jpeg" multiple onChange={(e) => setPendingPhotos(e.target.files)} />
+                    <button type="button" className="btn secondary" style={{ fontSize: "0.78rem" }} onClick={addPendingPhotos} disabled={!pendingPhotos || pendingPhotos.length === 0}>
+                      Add
+                    </button>
+                  </div>
+                  {photos.length > 0 && (
+                    <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {photos.map((f, i) => (
+                        <span key={i} className="pill" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          {f.name}
+                          <button type="button" onClick={() => removePhoto(i)} style={{ border: "none", background: "none", cursor: "pointer", fontWeight: 700, lineHeight: 1, padding: 0 }}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {error && <p className="error-text">{error}</p>}
                 <div style={{ display: "flex", gap: 8 }}>

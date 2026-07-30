@@ -306,8 +306,10 @@ export function formatSerialRange(serials: string[]): string {
   return `${list[0]} – ${list[list.length - 1]} (${list.length} pcs)`;
 }
 
-// Purchase request forms (Form A - Inventory/Service, Form B - Expense).
+// Purchase request forms (Form A - Inventory/Service, Form B - Expense,
+// Form C - Inventory Out, Form D - Stock Request).
 export const FORM_A_CODES = ["INVENTORY", "SERVICE"];
+export const FORM_D_CODES = ["INVENTORY", "CONSUMABLE"];
 export const EXPENSE_CODES: { code: string; label: string }[] = [
   { code: "A", label: "Warehouse & Workshop" },
   { code: "B", label: "Additional Part Expense" },
@@ -323,6 +325,16 @@ export const EXPENSE_CODES: { code: string; label: string }[] = [
   { code: "L", label: "Exhibition and Seminar Expense" },
   { code: "M", label: "Other Expense" },
 ];
+export const FORM_C_CODES: { code: string; label: string }[] = [
+  { code: "A", label: "Warehouse & Workshop" },
+  { code: "B", label: "Additional Part Expense" },
+  { code: "C", label: "Lab Equipment Expense" },
+  { code: "D", label: "Packing, Document, Insurance" },
+  { code: "E", label: "Sample & Demo Expense" },
+  { code: "F", label: "Reject & Replacement Expense" },
+  { code: "G", label: "Fixed Asset Transtation" },
+  { code: "H", label: "Website, Catalogue, etc" },
+];
 
 export interface PurchaseFormItem {
   id: string;
@@ -333,6 +345,10 @@ export interface PurchaseFormItem {
   code: string;
   attachment_path: string | null;
   attachment_filename: string | null;
+  item_code: string;
+  qty: number;
+  unit: string;
+  remarks: string;
 }
 
 export type PurchaseFormStatus = "pending_approval" | "approved" | "rejected" | "cancelled";
@@ -348,7 +364,7 @@ export interface PurchaseFormHistoryEntry {
 
 export interface PurchaseForm {
   id: string;
-  form_type: "A" | "B";
+  form_type: "A" | "B" | "C" | "D";
   request_date: string;
   name: string;
   customer_name: string;
@@ -364,6 +380,33 @@ export interface PurchaseForm {
   created_at: string;
   items: PurchaseFormItem[];
   history: PurchaseFormHistoryEntry[];
+}
+
+// Real .xlsx (not the old HTML-table-as-.xls trick) via SheetJS, loaded
+// lazily so it's only pulled into the bundle when actually used. One sheet
+// per supplier tab category (plus "All") so a workbook opened outside the
+// app still mirrors the page's own tab split, instead of one flat sheet.
+export async function exportPoOutRecapToExcel(
+  filenamePrefix: string,
+  rows: PoOut[],
+  columns: { key: string; label: string }[],
+  cellText: (p: PoOut, key: string) => string,
+  suppliers: Supplier[]
+): Promise<void> {
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.utils.book_new();
+  const supplierCategory = new Map(suppliers.map((s) => [s.name, s.tab_category]));
+  const buildSheet = (items: PoOut[]) => {
+    const header = columns.map((c) => c.label);
+    const body = items.map((p) => columns.map((c) => cellText(p, c.key)));
+    return XLSX.utils.aoa_to_sheet([header, ...body]);
+  };
+  XLSX.utils.book_append_sheet(workbook, buildSheet(rows), "All");
+  for (const cat of SUPPLIER_TAB_CATEGORIES) {
+    const items = rows.filter((p) => supplierCategory.get(p.supplier) === cat.value);
+    if (items.length > 0) XLSX.utils.book_append_sheet(workbook, buildSheet(items), cat.label.slice(0, 31));
+  }
+  XLSX.writeFile(workbook, `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 export type SupplierTabCategory = "TEMPSENS" | "ALLEIMA" | "OTHER_INDIA" | "OTHER_IMPORT" | "LOCAL" | "EXPORT" | "STOCK_TAJ";

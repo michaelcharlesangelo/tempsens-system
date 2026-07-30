@@ -15,10 +15,11 @@ export async function GET() {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: activeRaw, error: activeErr } = await admin
     .from("job_orders")
-    .select("id, jo_number, jo_date, customer_name, so_no, item_category, item_description, quantity, item_no, sales_person_name, deadline, urgent, serial_numbers, finish_estimation, finish_date, status, current_station_name, current_approval_layer, created_at")
+    .select("id, jo_number, jo_date, customer_name, so_no, item_category, item_description, quantity, item_no, sales_person_name, deadline, urgent, serial_numbers, finish_estimation, finish_date, status, current_station_name, current_approval_layer, created_at, history:job_order_history(id, job_order_id, status, changed_by, comment, changed_at)")
     .not("status", "in", "(draft,pending_approval,cancelled,rejected)")
     .or(`status.neq.completed,finish_date.gte.${sevenDaysAgo}`)
-    .order("jo_date", { ascending: true });
+    .order("jo_date", { ascending: true })
+    .order("changed_at", { foreignTable: "job_order_history", ascending: true });
   if (activeErr) return NextResponse.json({ error: activeErr.message }, { status: 500 });
 
   const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;

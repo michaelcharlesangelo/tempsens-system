@@ -303,13 +303,15 @@ create index if not exists idx_complaint_history_complaint on complaint_history(
 alter table complaint_history enable row level security;
 
 -- ---------------------------------------------------------------------------
--- Purchase request forms - Form A (Inventory/Service) and Form B (Expense),
--- based on the paper "Pengajuan Pembelian Barang" forms. One header row
--- with N line items each carrying its own budget/supplier/code/attachment.
+-- Purchase request forms - Form A (Inventory/Service), Form B (Expense),
+-- Form C (Inventory Out), Form D (Stock Request), based on the paper
+-- "Pengajuan Pembelian Barang" forms. One header row with N line items.
+-- A/B carry budget/supplier/code/attachment per item; C/D carry
+-- item_code/qty/unit/remarks per item instead (see purchase_form_items).
 -- ---------------------------------------------------------------------------
 create table if not exists purchase_forms (
   id uuid primary key default gen_random_uuid(),
-  form_type text not null check (form_type in ('A','B')),
+  form_type text not null check (form_type in ('A','B','C','D')),
   request_date date not null default current_date,
   name text not null default '',
   customer_name text not null default '', -- Form A only, shown blank for Form B
@@ -344,13 +346,17 @@ create table if not exists purchase_form_items (
   id uuid primary key default gen_random_uuid(),
   purchase_form_id uuid not null references purchase_forms(id) on delete cascade,
   seq smallint not null default 0,
-  description text not null default '',
-  budget numeric not null default 0,
-  ppn boolean not null default false,
-  supplier_name text not null default '',
-  code text not null default '', -- Form A: INVENTORY/SERVICE - Form B: letter A-M (see EXPENSE_CODES)
-  attachment_path text,
-  attachment_filename text,
+  description text not null default '', -- Form A/B: Item Description - Form C/D: Item Description too
+  budget numeric not null default 0, -- Form A/B only
+  ppn boolean not null default false, -- Form A/B only
+  supplier_name text not null default '', -- Form A/B only
+  code text not null default '', -- Form A: INVENTORY/SERVICE - Form B: letter A-M (EXPENSE_CODES) - Form C: letter A-H (FORM_C_CODES) - Form D: INVENTORY/CONSUMABLE
+  attachment_path text, -- Form A/B only
+  attachment_filename text, -- Form A/B only
+  item_code text not null default '', -- Form C/D only
+  qty numeric not null default 0, -- Form C/D only
+  unit text not null default '', -- Form C/D only
+  remarks text not null default '', -- Form C/D only
   created_at timestamptz not null default now()
 );
 

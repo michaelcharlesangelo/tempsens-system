@@ -339,6 +339,7 @@ export default function DashboardPage() {
 
   function CurrentJobOrders({ items }: { items: JobOrder[] }) {
     const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, joMatchesSearch);
+    const [logOpenId, setLogOpenId] = useState<string | null>(null);
     return (
       <>
         <SearchBox value={search} onChange={setSearch} />
@@ -351,20 +352,48 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {pageItems.map((jo) => (
-                <tr key={jo.id}>
-                  <td>{fmtDate(jo.jo_date)}</td>
-                  <td>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
-                  <td>{jo.item_no}</td>
-                  <td>{jo.sales_person_name}</td>
-                  <td>{jo.customer_name}</td>
-                  <td>{jo.item_description}</td>
-                  <td>{jo.quantity}</td>
-                  <td>{daysCount(jo)}</td>
-                  <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>
-                  <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status, jo.current_station_name, jo.status === "completed" && jo.finish_date ? daysSince(jo.finish_date) : undefined)}</span></td>
-                </tr>
-              ))}
+              {pageItems.map((jo) => {
+                const commented = (jo.history ?? []).filter((h) => h.comment);
+                return (
+                <Fragment key={jo.id}>
+                  <tr>
+                    <td>{fmtDate(jo.jo_date)}</td>
+                    <td>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
+                    <td>{jo.item_no}</td>
+                    <td>{jo.sales_person_name}</td>
+                    <td>{jo.customer_name}</td>
+                    <td>{jo.item_description}</td>
+                    <td>{jo.quantity}</td>
+                    <td>{daysCount(jo)}</td>
+                    <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>
+                    <td>
+                      <span
+                        className={`pill pill-${jo.status}`}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => setLogOpenId(logOpenId === jo.id ? null : jo.id)}
+                        title="Click to view progress/comments"
+                      >
+                        {dashboardStatusLabel(jo.status, jo.current_station_name, jo.status === "completed" && jo.finish_date ? daysSince(jo.finish_date) : undefined)}
+                      </span>
+                    </td>
+                  </tr>
+                  {logOpenId === jo.id && (
+                    <tr>
+                      <td colSpan={10} style={{ background: "var(--panel-muted)" }}>
+                        <div style={{ padding: "8px 2px" }}>
+                          <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Progress / Comments</div>
+                          {commented.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : commented.map((h) => (
+                            <div key={h.id} style={{ fontSize: "0.82rem", padding: "3px 0" }}>
+                              <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

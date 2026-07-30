@@ -12,7 +12,7 @@ import { JobOrder, JobOrderStatus, joMatchesSearch, fmtDate, formatSerialRange }
 // automatically once status is "completed", so linking there is safe.
 const VISIBLE_STATUSES: JobOrderStatus[] = ["completed"];
 
-type SortCol = "jo_date" | "so_no" | "customer_name" | "item_no" | "item_description" | "quantity" | "serial_number";
+type SortCol = "jo_date" | "so_no" | "customer_name" | "item_no" | "item_description" | "quantity";
 
 export default function WorkHistoryPage() {
   const [jobOrders, setJobOrders] = useState<JobOrder[] | null>(null);
@@ -34,10 +34,6 @@ export default function WorkHistoryPage() {
   const sorted = useMemo(() => {
     const visible = (jobOrders ?? []).filter((jo) => VISIBLE_STATUSES.includes(jo.status));
     return [...visible].sort((a, b) => {
-      if (sortCol === "serial_number") {
-        const cmp = (a.serial_numbers?.[0] ?? "").localeCompare(b.serial_numbers?.[0] ?? "");
-        return sortDir === "asc" ? cmp : -cmp;
-      }
       const av = a[sortCol];
       const bv = b[sortCol];
       const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av ?? "").localeCompare(String(bv ?? ""));
@@ -78,7 +74,7 @@ export default function WorkHistoryPage() {
                     <SortHeader col="item_no">Item Code</SortHeader>
                     <SortHeader col="item_description">Description</SortHeader>
                     <SortHeader col="quantity">Qty</SortHeader>
-                    <SortHeader col="serial_number">Serial Number(s)</SortHeader><th></th>
+                    <th>Serial Number(s)</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
