@@ -4,12 +4,14 @@ import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const CURRENCIES = ["IDR", "USD", "SGD", "EUR"];
+
 export async function GET() {
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
     .from("po_out")
     .select("*, history:po_out_history(*)")
-    .order("created_at", { ascending: false })
+    .order("created_at", { ascending: true })
     .order("changed_at", { foreignTable: "po_out_history", ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ pos: data });
@@ -24,6 +26,7 @@ export async function POST(req: NextRequest) {
   const row = {
     po_date: body.poDate || new Date().toISOString().slice(0, 10),
     deadline: body.deadline || null,
+    urgent: Boolean(body.urgent),
     po_number: String(body.poNumber ?? "").trim(),
     item_code: String(body.itemCode ?? "").trim().toUpperCase(),
     sales: String(body.sales ?? "").trim(),
@@ -32,10 +35,11 @@ export async function POST(req: NextRequest) {
     qty,
     unit: String(body.unit ?? "pcs").trim() || "pcs",
     unit_price: unitPrice,
+    unit_price_currency: CURRENCIES.includes(body.unitPriceCurrency) ? body.unitPriceCurrency : "IDR",
     total_price: qty * unitPrice,
     unit_selling_price: Number(body.unitSellingPrice) || 0,
+    unit_selling_price_currency: CURRENCIES.includes(body.unitSellingPriceCurrency) ? body.unitSellingPriceCurrency : "IDR",
     supplier: String(body.supplier ?? "").trim(),
-    stock_export: body.stockExport === "export" ? "export" : "stock",
     submitted_by: submittedBy,
   };
 

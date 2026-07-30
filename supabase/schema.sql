@@ -313,12 +313,13 @@ alter table purchase_form_history enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- PO Out - purchase orders placed with suppliers, filled in by Sales
--- Support. Simple record + comment log, no approval chain.
+-- Support. Simple record + status/comment log, no approval chain.
 -- ---------------------------------------------------------------------------
 create table if not exists po_out (
   id uuid primary key default gen_random_uuid(),
   po_date date not null default current_date,
   deadline date,
+  urgent boolean not null default false,
   po_number text not null default '',
   item_code text not null default '',
   sales text not null default '',
@@ -327,11 +328,12 @@ create table if not exists po_out (
   qty numeric not null default 0,
   unit text not null default 'pcs',
   unit_price numeric not null default 0,
+  unit_price_currency text not null default 'IDR' check (unit_price_currency in ('IDR','USD','SGD','EUR')),
   total_price numeric not null default 0, -- qty * unit_price, computed client-side on save
   unit_selling_price numeric not null default 0,
+  unit_selling_price_currency text not null default 'IDR' check (unit_selling_price_currency in ('IDR','USD','SGD','EUR')),
   supplier text not null default '',
-  stock_export text not null default 'stock' check (stock_export in ('stock','export')),
-  status text not null default 'active' check (status in ('active','cancelled')),
+  status text not null default 'production' check (status in ('production','shipment','arrived')),
   submitted_by text not null default '',
   created_at timestamptz not null default now()
 );
@@ -341,12 +343,38 @@ create table if not exists po_out_history (
   po_out_id uuid not null references po_out(id) on delete cascade,
   changed_by text not null default '',
   comment text not null default '',
+  status text, -- set when this entry represents a status-slider change rather than a free-text comment
   changed_at timestamptz not null default now()
 );
 
 create index if not exists idx_po_out_history_po on po_out_history(po_out_id);
 alter table po_out enable row level security;
 alter table po_out_history enable row level security;
+
+-- Supplier directory backing the PO Out supplier dropdown and its 7-tab
+-- Excel-style filter bar. tab_category is one of 7 fixed groups; suppliers
+-- can be added inline from the PO Out form (default OTHER_IMPORT) or
+-- managed from Settings > Supplier.
+create table if not exists suppliers (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  tab_category text not null default 'OTHER_IMPORT'
+    check (tab_category in ('TEMPSENS','ALLEIMA','OTHER_INDIA','OTHER_IMPORT','LOCAL','EXPORT','STOCK_TAJ')),
+  created_at timestamptz not null default now()
+);
+
+alter table suppliers enable row level security;
+
+insert into suppliers (name, tab_category) values
+  ('TEMPSENS INDIA', 'TEMPSENS'), ('TEMPSENS CABLE', 'TEMPSENS'), ('TEMPSENS HEATER', 'TEMPSENS'), ('TEMPSENS GERMANY', 'TEMPSENS'),
+  ('ALLEIMA', 'ALLEIMA'),
+  ('PYROSENS', 'OTHER_INDIA'), ('CODINA', 'OTHER_INDIA'),
+  ('PMJ', 'OTHER_IMPORT'), ('SAFINA', 'OTHER_IMPORT'), ('HUAJING', 'OTHER_IMPORT'), ('SUPER SYSTEMS', 'OTHER_IMPORT'),
+  ('OHKURA', 'OTHER_IMPORT'), ('GONGTAO', 'OTHER_IMPORT'), ('HIGHLION', 'OTHER_IMPORT'), ('LEADSHINE', 'OTHER_IMPORT'), ('SINRI', 'OTHER_IMPORT'),
+  ('LOCAL', 'LOCAL'),
+  ('EXPORT', 'EXPORT'),
+  ('STOCK TAJ', 'STOCK_TAJ')
+on conflict (name) do nothing;
 
 create index if not exists idx_job_orders_status on job_orders(status);
 create index if not exists idx_job_order_bom_job on job_order_bom(job_order_id);

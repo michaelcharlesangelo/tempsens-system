@@ -330,17 +330,41 @@ export interface PurchaseForm {
   history: PurchaseFormHistoryEntry[];
 }
 
-export const PO_OUT_SUPPLIERS = [
-  "TEMPSENS INDIA", "TEMPSENS CABLE", "TEMPSENS HEATER", "TEMPSENS GERMANY", "PYROSENS",
-  "ALLEIMA", "CODINA", "PMJ", "SAFINA", "HUAJING", "SUPER SYSTEMS", "OHKURA", "GONGTAO",
-  "HIGHLION", "LEADSHINE", "SINRI", "LOCAL",
+export type SupplierTabCategory = "TEMPSENS" | "ALLEIMA" | "OTHER_INDIA" | "OTHER_IMPORT" | "LOCAL" | "EXPORT" | "STOCK_TAJ";
+
+export const SUPPLIER_TAB_CATEGORIES: { value: SupplierTabCategory; label: string }[] = [
+  { value: "TEMPSENS", label: "TEMPSENS" },
+  { value: "ALLEIMA", label: "ALLEIMA" },
+  { value: "OTHER_INDIA", label: "OTHER (INDIA)" },
+  { value: "OTHER_IMPORT", label: "OTHER IMPORT" },
+  { value: "LOCAL", label: "LOCAL" },
+  { value: "EXPORT", label: "EXPORT" },
+  { value: "STOCK_TAJ", label: "STOCK TAJ" },
 ];
+
+export interface Supplier {
+  id: string;
+  name: string;
+  tab_category: SupplierTabCategory;
+  created_at: string;
+}
+
+export type Currency = "IDR" | "USD" | "SGD" | "EUR";
+export const CURRENCY_SYMBOLS: Record<Currency, string> = { IDR: "Rp", USD: "$", SGD: "SGD", EUR: "€" };
+export const PO_OUT_STATUSES: { value: PoOutStatus; label: string; color: string }[] = [
+  { value: "production", label: "Production", color: "#eab308" },
+  { value: "shipment", label: "Shipment", color: "#3b82f6" },
+  { value: "arrived", label: "Arrived", color: "#22c55e" },
+];
+
+export type PoOutStatus = "production" | "shipment" | "arrived";
 
 export interface PoOutHistoryEntry {
   id: string;
   po_out_id: string;
   changed_by: string;
   comment: string;
+  status: PoOutStatus | null;
   changed_at: string;
 }
 
@@ -348,6 +372,7 @@ export interface PoOut {
   id: string;
   po_date: string;
   deadline: string | null;
+  urgent: boolean;
   po_number: string;
   item_code: string;
   sales: string;
@@ -356,11 +381,12 @@ export interface PoOut {
   qty: number;
   unit: string;
   unit_price: number;
+  unit_price_currency: Currency;
   total_price: number;
   unit_selling_price: number;
+  unit_selling_price_currency: Currency;
   supplier: string;
-  stock_export: "stock" | "export";
-  status: "active" | "cancelled";
+  status: PoOutStatus;
   submitted_by: string;
   created_at: string;
   history: PoOutHistoryEntry[];

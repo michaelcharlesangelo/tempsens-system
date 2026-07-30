@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import QrImage from "@/app/components/QrImage";
 import PasswordField from "@/app/components/PasswordField";
-import { StationCode, ProductionAccount, ItemCategory, Position } from "@/lib/jobOrders";
+import { StationCode, ProductionAccount, ItemCategory, Position, Supplier, SUPPLIER_TAB_CATEGORIES } from "@/lib/jobOrders";
 
-type SettingsTab = "production" | "account" | "product";
+type SettingsTab = "production" | "account" | "product" | "supplier";
 
 export default function SettingsPage() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("production");
@@ -31,6 +31,12 @@ export default function SettingsPage() {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
 
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierCategory, setNewSupplierCategory] = useState(SUPPLIER_TAB_CATEGORIES[0].value);
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
+  const [editingSupplierName, setEditingSupplierName] = useState("");
+
   async function loadStations() {
     setStations((await (await fetch("/api/station-codes", { cache: "no-store" })).json()).stations ?? []);
   }
@@ -43,9 +49,12 @@ export default function SettingsPage() {
   async function loadCategories() {
     setCategories((await (await fetch("/api/item-categories", { cache: "no-store" })).json()).categories ?? []);
   }
+  async function loadSuppliers() {
+    setSuppliers((await (await fetch("/api/suppliers", { cache: "no-store" })).json()).suppliers ?? []);
+  }
 
   useEffect(() => {
-    loadStations(); loadAccounts(); loadCategories(); loadPositions();
+    loadStations(); loadAccounts(); loadCategories(); loadPositions(); loadSuppliers();
   }, []);
 
   async function addStation() {
@@ -193,6 +202,43 @@ export default function SettingsPage() {
     loadCategories();
   }
 
+  async function addSupplier() {
+    const res = await fetch("/api/suppliers", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newSupplierName, tabCategory: newSupplierCategory }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setMessage(data.error); return; }
+    setNewSupplierName("");
+    loadSuppliers();
+  }
+
+  function startEditSupplier(s: Supplier) {
+    setEditingSupplierId(s.id);
+    setEditingSupplierName(s.name);
+  }
+
+  async function saveEditSupplier(id: string) {
+    await fetch(`/api/suppliers/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: editingSupplierName }),
+    });
+    setEditingSupplierId(null);
+    loadSuppliers();
+  }
+
+  async function setSupplierCategory(id: string, tabCategory: string) {
+    await fetch(`/api/suppliers/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tabCategory }),
+    });
+    loadSuppliers();
+  }
+
+  async function deleteSupplier(id: string) {
+    if (!confirm("Delete this supplier?")) return;
+    await fetch(`/api/suppliers/${id}`, { method: "DELETE" });
+    loadSuppliers();
+  }
+
   return (
     <>
       {message && <div className="warn">{message}</div>}
@@ -201,6 +247,7 @@ export default function SettingsPage() {
         <button className={settingsTab === "production" ? "active" : ""} onClick={() => setSettingsTab("production")}>Production</button>
         <button className={settingsTab === "account" ? "active" : ""} onClick={() => setSettingsTab("account")}>Account</button>
         <button className={settingsTab === "product" ? "active" : ""} onClick={() => setSettingsTab("product")}>Product</button>
+        <button className={settingsTab === "supplier" ? "active" : ""} onClick={() => setSettingsTab("supplier")}>Supplier</button>
       </div>
 
       {settingsTab === "production" && (
@@ -376,6 +423,55 @@ export default function SettingsPage() {
                         <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => startEditCategory(c)}>Rename</button>
                       )}{" "}
                       <button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteCategory(c.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {settingsTab === "supplier" && (
+        <div className="card">
+          <h2>Suppliers</h2>
+          <p className="subtle">
+            Manage the PO Out supplier dropdown and which of the 7 Excel-style tabs each supplier files under.
+            Suppliers added inline from PO Out land in Other Import by default — reassign them here.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+            <input type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value.toUpperCase())} placeholder="New supplier name" />
+            <select value={newSupplierCategory} onChange={(e) => setNewSupplierCategory(e.target.value as typeof newSupplierCategory)}>
+              {SUPPLIER_TAB_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+            <button className="btn secondary" onClick={addSupplier} disabled={!newSupplierName.trim()}>Add</button>
+          </div>
+
+          {suppliers.length === 0 ? <p className="subtle">None yet.</p> : (
+            <table className="data-table">
+              <thead><tr><th>Name</th><th>Tab</th><th></th></tr></thead>
+              <tbody>
+                {suppliers.map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      {editingSupplierId === s.id ? (
+                        <input type="text" value={editingSupplierName} onChange={(e) => setEditingSupplierName(e.target.value.toUpperCase())} style={{ maxWidth: 220 }} />
+                      ) : (
+                        s.name
+                      )}
+                    </td>
+                    <td>
+                      <select value={s.tab_category} onChange={(e) => setSupplierCategory(s.id, e.target.value)} style={{ maxWidth: 180 }}>
+                        {SUPPLIER_TAB_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {editingSupplierId === s.id ? (
+                        <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => saveEditSupplier(s.id)}>Save</button>
+                      ) : (
+                        <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => startEditSupplier(s)}>Rename</button>
+                      )}{" "}
+                      <button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteSupplier(s.id)}>Delete</button>
                     </td>
                   </tr>
                 ))}
