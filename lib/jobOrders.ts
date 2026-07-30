@@ -243,8 +243,44 @@ export function joMatchesSearch(jo: JobOrder, term: string): boolean {
     jo.so_no.toLowerCase().includes(term) ||
     jo.item_no.toLowerCase().includes(term) ||
     fmtDate(jo.jo_date).includes(term) ||
-    fmtDate(jo.created_at).includes(term)
+    fmtDate(jo.created_at).includes(term) ||
+    (jo.serial_numbers ?? []).some((s) => s.toLowerCase().includes(term))
   );
+}
+
+// A JO's quantity can be 60+ units, each needing its own serial - one
+// input per unit doesn't scale, so Production Manager enters a single
+// base serial (e.g. "2604/0100") and this generates the full sequential
+// range. Every entry is still stored individually so Work History can
+// search/find any one of them; only the display is compacted.
+export function generateSerials(base: string, qty: number): string[] {
+  const trimmed = base.trim();
+  if (!trimmed || qty <= 0) return [];
+  const match = trimmed.match(/^(.*?)(\d+)$/);
+  if (!match) return Array.from({ length: qty }, (_, i) => (qty === 1 ? trimmed : `${trimmed}-${i + 1}`));
+  const [, prefix, numStr] = match;
+  const width = numStr.length;
+  const start = parseInt(numStr, 10);
+  return Array.from({ length: qty }, (_, i) => `${prefix}${String(start + i).padStart(width, "0")}`);
+}
+
+// Compact display for a generated serial range - single value as-is,
+// otherwise "first – last (N pcs)" instead of listing every one out.
+export function formatSerialRange(serials: string[]): string {
+  const list = serials.filter(Boolean);
+  if (list.length === 0) return "-";
+  if (list.length === 1) return list[0];
+  return `${list[0]} – ${list[list.length - 1]} (${list.length} pcs)`;
+}
+
+// Splits `text` into [before, matched, after] around the first
+// case-insensitive occurrence of `term`, for bolding the matched prefix in
+// item-code suggestion lists (e.g. typing "TC" bolds "TC" in "TC.12").
+export function splitMatch(text: string, term: string): [string, string, string] {
+  if (!term) return [text, "", ""];
+  const idx = text.toLowerCase().indexOf(term.toLowerCase());
+  if (idx === -1) return [text, "", ""];
+  return [text.slice(0, idx), text.slice(idx, idx + term.length), text.slice(idx + term.length)];
 }
 
 export function complaintMatchesSearch(c: Complaint, term: string): boolean {

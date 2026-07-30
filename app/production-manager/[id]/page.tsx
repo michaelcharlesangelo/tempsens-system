@@ -5,9 +5,16 @@ import { useParams, useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import DateField from "@/app/components/DateField";
 import QrImage from "@/app/components/QrImage";
-import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, fmtDate, fmtDateTime } from "@/lib/jobOrders";
+import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, fmtDate, fmtDateTime, generateSerials, formatSerialRange, splitMatch } from "@/lib/jobOrders";
 
 interface CatalogItem { item_no: string; description: string; unit?: string; }
+
+// Bolds the portion of an item code that matches the current search term
+// so the matched prefix stands out in suggestion lists.
+function HighlightedCode({ text, term }: { text: string; term: string }) {
+  const [before, match, after] = splitMatch(text, term);
+  return <>{before}<b>{match}</b>{after}</>;
+}
 
 export default function ProductionJobOrderDetailPage() {
   const params = useParams();
@@ -21,9 +28,10 @@ export default function ProductionJobOrderDetailPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [savedRowId, setSavedRowId] = useState<string | null>(null);
 
-  // One entry per unit (padded/truncated to match quantity) - a JO with
-  // qty>1 needs a serial number per unit, not a single value.
-  const [serialNumbers, setSerialNumbers] = useState<string[]>([]);
+  // A single base serial (e.g. "2604/0100") generates the full sequential
+  // range for the JO's quantity on save - see generateSerials(). Editing
+  // one JO with 60 units doesn't mean 60 input boxes.
+  const [baseSerial, setBaseSerial] = useState("");
   const [finishDate, setFinishDate] = useState("");
 
   const [newItemNo, setNewItemNo] = useState("");
@@ -31,6 +39,7 @@ export default function ProductionJobOrderDetailPage() {
   const [newQty, setNewQty] = useState("1");
   const [newUnit, setNewUnit] = useState("pcs");
   const [suggestions, setSuggestions] = useState<CatalogItem[]>([]);
+  const [newItemKnown, setNewItemKnown] = useState(false);
   const [savingRow, setSavingRow] = useState(false);
 
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
@@ -47,9 +56,7 @@ export default function ProductionJobOrderDetailPage() {
     setBom([...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
     setHistory(data.history ?? []);
     setProductionLogs(data.productionLogs ?? []);
-    const qty = Math.max(1, Number(data.jobOrder?.quantity) || 1);
-    const existing: string[] = data.jobOrder?.serial_numbers ?? [];
-    setSerialNumbers(Array.from({ length: qty }, (_, i) => existing[i] ?? ""));
+    setBaseSerial(data.jobOrder?.serial_numbers?.[0] ?? "");
     setFinishDate(data.jobOrder?.finish_date ? data.jobOrder.finish_date.slice(0, 10) : "");
   }
 
@@ -97,14 +104,14 @@ export default function ProductionJobOrderDetailPage() {
         .header h1 { font-size: 18px; margin: 0; flex: 1; text-align: center; }
         .qr { display: flex; align-items: center; gap: 8px; }
         .qr img { display: block; }
-        table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-        table.info td { padding: 3px 6px; vertical-align: top; }
-        table.info td.label { font-weight: bold; width: 110px; white-space: nowrap; }
+        table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
+        table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
+        table.info td.label { font-weight: bold; white-space: nowrap; }
         .section-title { font-weight: bold; text-transform: uppercase; font-size: 10px; margin: 10px 0 4px; border-top: 1px solid #999; padding-top: 6px; }
         .comment { font-size: 10px; padding: 2px 0; }
         .muted { color: #666; }
         table.bom, table.qc { width: 100%; border-collapse: collapse; margin-top: 4px; table-layout: fixed; }
-        table.bom th, table.bom td, table.qc th, table.qc td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10px; word-wrap: break-word; }
+        table.bom th, table.bom td, table.qc th, table.qc td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10px; word-wrap: break-word; white-space: normal; }
         table.bom th { background: #eee; }
         table.qc th { background: #eee; }
       </style>
@@ -117,12 +124,13 @@ export default function ProductionJobOrderDetailPage() {
           </div>
         </div>
         <table class="info">
+          <colgroup><col style="width:14%"><col style="width:36%"><col style="width:14%"><col style="width:36%"></colgroup>
           <tr><td class="label">Customer Name</td><td>${esc(jobOrder.customer_name)}</td><td class="label">Item Code</td><td>${esc(jobOrder.item_no)}</td></tr>
           <tr><td class="label">SO Number</td><td>${esc(jobOrder.so_no)}</td><td class="label">JO Date</td><td>${esc(fmtDate(jobOrder.created_at))}</td></tr>
           <tr><td class="label">Item Description</td><td>${esc(jobOrder.item_description)}</td><td class="label">Deadline</td><td>${esc(fmtDate(jobOrder.deadline))}</td></tr>
           <tr><td class="label">Category</td><td>${esc(jobOrder.item_category)}</td><td class="label">Drawing Number</td><td>${esc(jobOrder.drawing_number || "-")}</td></tr>
           <tr><td class="label">Quantity</td><td>${esc(jobOrder.quantity)}</td><td class="label">Sales</td><td>${esc(jobOrder.sales_person_name)}</td></tr>
-          <tr><td class="label">Serial Number(s)</td><td>${esc((jobOrder.serial_numbers ?? []).filter(Boolean).join(", ") || "-")}</td><td class="label">Finish Date</td><td>${esc(fmtDate(jobOrder.finish_date))}</td></tr>
+          <tr><td class="label">Serial Number(s)</td><td>${esc(formatSerialRange(jobOrder.serial_numbers ?? []))}</td><td class="label">Finish Date</td><td>${esc(fmtDate(jobOrder.finish_date))}</td></tr>
         </table>
 
         <div class="section-title">Comments</div>
@@ -131,8 +139,8 @@ export default function ProductionJobOrderDetailPage() {
         <div class="section-title">Material BOM</div>
         <table class="bom">
           <colgroup>
-            <col style="width:10%"><col style="width:44%"><col style="width:6%"><col style="width:6%">
-            <col style="width:7%"><col style="width:7%"><col style="width:20%">
+            <col style="width:10%"><col style="width:34%"><col style="width:6%"><col style="width:6%">
+            <col style="width:7%"><col style="width:7%"><col style="width:30%">
           </colgroup>
           <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Actual</th><th>Unit</th><th>Comment (to Warehouse)</th></tr></thead>
           <tbody>${bomRows || `<tr><td colspan="7">No items yet.</td></tr>`}</tbody>
@@ -154,9 +162,11 @@ export default function ProductionJobOrderDetailPage() {
   }
 
   async function saveDetails() {
+    if (!jobOrder) return;
+    const serials = generateSerials(baseSerial, jobOrder.quantity);
     const res = await fetch(`/api/job-orders/${id}/details`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ serialNumbers, finishDate }),
+      body: JSON.stringify({ serialNumbers: serials, finishDate }),
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error || "Failed to save."); return; }
@@ -175,18 +185,22 @@ export default function ProductionJobOrderDetailPage() {
   }
 
   async function onNewItemNoChange(value: string) {
-    setNewItemNo(value);
-    if (!value) { setSuggestions([]); return; }
-    const res = await fetch(`/api/item-catalog?q=${encodeURIComponent(value)}`, { cache: "no-store" });
+    const upper = value.toUpperCase();
+    setNewItemNo(upper);
+    setNewItemKnown(false);
+    if (!upper) { setSuggestions([]); return; }
+    const res = await fetch(`/api/item-catalog?q=${encodeURIComponent(upper)}`, { cache: "no-store" });
     const data = await res.json();
     const items: CatalogItem[] = data.items ?? [];
     setSuggestions(items);
     // Exact match while typing (no click needed) - autofills unit/description
-    // straight away since the code is already fully known to the catalog.
-    const exact = items.find((s) => s.item_no.toLowerCase() === value.toLowerCase());
+    // straight away since the code is already fully known to the catalog,
+    // and locks those fields since they belong to the catalog entry.
+    const exact = items.find((s) => s.item_no.toUpperCase() === upper);
     if (exact) {
+      setNewItemKnown(true);
       if (exact.unit) setNewUnit(exact.unit);
-      if (exact.description) setNewDescription(exact.description);
+      setNewDescription(exact.description || "");
     }
   }
 
@@ -194,20 +208,23 @@ export default function ProductionJobOrderDetailPage() {
     setNewItemNo(item.item_no);
     setNewDescription(item.description);
     if (item.unit) setNewUnit(item.unit);
+    setNewItemKnown(true);
     setSuggestions([]);
   }
 
   async function addRow() {
-    if (!newItemNo.trim()) return;
     setSavingRow(true);
     const res = await fetch(`/api/job-orders/${id}/bom`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemNo: newItemNo, description: newDescription, qty: newQty, unit: newUnit, materialReady: true }),
+      // No item code yet (not in stock / not decided) - still gets added
+      // to the BOM, just auto-flagged Not Available so it shows up on
+      // Warehouse Manager's list to chase down instead of silently blocking.
+      body: JSON.stringify({ itemNo: newItemNo, description: newDescription, qty: newQty, unit: newUnit, materialReady: !!newItemNo.trim() }),
     });
     const data = await res.json();
     setSavingRow(false);
     if (!res.ok) { setMessage(data.error || "Failed to add item."); return; }
-    setNewItemNo(""); setNewDescription(""); setNewQty("1"); setNewUnit("pcs");
+    setNewItemNo(""); setNewDescription(""); setNewQty("1"); setNewUnit("pcs"); setNewItemKnown(false);
     load();
   }
 
@@ -267,6 +284,10 @@ export default function ProductionJobOrderDetailPage() {
   }
 
   const minFinishDate = jobOrder.jo_date ? jobOrder.jo_date.slice(0, 10) : jobOrder.created_at.slice(0, 10);
+  // Once production is finished there's nothing left to fill in - the page
+  // becomes a read-only record, same shape as the printed JO.
+  const readOnly = jobOrder.status === "completed";
+  const previewSerials = generateSerials(baseSerial, jobOrder.quantity);
 
   return (
     <>
@@ -288,6 +309,11 @@ export default function ProductionJobOrderDetailPage() {
         </a>
       </p>
       {message && <div className="warn">{message}</div>}
+      {readOnly && (
+        <div className="card" style={{ background: "#e6f0ea", borderColor: "var(--good)" }}>
+          <b style={{ color: "var(--good)" }}>Finished Production</b> — this job order is complete and read-only. Use Print JO for a record copy.
+        </div>
+      )}
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
@@ -306,20 +332,6 @@ export default function ProductionJobOrderDetailPage() {
             <div className="form-row"><label>Item Description</label><span>:</span><span>{jobOrder.item_description}</span></div>
             <div className="form-row"><label>Category</label><span>:</span><span>{jobOrder.item_category}</span></div>
             <div className="form-row"><label>Quantity</label><span>:</span><span>{jobOrder.quantity}</span></div>
-            <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--panel-muted)" }}>
-              <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>
-                Comments
-              </div>
-              {history.filter((h) => h.comment).length === 0 ? (
-                <p className="subtle" style={{ fontSize: "0.8rem", margin: 0 }}>None yet.</p>
-              ) : (
-                history.filter((h) => h.comment).map((h) => (
-                  <div key={h.id} style={{ fontSize: "0.8rem", padding: "3px 0" }}>
-                    <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
-                  </div>
-                ))
-              )}
-            </div>
           </div>
           <div className="form-sheet-col">
             <div className="form-row"><label>Item Code</label><span>:</span><span>{jobOrder.item_no}</span></div>
@@ -330,40 +342,63 @@ export default function ProductionJobOrderDetailPage() {
           </div>
         </div>
 
+        {/* Its own full-width block after both form-sheet columns, rather
+            than nested inside the left column, so on mobile (where the
+            columns stack) it lands after every fillable field instead of
+            interrupting them partway down. */}
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--panel-muted)" }}>
+          <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>
+            Comments
+          </div>
+          {history.filter((h) => h.comment).length === 0 ? (
+            <p className="subtle" style={{ fontSize: "0.8rem", margin: 0 }}>None yet.</p>
+          ) : (
+            history.filter((h) => h.comment).map((h) => (
+              <div key={h.id} style={{ fontSize: "0.8rem", padding: "3px 0" }}>
+                <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+              </div>
+            ))
+          )}
+        </div>
+
         <div className="form-sheet" style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
           <div className="form-sheet-col">
-            <div className="form-row" style={{ alignItems: serialNumbers.length > 1 ? "flex-start" : "center" }}>
-              <label style={{ paddingTop: serialNumbers.length > 1 ? 6 : 0 }}>Serial Number{serialNumbers.length > 1 ? "s" : ""}</label>
+            <div className="form-row">
+              <label>Base Serial No.</label>
               <span>:</span>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {serialNumbers.map((sn, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    {serialNumbers.length > 1 && <span className="subtle" style={{ fontSize: "0.72rem" }}>#{i + 1}</span>}
-                    <input
-                      type="text"
-                      value={sn}
-                      onChange={(e) => setSerialNumbers((cur) => cur.map((v, vi) => (vi === i ? e.target.value : v)))}
-                      style={serialNumbers.length > 1 ? { width: 110 } : undefined}
-                    />
-                  </div>
-                ))}
-              </div>
+              {readOnly ? (
+                <span>{formatSerialRange(jobOrder.serial_numbers ?? [])}</span>
+              ) : (
+                <input type="text" value={baseSerial} onChange={(e) => setBaseSerial(e.target.value)} placeholder="e.g. 2604/0100" />
+              )}
             </div>
+            {!readOnly && jobOrder.quantity > 1 && baseSerial.trim() && (
+              <p className="subtle" style={{ fontSize: "0.76rem", margin: "2px 0 0" }}>
+                Generates {jobOrder.quantity} serials: {formatSerialRange(previewSerials)}
+              </p>
+            )}
           </div>
           <div className="form-sheet-col">
-            <div className="form-row"><label>Est. Finish Date</label><span>:</span><DateField value={finishDate} onChange={setFinishDate} min={minFinishDate} /></div>
+            <div className="form-row">
+              <label>Est. Finish Date</label><span>:</span>
+              {readOnly ? <span>{fmtDate(jobOrder.finish_date)}</span> : <DateField value={finishDate} onChange={setFinishDate} min={minFinishDate} />}
+            </div>
           </div>
         </div>
-        <button className="btn secondary" style={{ marginTop: 10 }} onClick={saveDetails}>Save Serial Number(s) / Est. Finish Date</button>
+        {!readOnly && (
+          <button className="btn secondary" style={{ marginTop: 10 }} onClick={saveDetails}>Save Serial Number / Est. Finish Date</button>
+        )}
       </div>
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ margin: 0 }}>Material BOM</h2>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer", fontWeight: 700, fontSize: "0.85rem" }}>
-            <input type="checkbox" checked={jobOrder.ready_for_production} onChange={toggleReadyForProduction} style={{ width: "auto" }} />
-            Ready for Production
-          </label>
+          {!readOnly && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer", fontWeight: 700, fontSize: "0.85rem" }}>
+              <input type="checkbox" checked={jobOrder.ready_for_production} onChange={toggleReadyForProduction} style={{ width: "auto" }} />
+              Ready for Production
+            </label>
+          )}
         </div>
 
         {bom.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No items yet.</p> : (
@@ -380,13 +415,13 @@ export default function ProductionJobOrderDetailPage() {
                 <col style={{ width: "14%" }} />
                 <col style={{ width: "13%" }} />
               </colgroup>
-              <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Actual</th><th>Unit</th><th>N/A</th><th>Comment (to Warehouse)</th><th></th></tr></thead>
+              <thead><tr><th>Item Code</th><th>Description</th><th>Qty</th><th>Unit</th><th>Actual</th><th>Unit</th><th>N/A</th><th>Comment (to Warehouse)</th>{!readOnly && <th></th>}</tr></thead>
               <tbody>
                 {bom.map((row) => (
                   <tr key={row.id}>
-                    {editingRowId === row.id ? (
+                    {!readOnly && editingRowId === row.id ? (
                       <>
-                        <td><input type="text" value={editDraft.itemNo} onChange={(e) => setEditDraft({ ...editDraft, itemNo: e.target.value })} /></td>
+                        <td><input type="text" value={editDraft.itemNo} onChange={(e) => setEditDraft({ ...editDraft, itemNo: e.target.value.toUpperCase() })} /></td>
                         <td><input type="text" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
                         <td><input type="number" value={editDraft.qty} onChange={(e) => setEditDraft({ ...editDraft, qty: e.target.value })} style={{ width: 60 }} /></td>
                         <td><input type="text" value={editDraft.unit} onChange={(e) => setEditDraft({ ...editDraft, unit: e.target.value })} style={{ width: 55 }} /></td>
@@ -398,30 +433,42 @@ export default function ProductionJobOrderDetailPage() {
                       </>
                     ) : (
                       <>
-                        <td>{row.item_no}</td>
+                        <td>{row.item_no || <span className="subtle">-</span>}</td>
                         <td>{row.description}</td>
                         <td>{row.qty}</td>
                         <td>{row.unit}</td>
                         <td>{row.actual_qty ?? <span className="subtle">-</span>}</td>
                         <td>{row.actual_unit ?? <span className="subtle">-</span>}</td>
-                        <td style={{ textAlign: "center" }}><input type="checkbox" checked={!row.material_ready} onChange={() => toggleNotAvailable(row)} style={{ width: "auto" }} /></td>
-                        <td>
-                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                            <input
-                              type="text"
-                              placeholder="Note for Warehouse..."
-                              value={commentDraft[row.id] ?? row.comment ?? ""}
-                              onChange={(e) => setCommentDraft((d) => ({ ...d, [row.id]: e.target.value }))}
-                              style={{ fontSize: "0.78rem", padding: "4px 6px" }}
-                            />
-                            <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "4px 6px" }} onClick={() => saveComment(row)}>Save</button>
-                            {savedRowId === row.id && <span style={{ color: "var(--good)", fontSize: "0.72rem", whiteSpace: "nowrap" }}>✓ Saved</span>}
-                          </div>
+                        <td style={{ textAlign: "center" }}>
+                          {readOnly ? (
+                            !row.material_ready ? "✓" : ""
+                          ) : (
+                            <input type="checkbox" checked={!row.material_ready} onChange={() => toggleNotAvailable(row)} style={{ width: "auto" }} />
+                          )}
                         </td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => startEditRow(row)}>Edit</button>{" "}
-                          <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => deleteRow(row.id)}>Remove</button>
-                        </td>
+                        {readOnly ? (
+                          <td>{row.comment || <span className="subtle">-</span>}</td>
+                        ) : (
+                          <>
+                            <td>
+                              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                <input
+                                  type="text"
+                                  placeholder="Note for Warehouse..."
+                                  value={commentDraft[row.id] ?? row.comment ?? ""}
+                                  onChange={(e) => setCommentDraft((d) => ({ ...d, [row.id]: e.target.value }))}
+                                  style={{ fontSize: "0.78rem", padding: "4px 6px" }}
+                                />
+                                <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "4px 6px" }} onClick={() => saveComment(row)}>Save</button>
+                                {savedRowId === row.id && <span style={{ color: "var(--good)", fontSize: "0.72rem", whiteSpace: "nowrap" }}>✓ Saved</span>}
+                              </div>
+                            </td>
+                            <td style={{ whiteSpace: "nowrap" }}>
+                              <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => startEditRow(row)}>Edit</button>{" "}
+                              <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => deleteRow(row.id)}>Remove</button>
+                            </td>
+                          </>
+                        )}
                       </>
                     )}
                   </tr>
@@ -431,25 +478,40 @@ export default function ProductionJobOrderDetailPage() {
           </div>
         )}
 
-        <div className="grid" style={{ marginTop: 14, gridTemplateColumns: "0.5fr 2fr 0.4fr 0.4fr" }}>
-          <div className="field" style={{ position: "relative" }}>
-            <label>Item Code</label>
-            <input type="text" value={newItemNo} onChange={(e) => onNewItemNoChange(e.target.value)} autoComplete="off" style={{ maxWidth: 130 }} />
-            {suggestions.length > 0 && (
-              <div style={{ position: "absolute", zIndex: 10, background: "white", border: "1px solid var(--border)", borderRadius: 8, width: "100%", maxHeight: 160, overflowY: "auto" }}>
-                {suggestions.map((s) => (
-                  <div key={s.item_no} onClick={() => pickSuggestion(s)} style={{ padding: "8px 10px", cursor: "pointer", fontSize: "0.85rem", borderBottom: "1px solid var(--panel-muted)" }}>
-                    <b>{s.item_no}</b> — {s.description}
+        {!readOnly && (
+          <>
+            <div className="grid" style={{ marginTop: 14, gridTemplateColumns: "0.5fr 2fr 0.4fr 0.4fr" }}>
+              <div className="field" style={{ position: "relative" }}>
+                <label>Item Code</label>
+                <input type="text" value={newItemNo} onChange={(e) => onNewItemNoChange(e.target.value)} autoComplete="off" style={{ maxWidth: 130 }} placeholder="optional" />
+                {suggestions.length > 0 && (
+                  <div style={{ position: "absolute", zIndex: 10, background: "white", border: "1px solid var(--border)", borderRadius: 8, width: "100%", maxHeight: 160, overflowY: "auto" }}>
+                    {suggestions.map((s) => (
+                      <div key={s.item_no} onClick={() => pickSuggestion(s)} style={{ padding: "8px 10px", cursor: "pointer", fontSize: "0.85rem", borderBottom: "1px solid var(--panel-muted)" }}>
+                        <HighlightedCode text={s.item_no} term={newItemNo} /> — {s.description}
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
+              <div className="field">
+                <label>Description</label>
+                <input type="text" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} disabled={newItemKnown} />
+              </div>
+              <div className="field"><label>Qty</label><input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} /></div>
+              <div className="field">
+                <label>Unit</label>
+                <input type="text" value={newUnit} onChange={(e) => setNewUnit(e.target.value)} disabled={newItemKnown} />
+              </div>
+            </div>
+            {!newItemNo.trim() && (
+              <p className="subtle" style={{ marginTop: -8, marginBottom: 10, fontSize: "0.78rem" }}>
+                No item code yet? It'll still be added, automatically flagged N/A so Warehouse knows to chase it down.
+              </p>
             )}
-          </div>
-          <div className="field"><label>Description</label><input type="text" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} /></div>
-          <div className="field"><label>Qty</label><input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} /></div>
-          <div className="field"><label>Unit</label><input type="text" value={newUnit} onChange={(e) => setNewUnit(e.target.value)} /></div>
-        </div>
-        <button className="btn secondary" onClick={addRow} disabled={savingRow || !newItemNo.trim()}>{savingRow ? "Adding..." : "+ Add item (auto-saves)"}</button>
+            <button className="btn secondary" onClick={addRow} disabled={savingRow}>{savingRow ? "Adding..." : "+ Add item"}</button>
+          </>
+        )}
       </div>
 
       <div className="card">

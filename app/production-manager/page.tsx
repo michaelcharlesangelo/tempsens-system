@@ -7,69 +7,70 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { printFileUrl } from "@/lib/printFile";
 
+// Row-level stage within the single "In Production" table - replaces the
+// old 3-way table split (Not Acknowledged / Acknowledged / Ready for
+// Production) with one status pill per row instead.
+function stageOf(jo: JobOrder): { label: string; bg: string; fg: string } {
+  if (jo.status === "completed") return { label: "Finished", bg: "#dcfce7", fg: "#15803d" };
+  if (jo.status === "approved") return { label: "Awaiting Acknowledgement", bg: "var(--panel-muted)", fg: "var(--text-muted)" };
+  if (jo.material_prepared_all) return { label: "Material Ready", bg: "#dcfce7", fg: "#15803d" };
+  return { label: "Preparing Material", bg: "var(--warn-bg)", fg: "var(--warn-text)" };
+}
+
 function JoTable({
-  items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge, finishing, onFinish,
+  items, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acking, acknowledge, finishing, onFinish,
 }: {
-  items: JobOrder[]; mode: "not_acknowledged" | "open"; acking: string | null;
+  items: JobOrder[];
   historyOpenId: string | null; setHistoryOpenId: (id: string | null) => void;
-  viewDrawing: (id: string) => void; printDrawing: (id: string) => void; acknowledge: (id: string) => void;
-  finishing?: string | null; onFinish?: (jo: JobOrder) => void;
+  viewDrawing: (id: string) => void; printDrawing: (id: string) => void;
+  acking: string | null; acknowledge: (id: string) => void;
+  finishing: string | null; onFinish: (jo: JobOrder) => void;
 }) {
-  const showFinish = mode === "open" && !!onFinish;
-  const colCount = showFinish ? 13 : 12;
   return (
     <div style={{ overflowX: "auto" }}>
       <table className="data-table fixed">
         <colgroup>
-          <col style={{ width: "7%" }} />
+          <col style={{ width: "8%" }} />
           <col style={{ width: "9%" }} />
+          <col style={{ width: "8%" }} />
           <col style={{ width: "9%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "16%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "13%" }} />
           <col style={{ width: "8%" }} />
           <col style={{ width: "10%" }} />
-          <col style={{ width: "15%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "8%" }} />
-          {showFinish && <col style={{ width: "6%" }} />}
-          <col style={{ width: "8%" }} />
         </colgroup>
         <thead>
           <tr>
             <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Sales</th><th>Customer</th>
-            <th>Item Description</th><th>Qty</th><th>Deadline</th><th>Drawing</th><th>Material</th><th>Comments</th>
-            {showFinish && <th>Finish</th>}
+            <th>Item Description</th><th>Qty</th><th>Deadline</th><th>Drawing</th><th>Status</th><th>Comments</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {items.map((jo) => {
             const commented = (jo.history ?? []).filter((h) => h.comment);
+            const stage = stageOf(jo);
             return (
               <Fragment key={jo.id}>
                 <tr>
-                  <td>{fmtDate(jo.created_at)}</td>
-                  <td>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{fmtDate(jo.created_at)}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
                   <td>{jo.item_no}</td>
                   <td>{jo.sales_person_name}</td>
                   <td>{jo.customer_name}</td>
                   <td>{jo.item_description}</td>
                   <td>{jo.quantity}</td>
-                  <td>{fmtDate(jo.deadline)}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{fmtDate(jo.deadline)}</td>
                   <td>
                     <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => viewDrawing(jo.id)}>View</button>{" "}
                     <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => printDrawing(jo.id)}>Print</button>
                   </td>
-                  <td style={{ textAlign: "center", background: jo.material_prepared_all ? "#d3f5d3" : undefined }}>
-                    <input
-                      type="checkbox"
-                      checked={!!jo.material_prepared_all}
-                      disabled
-                      readOnly
-                      style={{ width: 20, height: 20, accentColor: "var(--good)" }}
-                      title="Ticked once Warehouse Manager has prepared all material"
-                    />
+                  <td>
+                    <span className="pill" style={{ background: stage.bg, color: stage.fg, whiteSpace: "nowrap" }}>{stage.label}</span>
                   </td>
                   <td>
                     <button
@@ -81,23 +82,27 @@ function JoTable({
                       {historyOpenId === jo.id ? "Hide" : `View (${commented.length})`}
                     </button>
                   </td>
-                  {showFinish && (
-                    <td style={{ textAlign: "center" }}>
-                      <input
-                        type="checkbox"
-                        checked={false}
-                        disabled={finishing === jo.id}
-                        onChange={() => onFinish!(jo)}
-                        style={{ width: 20, height: 20, accentColor: "var(--good)" }}
-                        title="Tick once all material is finished - moves this JO to Finished Production"
-                      />
-                    </td>
-                  )}
-                  <td>
-                    {mode === "not_acknowledged" ? (
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {jo.status === "completed" ? (
+                      <a href={`/production-manager/${jo.id}`} className="btn secondary" style={{ fontSize: "0.78rem", padding: "5px 10px" }}>View</a>
+                    ) : jo.status === "approved" ? (
                       <button className="btn" style={{ fontSize: "0.78rem", padding: "5px 10px" }} disabled={acking === jo.id} onClick={() => acknowledge(jo.id)}>
                         {acking === jo.id ? "Acknowledging..." : "Acknowledge"}
                       </button>
+                    ) : jo.material_prepared_all ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <a href={`/production-manager/${jo.id}`} className="btn secondary" style={{ fontSize: "0.78rem", padding: "5px 10px" }}>JO →</a>
+                        <label style={{ display: "flex", alignItems: "center", gap: 4, textTransform: "none", cursor: "pointer", fontSize: "0.7rem", fontWeight: 600 }} title="Tick once production is finished">
+                          <input
+                            type="checkbox"
+                            checked={false}
+                            disabled={finishing === jo.id}
+                            onChange={() => onFinish(jo)}
+                            style={{ width: 16, height: 16, accentColor: "var(--good)" }}
+                          />
+                          Finish
+                        </label>
+                      </div>
                     ) : (
                       <a href={`/production-manager/${jo.id}`} className="btn secondary" style={{ fontSize: "0.78rem", padding: "5px 10px" }}>JO →</a>
                     )}
@@ -105,7 +110,7 @@ function JoTable({
                 </tr>
                 {historyOpenId === jo.id && commented.length > 0 && (
                   <tr>
-                    <td colSpan={colCount} style={{ background: "var(--panel-muted)" }}>
+                    <td colSpan={12} style={{ background: "var(--panel-muted)" }}>
                       {commented.map((h: JobOrderHistoryEntry) => (
                         <div key={h.id} style={{ fontSize: "0.82rem", padding: "4px 0" }}>
                           <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
@@ -124,20 +129,22 @@ function JoTable({
 }
 
 function PagedJoSection({
-  items, mode, acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge, finishing, onFinish,
+  items, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acking, acknowledge, finishing, onFinish,
 }: {
-  items: JobOrder[]; mode: "not_acknowledged" | "open"; acking: string | null;
+  items: JobOrder[];
   historyOpenId: string | null; setHistoryOpenId: (id: string | null) => void;
-  viewDrawing: (id: string) => void; printDrawing: (id: string) => void; acknowledge: (id: string) => void;
-  finishing?: string | null; onFinish?: (jo: JobOrder) => void;
+  viewDrawing: (id: string) => void; printDrawing: (id: string) => void;
+  acking: string | null; acknowledge: (id: string) => void;
+  finishing: string | null; onFinish: (jo: JobOrder) => void;
 }) {
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, joMatchesSearch);
   return (
     <>
       <SearchBox value={search} onChange={setSearch} />
       <JoTable
-        items={pageItems} mode={mode} acking={acking} historyOpenId={historyOpenId} setHistoryOpenId={setHistoryOpenId}
-        viewDrawing={viewDrawing} printDrawing={printDrawing} acknowledge={acknowledge} finishing={finishing} onFinish={onFinish}
+        items={pageItems} historyOpenId={historyOpenId} setHistoryOpenId={setHistoryOpenId}
+        viewDrawing={viewDrawing} printDrawing={printDrawing} acking={acking} acknowledge={acknowledge}
+        finishing={finishing} onFinish={onFinish}
       />
       <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
     </>
@@ -145,9 +152,7 @@ function PagedJoSection({
 }
 
 export default function ProductionManagerPage() {
-  const [notAcknowledged, setNotAcknowledged] = useState<JobOrder[]>([]);
-  const [acknowledged, setAcknowledged] = useState<JobOrder[]>([]);
-  const [readyForProduction, setReadyForProduction] = useState<JobOrder[]>([]);
+  const [inProduction, setInProduction] = useState<JobOrder[]>([]);
   const [finishedProduction, setFinishedProduction] = useState<JobOrder[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [acking, setAcking] = useState<string | null>(null);
@@ -155,18 +160,21 @@ export default function ProductionManagerPage() {
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
 
   async function load() {
-    const [approvedRes, ackRes, inProgressRes, completedRes] = await Promise.all([
+    const [approvedRes, ackRes, inProgressRes, qcRes, completedRes] = await Promise.all([
       fetch("/api/job-orders?status=approved&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=acknowledged&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=in_progress&tab=production-manager", { cache: "no-store" }),
+      fetch("/api/job-orders?status=qc&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=completed&tab=production-manager", { cache: "no-store" }),
     ]);
-    setNotAcknowledged((await approvedRes.json()).jobOrders ?? []);
-    const ack: JobOrder[] = (await ackRes.json()).jobOrders ?? [];
-    const inProg: JobOrder[] = (await inProgressRes.json()).jobOrders ?? [];
-    const combined = [...ack, ...inProg];
-    setAcknowledged(combined.filter((jo) => !jo.ready_for_production));
-    setReadyForProduction(combined.filter((jo) => jo.ready_for_production));
+    const approved: JobOrder[] = (await approvedRes.json()).jobOrders ?? [];
+    const acknowledged: JobOrder[] = (await ackRes.json()).jobOrders ?? [];
+    const inProgress: JobOrder[] = (await inProgressRes.json()).jobOrders ?? [];
+    const qc: JobOrder[] = (await qcRes.json()).jobOrders ?? [];
+    // One table, ordered by urgency of what needs attention: needs
+    // acknowledging first, then everything already moving through
+    // production. Status pill on each row shows exactly where it's at.
+    setInProduction([...approved, ...acknowledged, ...inProgress, ...qc]);
     setFinishedProduction((await completedRes.json()).jobOrders ?? []);
   }
 
@@ -199,7 +207,7 @@ export default function ProductionManagerPage() {
   }
 
   async function finishProduction(jo: JobOrder) {
-    if (!confirm(`Mark SO ${jo.so_no} as finished production? This moves it to Finished Production.`)) return;
+    if (!confirm(`Mark SO ${jo.so_no} as finished production? This moves it to Finished Production and it can no longer be edited.`)) return;
     setFinishing(jo.id);
     try {
       const res = await fetch(`/api/job-orders/${jo.id}/status`, {
@@ -214,32 +222,22 @@ export default function ProductionManagerPage() {
     }
   }
 
-  const sharedProps = { acking, historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acknowledge };
+  const sharedProps = { historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acking, acknowledge, finishing, onFinish: finishProduction };
 
   return (
     <>
       {message && <div className="warn">{message}</div>}
 
       <Collapsible
-        title="Not Yet Acknowledged"
-        count={notAcknowledged.length}
-        actions={notAcknowledged.length > 0 && <span className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em" }}>Action Required</span>}
+        title="In Production"
+        count={inProduction.length}
+        actions={inProduction.some((jo) => jo.status === "approved") && <span className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em" }}>Action Required</span>}
       >
-        {notAcknowledged.length === 0 ? <p className="subtle">Nothing waiting.</p> : <PagedJoSection items={notAcknowledged} mode="not_acknowledged" {...sharedProps} />}
-      </Collapsible>
-
-      <Collapsible title="Acknowledged" count={acknowledged.length}>
-        {acknowledged.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={acknowledged} mode="open" {...sharedProps} />}
-      </Collapsible>
-
-      <Collapsible title="Ready for Production" count={readyForProduction.length}>
-        {readyForProduction.length === 0 ? <p className="subtle">None yet.</p> : (
-          <PagedJoSection items={readyForProduction} mode="open" {...sharedProps} finishing={finishing} onFinish={finishProduction} />
-        )}
+        {inProduction.length === 0 ? <p className="subtle">Nothing in production right now.</p> : <PagedJoSection items={inProduction} {...sharedProps} />}
       </Collapsible>
 
       <Collapsible title="Finished Production" count={finishedProduction.length}>
-        {finishedProduction.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={finishedProduction} mode="open" {...sharedProps} />}
+        {finishedProduction.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={finishedProduction} {...sharedProps} />}
       </Collapsible>
     </>
   );

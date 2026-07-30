@@ -8,7 +8,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const body = await req.json();
   const updates: Record<string, unknown> = {};
 
-  if (typeof body.itemNo === "string") updates.item_no = body.itemNo.trim();
+  if (typeof body.itemNo === "string") updates.item_no = body.itemNo.trim().toUpperCase();
   if (typeof body.description === "string") updates.description = body.description.trim();
   if (body.qty !== undefined) updates.qty = Number(body.qty) || 0;
   if (typeof body.unit === "string") updates.unit = body.unit;
@@ -24,6 +24,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const admin = getSupabaseAdminClient();
+  const { data: jobOrder } = await admin.from("job_orders").select("status").eq("id", params.id).maybeSingle();
+  if (jobOrder?.status === "completed") {
+    return NextResponse.json({ error: "This job order is finished and can no longer be edited." }, { status: 400 });
+  }
+
   const { data, error } = await admin.from("job_order_bom").update(updates).eq("id", params.rowId).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -54,6 +59,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string; rowId: string } }) {
   const admin = getSupabaseAdminClient();
+  const { data: jobOrder } = await admin.from("job_orders").select("status").eq("id", params.id).maybeSingle();
+  if (jobOrder?.status === "completed") {
+    return NextResponse.json({ error: "This job order is finished and can no longer be edited." }, { status: 400 });
+  }
+
   const { error } = await admin.from("job_order_bom").delete().eq("id", params.rowId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

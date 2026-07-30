@@ -3,10 +3,17 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import DateField from "@/app/components/DateField";
-import { ItemCategory } from "@/lib/jobOrders";
+import { ItemCategory, splitMatch } from "@/lib/jobOrders";
 
 interface CatalogItem { item_no: string; description: string; }
 interface SalesAccount { id: string; full_name: string; }
+
+// Bolds the portion of an item code that matches the current search term
+// so the matched prefix stands out in suggestion lists.
+function HighlightedCode({ text, term }: { text: string; term: string }) {
+  const [before, match, after] = splitMatch(text, term);
+  return <>{before}<b>{match}</b>{after}</>;
+}
 
 // Which page's "+ New Job Order" / "Edit" link launched this - drives the
 // back link at the top so it returns to wherever the user actually came
@@ -206,7 +213,7 @@ function JoInputInner() {
                 <div style={{ position: "absolute", zIndex: 10, top: "100%", left: "35%", background: "white", border: "1px solid var(--border)", borderRadius: 8, width: "65%", maxHeight: 160, overflowY: "auto" }}>
                   {catalogSuggestions.map((s) => (
                     <div key={s.item_no} onClick={() => pickSuggestion(s)} style={{ padding: "8px 10px", cursor: "pointer", fontSize: "0.85rem", borderBottom: "1px solid var(--panel-muted)" }}>
-                      <b>{s.item_no}</b> — {s.description}
+                      <HighlightedCode text={s.item_no} term={itemNo} /> — {s.description}
                     </div>
                   ))}
                 </div>

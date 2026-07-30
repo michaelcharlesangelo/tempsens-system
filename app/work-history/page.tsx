@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
-import { JobOrder, JobOrderStatus, joMatchesSearch, fmtDate } from "@/lib/jobOrders";
+import { JobOrder, JobOrderStatus, joMatchesSearch, fmtDate, formatSerialRange } from "@/lib/jobOrders";
 
 // Only JOs that have cleared approval are meaningful to search here - a
 // draft or rejected JO doesn't have a settled item code / BOM to link to.
@@ -48,7 +48,7 @@ export default function WorkHistoryPage() {
                 </thead>
                 <tbody>
                   {rows.map((jo) => {
-                    const serials = (jo.serial_numbers ?? []).filter(Boolean);
+                    const serialLabel = formatSerialRange(jo.serial_numbers ?? []);
                     return (
                     <tr key={jo.id}>
                       <td>{fmtDate(jo.jo_date)}</td>
@@ -57,7 +57,7 @@ export default function WorkHistoryPage() {
                       <td>{jo.item_no}</td>
                       <td>{jo.item_description}</td>
                       <td>{jo.quantity}</td>
-                      <td>{serials.length > 0 ? serials.join(", ") : <span className="subtle">-</span>}</td>
+                      <td>{serialLabel === "-" ? <span className="subtle">-</span> : serialLabel}</td>
                       <td style={{ whiteSpace: "nowrap" }}>
                         <Link className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} href={`/production-manager/${jo.id}`}>
                           View JO
