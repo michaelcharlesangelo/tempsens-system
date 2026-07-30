@@ -24,8 +24,8 @@ export const STATUS_LABELS: Record<JobOrderStatus, string> = {
 // The 3 sequential approval layers - each corresponds to one of the tabs.
 export const APPROVAL_LAYERS: { layer: 1 | 2 | 3; tab: string; label: string }[] = [
   { layer: 1, tab: "sales-manager", label: "Sales Manager" },
-  { layer: 2, tab: "operation-manager", label: "Operational Manager" },
-  { layer: 3, tab: "gm", label: "General Manager" },
+  { layer: 2, tab: "operational-manager", label: "Operational Manager" },
+  { layer: 3, tab: "general-manager", label: "General Manager" },
 ];
 
 export interface JobOrder {

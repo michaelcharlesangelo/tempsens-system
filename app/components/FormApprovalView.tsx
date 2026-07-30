@@ -63,11 +63,15 @@ export default function FormApprovalView({ layer, label }: { layer: 1 | 2; label
     }
   }
 
-  if (!forms) return <p className="subtle">Loading...</p>;
-
-  const pending = forms.filter((f) => f.status === "pending_approval" && f.current_approval_layer === layer);
+  // usePagedSearch (a hook) must run on every render regardless of loading
+  // state - calling it after an early "loading" return skipped it on the
+  // first render and broke React's hook-order rule, which is what crashed
+  // this page entirely.
+  const pending = (forms ?? []).filter((f) => f.status === "pending_approval" && f.current_approval_layer === layer);
   const expandedForm = expanded ? pending.find((f) => f.id === expanded) : null;
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(pending, formMatches);
+
+  if (!forms) return <p className="subtle">Loading...</p>;
 
   return (
     <Collapsible

@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const BUCKET = "tempsens-files";
-const PO_VISIBLE_TABS = ["jo-input", "sales-support-supervisor", "sales-manager", "operation-manager", "gm"];
+const PO_VISIBLE_TABS = ["jo-input", "sales-support-supervisor", "sales-manager", "operational-manager", "general-manager"];
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const type = req.nextUrl.searchParams.get("type");

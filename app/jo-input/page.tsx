@@ -21,7 +21,7 @@ function HighlightedCode({ text, term }: { text: string; term: string }) {
 const BACK_LINKS: Record<string, string> = {
   "Sales Support": "/sales-support",
   "Sales Support Supervisor": "/sales-support-supervisor",
-  "Operational Manager": "/operation-manager",
+  "Operational Manager": "/operational-manager",
 };
 
 export default function JoInputPage() {

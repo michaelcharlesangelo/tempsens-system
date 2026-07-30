@@ -5,7 +5,7 @@ import { JobOrder } from "@/lib/jobOrders";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const PO_VISIBLE_TABS = ["jo-input", "sales-support-supervisor", "sales-manager", "operation-manager", "gm"];
+const PO_VISIBLE_TABS = ["jo-input", "sales-support-supervisor", "sales-manager", "operational-manager", "general-manager"];
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const tab = req.nextUrl.searchParams.get("tab");

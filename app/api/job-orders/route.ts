@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const BUCKET = "tempsens-files";
-const PO_VISIBLE_TABS = ["jo-input", "sales-support-supervisor", "sales-manager", "operation-manager", "gm"];
+const PO_VISIBLE_TABS = ["jo-input", "sales-support-supervisor", "sales-manager", "operational-manager", "general-manager"];
 
 function stripPoIfUnauthorized(jo: JobOrder, tab: string | null): JobOrder {
   if (tab && PO_VISIBLE_TABS.includes(tab)) return jo;
