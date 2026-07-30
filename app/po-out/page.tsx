@@ -5,12 +5,16 @@ import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
 import DateField from "@/app/components/DateField";
-import PoStatusSlider from "@/app/components/PoStatusSlider";
+import ToggleSwitch from "@/app/components/ToggleSwitch";
 import {
   PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, CURRENCY_SYMBOLS, PoOutStatus, PO_OUT_STATUSES,
   fmtDate, fmtDateTime,
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
+
+function esc(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+}
 
 interface SalesAccount { id: string; full_name: string; }
 
@@ -57,6 +61,42 @@ const COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
   { key: "supplier", label: "Supplier", sortKey: "supplier" },
   { key: "status", label: "Status" },
 ];
+
+function poCellText(p: PoOut, key: string): string {
+  switch (key) {
+    case "poDate": return fmtDate(p.po_date);
+    case "deadline": return fmtDate(p.deadline) + (p.urgent ? " (URGENT)" : "");
+    case "poNumber": return p.po_number;
+    case "itemCode": return p.item_code;
+    case "sales": return p.sales;
+    case "customerName": return p.customer_name;
+    case "itemDescription": return p.item_description;
+    case "qty": return String(p.qty);
+    case "unit": return p.unit;
+    case "unitPrice": return `${p.unit_price_currency} ${Number(p.unit_price).toLocaleString("id-ID")}`;
+    case "totalPrice": return `${p.unit_price_currency} ${Number(p.total_price).toLocaleString("id-ID")}`;
+    case "unitSellingPrice": return `${p.unit_selling_price_currency} ${Number(p.unit_selling_price).toLocaleString("id-ID")}`;
+    case "supplier": return p.supplier;
+    case "status": return PO_OUT_STATUSES.find((s) => s.value === p.status)?.label ?? p.status;
+    default: return "";
+  }
+}
+
+// Zero-dependency "export to Excel" - Excel opens an HTML table saved with
+// a .xls extension natively, no real xlsx binary needed.
+function exportPoOutToExcel(rows: PoOut[], columns: { key: string; label: string }[]) {
+  const headerRow = columns.map((c) => `<th>${esc(c.label)}</th>`).join("");
+  const bodyRows = rows.map((p) => `<tr>${columns.map((c) => `<td>${esc(poCellText(p, c.key))}</td>`).join("")}</tr>`).join("");
+  const html = `<html><head><meta charset="utf-8"></head><body><table border="1">
+    <thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+  const blob = new Blob([html], { type: "application/vnd.ms-excel" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `po-out-recap-${new Date().toISOString().slice(0, 10)}.xls`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // Kept at module scope so re-renders elsewhere on the page never remount
 // (and lose focus / mid-typed "new supplier" state on) this control.
@@ -144,10 +184,16 @@ export default function PoOutPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Draft | null>(null);
   const [updatesOpenId, setUpdatesOpenId] = useState<string | null>(null);
+  const [moreItems, setMoreItems] = useState(false);
 
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [activeTab, setActiveTab] = useState<SupplierTabCategory | "ALL">("ALL");
+  // Arrived starts off - it'll pile up fast once shipments actually land,
+  // and by then it's no longer the thing Sales Support needs eyes on daily.
+  const [showProduction, setShowProduction] = useState(true);
+  const [showShipment, setShowShipment] = useState(true);
+  const [showArrived, setShowArrived] = useState(false);
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
   const columnsMenuRef = useRef<HTMLDivElement>(null);
@@ -188,6 +234,7 @@ export default function PoOutPage() {
     setDraft(blank());
     setShowForm(false);
     setError(null);
+    setMoreItems(false);
   }
 
   const totalPrice = (Number(draft.qty) || 0) * (Number(draft.unitPrice) || 0);
@@ -203,7 +250,18 @@ export default function PoOutPage() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to save."); return; }
-      resetForm();
+      if (moreItems) {
+        // Same PO, next line item - carry over the fields that are shared
+        // across a PO's lines, clear the item-specific ones, keep the form
+        // open (and everything still editable, just pre-filled).
+        setDraft((d) => ({
+          ...blank(),
+          supplier: d.supplier, deadline: d.deadline, poNumber: d.poNumber,
+          customerName: d.customerName, sales: d.sales,
+        }));
+      } else {
+        resetForm();
+      }
       load();
     } finally {
       setSaving(false);
@@ -244,14 +302,6 @@ export default function PoOutPage() {
     load();
   }
 
-  async function changeStatus(id: string, status: PoOutStatus) {
-    await fetch(`/api/po-out/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "setStatus", status, changedBy: currentRole.label }),
-    });
-    load();
-  }
-
   function sortBy(key: SortKey) {
     if (sortKey === key) { setSortDir((d) => (d === "asc" ? "desc" : "asc")); return; }
     setSortKey(key);
@@ -267,7 +317,8 @@ export default function PoOutPage() {
   }
 
   const supplierCategory = new Map(suppliers.map((s) => [s.name, s.tab_category]));
-  const filtered = (pos ?? []).filter((p) => activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab);
+  const statusVisible: Record<PoOutStatus, boolean> = { production: showProduction, shipment: showShipment, arrived: showArrived };
+  const filtered = (pos ?? []).filter((p) => (activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab) && statusVisible[p.status]);
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
         const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""));
@@ -345,7 +396,7 @@ export default function PoOutPage() {
               className="pill"
               style={{ background: meta.color, color: "white", cursor: "pointer" }}
               onClick={() => setUpdatesOpenId(updatesOpenId === p.id ? null : p.id)}
-              title="Click to view updates from Exim Team"
+              title="Click to view updates from Exim Team — status is changed on the Exim page"
             >
               {meta.label}
             </span>
@@ -415,9 +466,12 @@ export default function PoOutPage() {
               </div>
             </div>
             {error && <p className="error-text">{error}</p>}
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
               <button className="btn" onClick={submit} disabled={saving}>{saving ? "Saving..." : "Submit"}</button>
               <button className="btn secondary" onClick={resetForm}>Cancel</button>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.78rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                <input type="checkbox" checked={moreItems} onChange={(e) => setMoreItems(e.target.checked)} style={{ width: 15, height: 15 }} /> More Items
+              </label>
             </div>
           </div>
         )}
@@ -425,7 +479,21 @@ export default function PoOutPage() {
 
       {message && <div className="warn">{message}</div>}
 
-      <Collapsible title="PO OUT RECAP" count={pos?.length} defaultOpen>
+      <Collapsible
+        title="PO OUT RECAP"
+        count={pos?.length}
+        defaultOpen
+        actions={
+          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+            <ToggleSwitch checked={showProduction} onChange={setShowProduction} label="Production" color={PO_OUT_STATUSES[0].color} />
+            <ToggleSwitch checked={showShipment} onChange={setShowShipment} label="Shipment" color={PO_OUT_STATUSES[1].color} />
+            <ToggleSwitch checked={showArrived} onChange={setShowArrived} label="Arrived" color={PO_OUT_STATUSES[2].color} />
+            <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => exportPoOutToExcel(sorted, COLUMNS.filter((c) => !hiddenCols.has(c.key)))}>
+              Export to Excel
+            </button>
+          </div>
+        }
+      >
         {!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
           <>
             <div style={{ display: "flex", gap: 2, marginBottom: 14, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
@@ -521,8 +589,7 @@ export default function PoOutPage() {
                                 <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
                                   Updates from Exim Team
                                 </div>
-                                <PoStatusSlider status={p.status} onChange={(s) => changeStatus(p.id, s)} />
-                                <div style={{ marginTop: 10 }}>
+                                <div>
                                   {p.history.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : p.history.map((h) => (
                                     <div key={h.id} style={{ fontSize: "0.82rem", padding: "3px 0" }}>
                                       <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}

@@ -343,6 +343,11 @@ create table if not exists po_out (
   unit_selling_price_currency text not null default 'IDR' check (unit_selling_price_currency in ('IDR','USD','SGD','EUR','CNY','JPY')),
   supplier text not null default '',
   status text not null default 'production' check (status in ('production','shipment','arrived')),
+  -- Export Import's own operational fields (app/exim) - not filled in by
+  -- Sales Support, and not touched by the PO Out Recap entry form/edit.
+  oc text not null default '', -- Order Confirmation reference
+  origin text not null default '', -- country/port of origin
+  shipment text not null default '', -- free-text shipment number tie-in to the Shipment Plan table
   submitted_by text not null default '',
   created_at timestamptz not null default now()
 );
@@ -384,6 +389,32 @@ insert into suppliers (name, tab_category) values
   ('EXPORT', 'EXPORT'),
   ('STOCK TAJ', 'STOCK_TAJ')
 on conflict (name) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Shipment Plan - Export Import's own table (app/exim), independent of any
+-- single PO Out row (a shipment can cover several POs) - draft-first, so
+-- every field is optional except a shipment number.
+-- ---------------------------------------------------------------------------
+create table if not exists shipments (
+  id uuid primary key default gen_random_uuid(),
+  shipment_number text not null default '',
+  supplier text not null default '',
+  shipment_via text not null default '',
+  incoterms text not null default '',
+  invoice text not null default '',
+  awb_bl text not null default '',
+  atd date,
+  eta_jkt date,
+  sppb text not null default '',
+  delivery text not null default '',
+  awb_bl_file_path text,
+  awb_bl_file_name text,
+  photo_paths text[] not null default '{}',
+  submitted_by text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table shipments enable row level security;
 
 create index if not exists idx_job_orders_status on job_orders(status);
 create index if not exists idx_job_order_bom_job on job_order_bom(job_order_id);

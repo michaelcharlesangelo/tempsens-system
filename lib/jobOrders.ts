@@ -390,9 +390,31 @@ export interface PoOut {
   unit_selling_price_currency: Currency;
   supplier: string;
   status: PoOutStatus;
+  oc: string;
+  origin: string;
+  shipment: string;
   submitted_by: string;
   created_at: string;
   history: PoOutHistoryEntry[];
+}
+
+export interface Shipment {
+  id: string;
+  shipment_number: string;
+  supplier: string;
+  shipment_via: string;
+  incoterms: string;
+  invoice: string;
+  awb_bl: string;
+  atd: string | null;
+  eta_jkt: string | null;
+  sppb: string;
+  delivery: string;
+  awb_bl_file_path: string | null;
+  awb_bl_file_name: string | null;
+  photo_paths: string[];
+  submitted_by: string;
+  created_at: string;
 }
 
 // Splits `text` into [before, matched, after] around the first

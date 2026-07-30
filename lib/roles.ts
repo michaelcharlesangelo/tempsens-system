@@ -12,7 +12,7 @@ export const ROLE_LINKS = [
   { href: "/production-manager", label: "Production Manager", initials: "PM" },
   { href: "/warehouse-manager", label: "Warehouse Manager", initials: "WM" },
   { href: "/production", label: "Production", initials: "PR" },
-  { href: "/po-out", label: "Export Import", initials: "EXIM" },
+  { href: "/exim", label: "Export Import", initials: "EXIM" },
   { href: "/complaints", label: "Engineering", initials: "ENG" },
 ];
 

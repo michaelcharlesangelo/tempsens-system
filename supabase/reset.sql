@@ -23,6 +23,7 @@ drop table if exists purchase_forms cascade;
 drop table if exists po_out_history cascade;
 drop table if exists po_out cascade;
 drop table if exists suppliers cascade;
+drop table if exists shipments cascade;
 
 -- Force PostgREST (the API layer) to forget its old cached schema and
 -- pick up the fresh one immediately, instead of waiting for its next

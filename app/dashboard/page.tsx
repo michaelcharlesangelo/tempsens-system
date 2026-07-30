@@ -1,11 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
-import { Complaint, JobOrder, complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate } from "@/lib/jobOrders";
+import {
+  Complaint, JobOrder, PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PO_OUT_STATUSES,
+  complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate, fmtDateTime,
+} from "@/lib/jobOrders";
 
 interface CategoryTotal { category: string; qty: number; }
+
+const PO_COLUMNS: { key: string; label: string }[] = [
+  { key: "poDate", label: "PO Date" },
+  { key: "days", label: "Days" },
+  { key: "deadline", label: "Deadline" },
+  { key: "poNumber", label: "PO Number" },
+  { key: "itemCode", label: "Item Code" },
+  { key: "sales", label: "Sales" },
+  { key: "customerName", label: "Customer Name" },
+  { key: "itemDescription", label: "Item Description" },
+  { key: "qty", label: "Qty" },
+  { key: "unit", label: "Unit" },
+  { key: "supplier", label: "Supplier" },
+  { key: "status", label: "Status" },
+];
+
+function poMatches(p: PoOut, term: string): boolean {
+  return (
+    p.po_number.toLowerCase().includes(term) ||
+    p.item_code.toLowerCase().includes(term) ||
+    p.customer_name.toLowerCase().includes(term) ||
+    p.supplier.toLowerCase().includes(term) ||
+    fmtDate(p.po_date).includes(term)
+  );
+}
 
 // Calendar-day difference (not elapsed-hours) - JO date 26/6 and today 27/6
 // should read "1", regardless of what time of day either happened at.
@@ -15,6 +43,164 @@ function daysSince(dateStr: string): number {
   const now = new Date();
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.max(0, Math.round((today - start) / (1000 * 60 * 60 * 24)));
+}
+
+// Read-only view of the PO OUT RECAP table - no Edit, status badge only
+// opens the history (no way to change it from here, that's Exim's page).
+// Kept at module scope like the rest of the app's list-table components.
+function PoOutRecapSection() {
+  const [pos, setPos] = useState<PoOut[] | null>(null);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [activeTab, setActiveTab] = useState<SupplierTabCategory | "ALL">("ALL");
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
+  const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
+  const columnsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/po-out", { cache: "no-store" }).then((r) => r.json()).then((d) => setPos(d.pos ?? []));
+    fetch("/api/suppliers", { cache: "no-store" }).then((r) => r.json()).then((d) => setSuppliers(d.suppliers ?? []));
+  }, []);
+
+  useEffect(() => {
+    if (!columnsMenuOpen) return;
+    function handlePointerDown(e: MouseEvent) {
+      if (columnsMenuRef.current && !columnsMenuRef.current.contains(e.target as Node)) setColumnsMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [columnsMenuOpen]);
+
+  function toggleColumn(key: string) {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  const supplierCategory = new Map(suppliers.map((s) => [s.name, s.tab_category]));
+  const filtered = (pos ?? []).filter((p) => activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab);
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(filtered, poMatches);
+  const visibleCols = PO_COLUMNS.filter((c) => !hiddenCols.has(c.key));
+
+  function cellFor(p: PoOut, key: string) {
+    switch (key) {
+      case "poDate": return fmtDate(p.po_date);
+      case "days": return daysSince(p.po_date);
+      case "deadline": return (
+        <>
+          {fmtDate(p.deadline)}
+          {p.urgent && <span className="pill pill-rejected" style={{ marginLeft: 4, fontSize: "0.6rem" }}>URGENT</span>}
+        </>
+      );
+      case "poNumber": return p.po_number;
+      case "itemCode": return p.item_code;
+      case "sales": return p.sales;
+      case "customerName": return p.customer_name;
+      case "itemDescription": return p.item_description;
+      case "qty": return p.qty;
+      case "unit": return p.unit;
+      case "supplier": return p.supplier;
+      case "status": {
+        const meta = PO_OUT_STATUSES.find((s) => s.value === p.status)!;
+        return (
+          <span className="pill" style={{ background: meta.color, color: "white", cursor: "pointer" }} onClick={() => setHistoryOpenId(historyOpenId === p.id ? null : p.id)}>
+            {meta.label}
+          </span>
+        );
+      }
+      default: return null;
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 style={{ margin: 0 }}>PO OUT RECAP ({pos?.length ?? "..."})</h2>
+      {!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
+        <>
+          <div style={{ display: "flex", gap: 2, margin: "10px 0 0", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+            <button
+              className="btn secondary"
+              style={{ fontSize: "0.75rem", borderRadius: "6px 6px 0 0", borderBottom: "none", background: activeTab === "ALL" ? "var(--accent)" : undefined, color: activeTab === "ALL" ? "white" : undefined }}
+              onClick={() => setActiveTab("ALL")}
+            >
+              All
+            </button>
+            {SUPPLIER_TAB_CATEGORIES.map((c) => (
+              <button
+                key={c.value}
+                className="btn secondary"
+                style={{ fontSize: "0.75rem", borderRadius: "6px 6px 0 0", borderBottom: "none", background: activeTab === c.value ? "var(--accent)" : undefined, color: activeTab === c.value ? "white" : undefined }}
+                onClick={() => setActiveTab(c.value)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+            <SearchBox value={search} onChange={setSearch} />
+            <div ref={columnsMenuRef} style={{ position: "relative" }}>
+              <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => setColumnsMenuOpen((o) => !o)}>Columns ▾</button>
+              {columnsMenuOpen && (
+                <div
+                  style={{
+                    position: "absolute", top: "100%", right: 0, zIndex: 15, marginTop: 4,
+                    background: "var(--panel, #fff)", border: "1px solid var(--border)", borderRadius: 8,
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.15)", padding: 10, width: 200,
+                  }}
+                >
+                  {PO_COLUMNS.map((c) => (
+                    <label key={c.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", padding: "3px 0", cursor: "pointer" }}>
+                      <input type="checkbox" checked={!hiddenCols.has(c.key)} onChange={() => toggleColumn(c.key)} /> {c.label}
+                    </label>
+                  ))}
+                  <button className="btn secondary" style={{ fontSize: "0.72rem", marginTop: 6, width: "100%" }} onClick={() => setHiddenCols(new Set())}>
+                    Unhide all
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ overflowX: "auto", marginTop: 8 }}>
+            <table className="data-table">
+              <thead>
+                <tr>{visibleCols.map((c) => <th key={c.key}>{c.label}</th>)}</tr>
+              </thead>
+              <tbody>
+                {pageItems.map((p) => (
+                  <Fragment key={p.id}>
+                    <tr>
+                      {visibleCols.map((c) => <td key={c.key}>{cellFor(p, c.key)}</td>)}
+                    </tr>
+                    {historyOpenId === p.id && (
+                      <tr>
+                        <td colSpan={visibleCols.length} style={{ background: "var(--panel-muted)" }}>
+                          <div style={{ padding: "8px 2px" }}>
+                            <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>
+                              Updates from Exim Team
+                            </div>
+                            {p.history.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : p.history.map((h) => (
+                              <div key={h.id} style={{ fontSize: "0.82rem", padding: "3px 0" }}>
+                                <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -165,6 +351,8 @@ export default function DashboardPage() {
           <CurrentJobOrders items={activeJobOrders} />
         )}
       </div>
+
+      <PoOutRecapSection />
 
       <div className="card">
         <h2>{year ?? ""} Production</h2>

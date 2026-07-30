@@ -4,7 +4,7 @@ import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const CURRENCIES = ["IDR", "USD", "SGD", "EUR"];
+const CURRENCIES = ["IDR", "USD", "SGD", "EUR", "CNY", "JPY"];
 
 export async function GET() {
   const admin = getSupabaseAdminClient();

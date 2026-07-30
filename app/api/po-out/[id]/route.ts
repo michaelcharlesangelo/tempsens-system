@@ -4,8 +4,9 @@ import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const CURRENCIES = ["IDR", "USD", "SGD", "EUR"];
+const CURRENCIES = ["IDR", "USD", "SGD", "EUR", "CNY", "JPY"];
 const STATUSES = ["production", "shipment", "arrived"];
+const STATUS_LABELS: Record<string, string> = { production: "Production", shipment: "Shipment", arrived: "Arrived" };
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json();
@@ -14,11 +15,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof body.action === "string" && body.action === "setStatus") {
     if (!STATUSES.includes(body.status)) return NextResponse.json({ error: "Invalid status." }, { status: 400 });
     const changedBy = typeof body.changedBy === "string" && body.changedBy.trim() ? body.changedBy.trim() : "Unknown";
+    const note = typeof body.comment === "string" ? body.comment.trim() : "";
     const { data, error } = await admin.from("po_out").update({ status: body.status }).eq("id", params.id).select().single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const label = STATUS_LABELS[body.status];
     await admin.from("po_out_history").insert({
       po_out_id: params.id, changed_by: changedBy, status: body.status,
-      comment: `Status changed to ${body.status.charAt(0).toUpperCase()}${body.status.slice(1)}.`,
+      comment: note ? `${label} - ${note}` : `Status changed to ${label}.`,
     });
     return NextResponse.json({ po: data });
   }
@@ -34,6 +37,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof body.itemDescription === "string") updates.item_description = body.itemDescription.trim();
   if (typeof body.unit === "string") updates.unit = body.unit.trim() || "pcs";
   if (typeof body.supplier === "string") updates.supplier = body.supplier.trim();
+  if (typeof body.oc === "string") updates.oc = body.oc.trim();
+  if (typeof body.origin === "string") updates.origin = body.origin.trim();
+  if (typeof body.shipment === "string") updates.shipment = body.shipment.trim();
   if (typeof body.unitPriceCurrency === "string" && CURRENCIES.includes(body.unitPriceCurrency)) updates.unit_price_currency = body.unitPriceCurrency;
   if (typeof body.unitSellingPriceCurrency === "string" && CURRENCIES.includes(body.unitSellingPriceCurrency)) updates.unit_selling_price_currency = body.unitSellingPriceCurrency;
   if (body.qty !== undefined || body.unitPrice !== undefined) {
