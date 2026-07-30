@@ -43,7 +43,7 @@ export default function WorkHistoryPage() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Serial Number(s)</th><th></th>
+                    <th>JO Date</th><th>SO Number</th><th>Customer Name</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Serial Number(s)</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -53,6 +53,7 @@ export default function WorkHistoryPage() {
                     <tr key={jo.id}>
                       <td>{fmtDate(jo.jo_date)}</td>
                       <td>{jo.so_no}</td>
+                      <td>{jo.customer_name}</td>
                       <td>{jo.item_no}</td>
                       <td>{jo.item_description}</td>
                       <td>{jo.quantity}</td>

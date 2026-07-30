@@ -8,15 +8,17 @@ export const revalidate = 0;
 export async function GET() {
   const admin = getSupabaseAdminClient();
 
-  // Active JOs always show; completed ones stay visible for 7 days after
-  // finish_date so Sales/etc. can still see it just finished, then drop off.
+  // Only JOs that have cleared General Manager approval show here (not
+  // draft/pending_approval), and completed ones stay visible for 7 days
+  // after finish_date so Sales/etc. can still see it just finished before
+  // it drops off. Oldest JO date first by default.
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: activeRaw, error: activeErr } = await admin
     .from("job_orders")
     .select("id, jo_number, jo_date, customer_name, so_no, item_category, item_description, quantity, item_no, sales_person_name, deadline, urgent, serial_numbers, finish_estimation, finish_date, status, current_station_name, current_approval_layer, created_at")
-    .not("status", "in", "(cancelled,rejected)")
+    .not("status", "in", "(draft,pending_approval,cancelled,rejected)")
     .or(`status.neq.completed,finish_date.gte.${sevenDaysAgo}`)
-    .order("created_at", { ascending: false });
+    .order("jo_date", { ascending: true });
   if (activeErr) return NextResponse.json({ error: activeErr.message }, { status: 500 });
 
   const yearStart = `${new Date().getFullYear()}-01-01T00:00:00Z`;

@@ -95,7 +95,33 @@ export default function WarehouseManagerPage() {
     return (qtyDraft[row.id] ?? "").trim() !== "";
   }
 
+  function printRecap() {
+    const rows = recap.map((r) => `
+      <tr><td>${r.itemNo}</td><td>${r.soNo}</td><td>${r.description}</td><td>${r.totalQty} ${r.unit}</td></tr>
+    `).join("");
+    const html = `
+      <html><head><title>Material Recap</title>
+      <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 16px; }
+        h1 { font-size: 16px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #999; padding: 5px 8px; text-align: left; }
+        th { background: #eee; }
+      </style>
+      </head><body onload="window.focus();window.print();">
+        <h1>Material To Be Prepared — Recap</h1>
+        <table>
+          <thead><tr><th>Item Code</th><th>SO Number</th><th>Description</th><th>Total Needed</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="4">Nothing to prepare right now.</td></tr>`}</tbody>
+        </table>
+      </body></html>
+    `;
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    window.open(blobUrl, "_blank", "width=750,height=1000");
+  }
+
   async function markBlockPrepared(block: SoBlock) {
+    if (!confirm(`Mark SO ${block.so_no} as prepared? This can't be edited afterward.`)) return;
     setSavingBlock(block.so_no);
     try {
       await Promise.all(block.items.map((row) =>
@@ -119,21 +145,6 @@ export default function WarehouseManagerPage() {
     }
   }
 
-  async function unprepareBlock(block: SoBlock) {
-    setSavingBlock(block.so_no);
-    try {
-      await Promise.all(block.items.map((row) =>
-        fetch(`/api/job-orders/${row.job_order_id}/bom/${row.id}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ materialPrepared: false }),
-        })
-      ));
-      await loadPrepare();
-    } finally {
-      setSavingBlock(null);
-    }
-  }
-
   async function setProcurement(item: NotAvailableItem, method: "import" | "local_purchase") {
     await fetch(`/api/job-orders/${item.job_order_id}/bom/${item.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -148,7 +159,12 @@ export default function WarehouseManagerPage() {
       <Collapsible
         title="Material To Be Prepared"
         count={toPrepareAll.reduce((n, b) => n + b.items.length, 0)}
-        actions={<button className="btn secondary" onClick={() => setShowRecap((s) => !s)}>{showRecap ? "Hide recap" : "Recap"}</button>}
+        actions={
+          <div style={{ display: "flex", gap: 8 }}>
+            {showRecap && <button className="btn secondary" onClick={printRecap}>Print recap</button>}
+            <button className="btn secondary" onClick={() => setShowRecap((s) => !s)}>{showRecap ? "Hide recap" : "Recap"}</button>
+          </div>
+        }
       >
         {showRecap && (
           <table className="data-table" style={{ marginBottom: 14, background: "var(--panel-muted)" }}>
@@ -260,9 +276,6 @@ export default function WarehouseManagerPage() {
             <div key={block.so_no} style={{ marginBottom: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 6 }}>
                 <strong>SO {block.so_no}</strong>
-                <button className="btn secondary" disabled={savingBlock === block.so_no} onClick={() => unprepareBlock(block)}>
-                  {savingBlock === block.so_no ? "Saving..." : "Edit"}
-                </button>
               </div>
               <div style={{ overflowX: "auto" }}>
                 <table className="data-table">

@@ -74,3 +74,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   return NextResponse.json({ jobOrder: data });
 }
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const admin = getSupabaseAdminClient();
+  const { data: jobOrder } = await admin.from("job_orders").select("status").eq("id", params.id).maybeSingle();
+  if (!jobOrder) return NextResponse.json({ error: "Job order not found." }, { status: 404 });
+
+  // Only cancelled/rejected JOs are deletable - anything else should be
+  // cancelled first (or is already too far along to remove).
+  if (!["cancelled", "rejected"].includes(jobOrder.status)) {
+    return NextResponse.json({ error: `Can't delete a job order that's "${jobOrder.status}".` }, { status: 400 });
+  }
+
+  const { error } = await admin.from("job_orders").delete().eq("id", params.id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}

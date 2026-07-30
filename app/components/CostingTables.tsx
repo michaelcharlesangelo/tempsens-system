@@ -9,7 +9,9 @@ import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime }
 // Shared between Sales Support (finish-costing-only) and Sales Support
 // Supervisor (both tables) - same underlying data regardless of who's
 // looking, since costing isn't scoped per-person.
-export default function CostingTables({ tab, includeToBeCosting = true }: { tab: string; includeToBeCosting?: boolean }) {
+export default function CostingTables({
+  tab, includeToBeCosting = true, filterBySubmitter,
+}: { tab: string; includeToBeCosting?: boolean; filterBySubmitter?: string }) {
   const [completed, setCompleted] = useState<JobOrder[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -18,7 +20,11 @@ export default function CostingTables({ tab, includeToBeCosting = true }: { tab:
   async function load() {
     const res = await fetch(`/api/job-orders?status=completed&tab=${tab}`, { cache: "no-store" });
     const data = await res.json();
-    setCompleted(data.jobOrders ?? []);
+    const all: JobOrder[] = data.jobOrders ?? [];
+    // `tab` above only gates PO visibility, not who submitted it - filter
+    // client-side the same way SubmittedJobOrders scopes "mine" until real
+    // per-account login exists.
+    setCompleted(filterBySubmitter ? all.filter((jo) => jo.sales_support_name === filterBySubmitter) : all);
   }
 
   useEffect(() => { load(); }, [tab]);

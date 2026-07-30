@@ -186,7 +186,7 @@ function JoInputInner() {
         <>
         <div className="form-sheet" style={{ marginTop: 18 }}>
           <div className="form-sheet-col">
-            <div className="form-row"><label>Customer Name</label><span>:</span><input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} /></div>
+            <div className="form-row"><label>Customer Name</label><span>:</span><input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value.toUpperCase())} /></div>
             <div className="form-row"><label>SO Number</label><span>:</span><input type="text" value={soNo} onChange={(e) => setSoNo(e.target.value.toUpperCase())} /></div>
             <div className="form-row"><label>Item Description</label><span>:</span><input type="text" value={itemDescription} onChange={(e) => setItemDescription(e.target.value)} /></div>
             <div className="form-row"><label>Category</label><span>:</span>

@@ -1,16 +1,22 @@
 "use client";
 
 // Slide toggle: left/off shows a plain X, right/on shows a check on the
-// accent (Tempsens orange) track - used for the approval-table filters.
-export default function ToggleSwitch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+// `color` track (defaults to the Tempsens accent orange) - used for the
+// approval-table filters. The whole label (switch + text) is clickable,
+// not just the switch graphic.
+export default function ToggleSwitch({
+  checked, onChange, label, color = "var(--accent)",
+}: { checked: boolean; onChange: (v: boolean) => void; label: string; color?: string }) {
   return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+    <label
+      style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}
+      onClick={() => onChange(!checked)}
+    >
       <span
-        onClick={() => onChange(!checked)}
         style={{
           width: 38, height: 21, borderRadius: 999, position: "relative", flex: "none",
-          background: checked ? "var(--accent)" : "var(--panel-muted)",
-          border: `1px solid ${checked ? "var(--accent)" : "var(--border)"}`,
+          background: checked ? color : "var(--panel-muted)",
+          border: `1px solid ${checked ? color : "var(--border)"}`,
           transition: "background 0.15s, border-color 0.15s",
         }}
       >
@@ -22,7 +28,7 @@ export default function ToggleSwitch({ checked, onChange, label }: { checked: bo
           }}
         >
           {checked ? (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
           ) : (
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="M6 6l12 12" /></svg>
           )}

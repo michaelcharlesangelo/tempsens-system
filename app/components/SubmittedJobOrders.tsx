@@ -65,6 +65,14 @@ export default function SubmittedJobOrders({
     load();
   }
 
+  async function deleteJo(id: string) {
+    if (!confirm("Delete this job order? This can't be undone.")) return;
+    const res = await fetch(`/api/job-orders/${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { setMessage(data.error || "Failed to delete."); return; }
+    load();
+  }
+
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(jobOrders ?? [], joMatchesSearch, pageSize);
 
   return (
@@ -90,6 +98,9 @@ export default function SubmittedJobOrders({
                 )}
                 {canCancel(jo) && (
                   <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => cancelJo(jo.id)}>Cancel</button>
+                )}
+                {(jo.status === "cancelled" || jo.status === "rejected") && (
+                  <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => deleteJo(jo.id)}>Delete</button>
                 )}
               </div>
             )}

@@ -98,8 +98,8 @@ function ApprovalTabViewInner({
           <h2 style={{ margin: 0 }}>Job Order Request ({combined.length})</h2>
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
             <ToggleSwitch checked={showActionRequired} onChange={setShowActionRequired} label={`Action Required (${pending.length})`} />
-            <ToggleSwitch checked={showApproved} onChange={setShowApproved} label={`Approved (${approvedHere.length})`} />
-            <ToggleSwitch checked={showRejected} onChange={setShowRejected} label={`Rejected (${rejected.length})`} />
+            <ToggleSwitch checked={showApproved} onChange={setShowApproved} label={`Approved (${approvedHere.length})`} color="var(--good)" />
+            <ToggleSwitch checked={showRejected} onChange={setShowRejected} label={`Rejected (${rejected.length})`} color="var(--bad)" />
           </div>
         </div>
 

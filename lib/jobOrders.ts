@@ -258,14 +258,16 @@ export function complaintMatchesSearch(c: Complaint, term: string): boolean {
 
 // Simplified 3-bucket status label for the Dashboard, per Michael's spec:
 // not yet fully approved / approved / actually being built.
-export function dashboardStatusLabel(status: JobOrderStatus, currentStation?: string | null): string {
+export function dashboardStatusLabel(status: JobOrderStatus, currentStation?: string | null, daysSinceFinish?: number): string {
   if (status === "draft" || status === "pending_approval") return "Draft";
   if (status === "approved") return "Approved";
   if (status === "acknowledged") return "Preparing Item";
   if (status === "in_progress" || status === "qc") {
     return currentStation ? `Under Production - ${currentStation} Station` : "Under Production";
   }
-  if (status === "completed") return "Finish Production";
+  // Still shows for 7 days after finish_date (see /api/dashboard) - the
+  // count makes it obvious at a glance how close it is to dropping off.
+  if (status === "completed") return daysSinceFinish !== undefined ? `Finish Production (${daysSinceFinish})` : "Finish Production";
   return status;
 }
 

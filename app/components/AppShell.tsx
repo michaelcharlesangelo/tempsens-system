@@ -63,6 +63,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const accountRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(ROLE_STORAGE_KEY) : null;
@@ -74,7 +75,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     function onClick(e: MouseEvent) {
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) { setAccountOpen(false); setSwitchOpen(false); }
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
-      if (sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) setSidebarOpen(false);
+      // The toggle button itself sits outside the overlay panel - skip it
+      // here so its own onClick is the only thing that opens/closes it.
+      // Without this, mousedown closes the sidebar first and the click's
+      // toggle then immediately reopens it, so the button looked "stuck".
+      if (
+        sidebarRef.current && !sidebarRef.current.contains(e.target as Node) &&
+        menuBtnRef.current && !menuBtnRef.current.contains(e.target as Node)
+      ) {
+        setSidebarOpen(false);
+      }
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -84,9 +94,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") window.localStorage.setItem(ROLE_STORAGE_KEY, r.href);
   }
 
-  // Production's scanning page is the one place a floor worker actually
-  // lands without needing the sidebar/account chrome - keep it minimal.
-  const bare = pathname === "/production";
+  const isGm = role.href === "/gm";
 
   const sidebarLinks = [
     { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
@@ -100,60 +108,59 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="shell">
       <div className="shell-topbar">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {!bare && (
-            <button className="shell-menu-btn" onClick={() => setSidebarOpen((v) => !v)} aria-label="Menu">
-              <Icon name="menu" />
-            </button>
-          )}
+          <button ref={menuBtnRef} className="shell-menu-btn" onClick={() => setSidebarOpen((v) => !v)} aria-label="Menu">
+            <Icon name="menu" />
+          </button>
           <a href="/dashboard" className="shell-brand">
             <img src="/logo.png" alt="Tempsens" style={{ height: 26, width: "auto" }} />
           </a>
         </div>
 
-        {!bare && (
-          <div className="shell-topbar-right">
-            <div className="bell-wrap" ref={bellRef}>
-              <button className="bell-btn" onClick={() => setBellOpen((v) => !v)} aria-label="Notifications">
-                <Icon name="bell" />
-              </button>
-              {bellOpen && (
-                <div className="bell-dropdown">
-                  <div style={{ padding: "10px 8px" }} className="subtle">No notifications yet.</div>
-                </div>
-              )}
-            </div>
-
-            <div className="account-wrap" ref={accountRef}>
-              <button className="avatar-btn" onClick={() => setAccountOpen((v) => !v)} aria-label="Account menu">{role.initials}</button>
-              {accountOpen && (
-                <div className="account-dropdown">
-                  <div className="account-dropdown-head">
-                    <span className="avatar-btn" style={{ cursor: "default" }}>{role.initials}</span>
-                    <span className="account-dropdown-name">{role.label}</span>
-                  </div>
-
-                  <button className="account-menu-item" onClick={() => setSwitchOpen((v) => !v)}>
-                    <Icon name="swap" /> Switch account
-                    <span style={{ marginLeft: "auto", transform: switchOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}><Icon name="chevron" /></span>
-                  </button>
-                  {switchOpen && (
-                    <div className="account-submenu">
-                      {ROLE_LINKS.map((r) => (
-                        <a key={r.href} href={r.href} className="account-submenu-item" onClick={() => pickRole(r)}>{r.label}</a>
-                      ))}
-                    </div>
-                  )}
-
-                  <a href="/settings" className="account-menu-item"><Icon name="gear" /> Settings</a>
-                  <a href="/" className="account-menu-item"><Icon name="exit" /> Sign out</a>
-                </div>
-              )}
-            </div>
+        <div className="shell-topbar-right">
+          <div className="bell-wrap" ref={bellRef}>
+            <button className="bell-btn" onClick={() => setBellOpen((v) => !v)} aria-label="Notifications">
+              <Icon name="bell" />
+            </button>
+            {bellOpen && (
+              <div className="bell-dropdown">
+                <div style={{ padding: "10px 8px" }} className="subtle">No notifications yet.</div>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="account-wrap" ref={accountRef}>
+            <button className="avatar-btn" onClick={() => setAccountOpen((v) => !v)} aria-label="Account menu">{role.initials}</button>
+            {accountOpen && (
+              <div className="account-dropdown">
+                <div className="account-dropdown-head">
+                  <span className="avatar-btn" style={{ cursor: "default" }}>{role.initials}</span>
+                  <span className="account-dropdown-name">{role.label}</span>
+                </div>
+
+                {isGm && (
+                  <>
+                    <button className="account-menu-item" onClick={() => setSwitchOpen((v) => !v)}>
+                      <Icon name="swap" /> Switch account
+                      <span style={{ marginLeft: "auto", transform: switchOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}><Icon name="chevron" /></span>
+                    </button>
+                    {switchOpen && (
+                      <div className="account-submenu">
+                        {ROLE_LINKS.map((r) => (
+                          <a key={r.href} href={r.href} className="account-submenu-item" onClick={() => pickRole(r)}>{r.label}</a>
+                        ))}
+                      </div>
+                    )}
+                    <a href="/settings" className="account-menu-item"><Icon name="gear" /> Settings</a>
+                  </>
+                )}
+                <a href="/" className="account-menu-item"><Icon name="exit" /> Sign out</a>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {!bare && sidebarOpen && (
+      {sidebarOpen && (
         <div className="shell-sidebar-overlay" ref={sidebarRef}>
           <div className="shell-sidebar-head">
             <button className="shell-menu-btn" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
@@ -171,7 +178,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <div className={bare ? "shell-main shell-main-bare" : "shell-main"}>{children}</div>
+      <div className="shell-main">{children}</div>
     </div>
   );
 }

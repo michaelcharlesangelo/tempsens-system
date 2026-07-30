@@ -59,9 +59,9 @@ export default function DashboardPage() {
   }
 
   function ComplaintTable({ items, title, historyItems, historyTitle }: { items: Complaint[]; title: string; historyItems: Complaint[]; historyTitle: string }) {
-    const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch);
+    const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch, 5);
     const [historyOpen, setHistoryOpen] = useState(false);
-    const historyPaged = usePagedSearch(historyItems, complaintMatchesSearch);
+    const historyPaged = usePagedSearch(historyItems, complaintMatchesSearch, 5);
     return (
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -132,7 +132,7 @@ export default function DashboardPage() {
                   <td>{jo.quantity}</td>
                   <td>{daysSince(jo.jo_date)}</td>
                   <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>
-                  <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status, jo.current_station_name)}</span></td>
+                  <td><span className={`pill pill-${jo.status}`}>{dashboardStatusLabel(jo.status, jo.current_station_name, jo.status === "completed" && jo.finish_date ? daysSince(jo.finish_date) : undefined)}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -167,14 +167,25 @@ export default function DashboardPage() {
       </div>
 
       <div className="card">
-        <h2>{year ?? ""} Production So Far (Completed, By Item Category)</h2>
+        <h2>{year ?? ""} Production</h2>
         {yearlyByCategory.length === 0 ? <p className="subtle">No item categories set up yet.</p> : (
-          <table className="data-table">
-            <thead><tr><th>Category</th><th>Quantity</th></tr></thead>
-            <tbody>
-              {yearlyByCategory.map((c) => <tr key={c.category}><td>{c.category}</td><td>{c.qty} pcs</td></tr>)}
-            </tbody>
-          </table>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {(() => {
+              const total = yearlyByCategory.reduce((n, c) => n + c.qty, 0) || 1;
+              return yearlyByCategory.map((c) => {
+                const share = c.qty / total;
+                return (
+                  <div key={c.category} style={{ display: "grid", gridTemplateColumns: "140px 1fr 80px", alignItems: "center", gap: 10 }}>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>{c.category}</div>
+                    <div style={{ background: "var(--panel-muted)", borderRadius: 6, height: 20, overflow: "hidden" }}>
+                      <div style={{ width: `${Math.max(share * 100, c.qty > 0 ? 2 : 0)}%`, height: "100%", background: "var(--accent)", borderRadius: 6 }} />
+                    </div>
+                    <div style={{ fontSize: "0.82rem", textAlign: "right" }}>{c.qty} pcs</div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
         )}
       </div>
 

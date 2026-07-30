@@ -16,6 +16,15 @@
 
 * { box-sizing: border-box; }
 
+html {
+  /* Mobile Safari/Chrome auto-inflate text size per block based on its
+     effective width ("font boosting") - a comment row spanning the full
+     table width via colSpan was rendering noticeably larger than the
+     narrow cells around it as a result. This turns that off everywhere. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -24,8 +33,10 @@ body {
 }
 
 .app-shell {
-  max-width: 1400px;
-  margin: 0 auto;
+  /* No cap here - the topbar/sidebar should span the full viewport.
+     .shell-main below is the one place width is capped, and it was
+     nested inside this 1400px wrapper too, so on wide monitors the
+     actual content area was silently double-capped and looked narrow. */
 }
 
 /* ---------- Shell: topbar + main, sidebar is a click-to-open overlay ---------- */
@@ -64,8 +75,7 @@ body {
 .shell-nav-item:hover { background: var(--panel-muted); color: var(--text); }
 .shell-nav-item.active { background: var(--accent); color: white; }
 
-.shell-main { padding: 20px 24px 60px; max-width: 1180px; margin: 0 auto; }
-.shell-main-bare { padding: 20px; max-width: 480px; margin: 0 auto; }
+.shell-main { padding: 20px 32px 60px; max-width: 1760px; margin: 0 auto; }
 
 @media (max-width: 640px) {
   .shell-sidebar-overlay { width: 82vw; }
