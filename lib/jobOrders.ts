@@ -302,6 +302,17 @@ export interface PurchaseFormItem {
   attachment_filename: string | null;
 }
 
+export type PurchaseFormStatus = "pending_approval" | "approved" | "rejected" | "cancelled";
+
+export interface PurchaseFormHistoryEntry {
+  id: string;
+  purchase_form_id: string;
+  status: string;
+  changed_by: string;
+  comment: string;
+  changed_at: string;
+}
+
 export interface PurchaseForm {
   id: string;
   form_type: "A" | "B";
@@ -310,8 +321,49 @@ export interface PurchaseForm {
   customer_name: string;
   po_so_number: string;
   purpose: string;
+  status: PurchaseFormStatus;
+  current_approval_layer: 1 | 2 | null;
+  submitted_by: string;
+  source: string | null;
   created_at: string;
   items: PurchaseFormItem[];
+  history: PurchaseFormHistoryEntry[];
+}
+
+export const PO_OUT_SUPPLIERS = [
+  "TEMPSENS INDIA", "TEMPSENS CABLE", "TEMPSENS HEATER", "TEMPSENS GERMANY", "PYROSENS",
+  "ALLEIMA", "CODINA", "PMJ", "SAFINA", "HUAJING", "SUPER SYSTEMS", "OHKURA", "GONGTAO",
+  "HIGHLION", "LEADSHINE", "SINRI", "LOCAL",
+];
+
+export interface PoOutHistoryEntry {
+  id: string;
+  po_out_id: string;
+  changed_by: string;
+  comment: string;
+  changed_at: string;
+}
+
+export interface PoOut {
+  id: string;
+  po_date: string;
+  deadline: string | null;
+  po_number: string;
+  item_code: string;
+  sales: string;
+  customer_name: string;
+  item_description: string;
+  qty: number;
+  unit: string;
+  unit_price: number;
+  total_price: number;
+  unit_selling_price: number;
+  supplier: string;
+  stock_export: "stock" | "export";
+  status: "active" | "cancelled";
+  submitted_by: string;
+  created_at: string;
+  history: PoOutHistoryEntry[];
 }
 
 // Splits `text` into [before, matched, after] around the first

@@ -50,10 +50,10 @@ export default function ProductionJobOrderDetailPage() {
     const res = await fetch(`/api/job-orders/${id}?tab=production-manager`, { cache: "no-store" });
     const data = await res.json();
     setJobOrder(data.jobOrder);
-    // Newest item first, so a freshly added row shows up at the top instead
-    // of getting buried at the bottom of a long BOM.
+    // Newest item last, so a freshly added row lands at the bottom of the
+    // BOM instead of jumping to the top ahead of everything already there.
     const rows: BomItem[] = data.bom ?? [];
-    setBom([...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)));
+    setBom([...rows].sort((a, b) => (a.created_at > b.created_at ? 1 : -1)));
     setHistory(data.history ?? []);
     setProductionLogs(data.productionLogs ?? []);
     setBaseSerial(data.jobOrder?.serial_numbers?.[0] ?? "");

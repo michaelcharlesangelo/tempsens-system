@@ -12,21 +12,20 @@ interface ItemInput {
   ppn?: boolean;
   supplierName?: string;
   code?: string;
+  existingPath?: string | null;
+  existingFilename?: string | null;
 }
 
-export async function GET() {
+// Editing is only allowed while still pending_approval - same rule as
+// Sales Support editing a JO before it's moved past their control.
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const admin = getSupabaseAdminClient();
-  const { data, error } = await admin
-    .from("purchase_forms")
-    .select("*, items:purchase_form_items(*), history:purchase_form_history(*)")
-    .order("created_at", { ascending: false })
-    .order("seq", { foreignTable: "purchase_form_items", ascending: true })
-    .order("changed_at", { foreignTable: "purchase_form_history", ascending: true });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ forms: data });
-}
+  const { data: existing } = await admin.from("purchase_forms").select("status").eq("id", params.id).maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Form not found." }, { status: 404 });
+  if (existing.status !== "pending_approval") {
+    return NextResponse.json({ error: `Can't edit a form that's "${existing.status}".` }, { status: 400 });
+  }
 
-export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const formType = formData.get("formType") === "B" ? "B" : "A";
   const requestDate = (formData.get("requestDate") as string) || new Date().toISOString().slice(0, 10);
@@ -34,8 +33,6 @@ export async function POST(req: NextRequest) {
   const customerName = ((formData.get("customerName") as string) || "").trim();
   const poSoNumber = ((formData.get("poSoNumber") as string) || "").trim();
   const purpose = ((formData.get("purpose") as string) || "").trim();
-  const submittedBy = ((formData.get("submittedBy") as string) || "").trim();
-  const source = ((formData.get("source") as string) || "").trim() || null;
 
   let items: ItemInput[] = [];
   try {
@@ -47,34 +44,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Name and at least one item are required." }, { status: 400 });
   }
 
-  // Operational Manager submitting skips straight to General Manager -
-  // they can't approve their own submission at layer 1. Everyone else
-  // (including General Manager) starts at layer 1 as normal; submitting
-  // never auto-approves your own layer.
-  const startLayer = submittedBy === "Operational Manager" ? 2 : 1;
-
-  const admin = getSupabaseAdminClient();
-  const { data: form, error: formError } = await admin
+  const { error: updateError } = await admin
     .from("purchase_forms")
-    .insert({
-      form_type: formType, request_date: requestDate, name, customer_name: customerName, po_so_number: poSoNumber, purpose,
-      submitted_by: submittedBy, source, current_approval_layer: startLayer,
-    })
-    .select()
-    .single();
-  if (formError) return NextResponse.json({ error: formError.message }, { status: 500 });
-
-  await admin.from("purchase_form_history").insert({
-    purchase_form_id: form.id, status: "pending_approval", changed_by: submittedBy || "Unknown", comment: "Submitted.",
-  });
+    .update({ form_type: formType, request_date: requestDate, name, customer_name: customerName, po_so_number: poSoNumber, purpose })
+    .eq("id", params.id);
+  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
 
   const rows = await Promise.all(items.map(async (item, i) => {
-    let attachmentPath: string | null = null;
-    let attachmentFilename: string | null = null;
+    let attachmentPath: string | null = item.existingPath ?? null;
+    let attachmentFilename: string | null = item.existingFilename ?? null;
     const file = formData.get(`attachment_${i}`) as File | null;
     if (file && file.size > 0) {
       const ext = file.name.split(".").pop() || "bin";
-      const path = `purchase-forms/${form.id}/${i}-${Date.now()}.${ext}`;
+      const path = `purchase-forms/${params.id}/${i}-${Date.now()}.${ext}`;
       const { error: upErr } = await admin.storage.from(BUCKET).upload(path, file, {
         contentType: file.type || "application/octet-stream",
         upsert: true,
@@ -82,7 +64,7 @@ export async function POST(req: NextRequest) {
       if (!upErr) { attachmentPath = path; attachmentFilename = file.name; }
     }
     return {
-      purchase_form_id: form.id,
+      purchase_form_id: params.id,
       seq: i,
       description: String(item.description ?? "").trim(),
       budget: Number(item.budget) || 0,
@@ -94,8 +76,10 @@ export async function POST(req: NextRequest) {
     };
   }));
 
-  const { error: itemsError } = await admin.from("purchase_form_items").insert(rows);
-  if (itemsError) return NextResponse.json({ error: itemsError.message }, { status: 500 });
+  const { error: delError } = await admin.from("purchase_form_items").delete().eq("purchase_form_id", params.id);
+  if (delError) return NextResponse.json({ error: delError.message }, { status: 500 });
+  const { error: insError } = await admin.from("purchase_form_items").insert(rows);
+  if (insError) return NextResponse.json({ error: insError.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, formId: form.id });
+  return NextResponse.json({ ok: true });
 }

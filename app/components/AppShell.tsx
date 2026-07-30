@@ -2,26 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-
-const ROLE_STORAGE_KEY = "tempsens-current-role";
-
-// Role-simulation pages - there's no real per-account login yet, so
-// "switching account" just means jumping to that role's POV. See
-// CLAUDE.md: these tabs simulate each role for now, real accounts planned later.
-const ROLE_LINKS = [
-  { href: "/sales-support", label: "Sales Support", initials: "SS" },
-  { href: "/sales-support-supervisor", label: "Sales Support Supervisor", initials: "SSS" },
-  { href: "/sales-manager", label: "Sales Manager", initials: "SM" },
-  { href: "/operation-manager", label: "Operational Manager", initials: "OM" },
-  { href: "/gm", label: "General Manager", initials: "GM" },
-  { href: "/production-manager", label: "Production Manager", initials: "PM" },
-  { href: "/warehouse-manager", label: "Warehouse Manager", initials: "WM" },
-  { href: "/production", label: "Production", initials: "PR" },
-];
-
-// GM acts as the de-facto admin of this page for now, so it's the default
-// role shown before anything's been picked via Switch account.
-const DEFAULT_ROLE = ROLE_LINKS[4];
+import { ROLE_STORAGE_KEY, ROLE_LINKS, DEFAULT_ROLE } from "@/lib/roles";
 
 function Icon({ name }: { name: string }) {
   const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -36,6 +17,8 @@ function Icon({ name }: { name: string }) {
       return <svg {...common}><path d="M12 3 2 20h20L12 3Z" /><path d="M12 10v4" /><path d="M12 17h.01" /></svg>;
     case "file":
       return <svg {...common}><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M14 3v5h5" /><path d="M9 13h6" /><path d="M9 17h6" /></svg>;
+    case "send":
+      return <svg {...common}><path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4 20-7Z" /></svg>;
     case "user":
       return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" /></svg>;
     case "bell":
@@ -103,6 +86,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { href: "/items", label: "Items", icon: "box" },
     { href: "/complaints", label: "Complaints", icon: "alert" },
     { href: "/form", label: "Form", icon: "file" },
+    { href: "/po-out", label: "PO Out", icon: "send" },
   ];
 
   return (

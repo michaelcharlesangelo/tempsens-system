@@ -265,6 +265,19 @@ create table if not exists purchase_forms (
   customer_name text not null default '', -- Form A only, shown blank for Form B
   po_so_number text not null default '', -- Form A only
   purpose text not null default '',
+  status text not null default 'pending_approval' check (status in ('pending_approval','approved','rejected','cancelled')),
+  -- 2-layer approval: 1 = Operational Manager, 2 = General Manager.
+  -- Starts at 2 when submitted_by = 'Operational Manager' (can't approve
+  -- their own submission at layer 1); everyone else, including General
+  -- Manager, starts at 1 and still needs their own real GM approval at
+  -- layer 2 - submitting doesn't auto-approve.
+  current_approval_layer smallint,
+  submitted_by text not null default '', -- role tag, e.g. "Sales Support", "Warehouse Manager"
+  -- Tags a form created via Warehouse Manager's Not Available -> Local
+  -- Purchase flow specifically, so only THAT path's approved forms show
+  -- up on Sales Support Supervisor's dedicated table - a normal form
+  -- submission (even for the same customer/SO) never does.
+  source text,
   created_at timestamptz not null default now()
 );
 
@@ -282,9 +295,58 @@ create table if not exists purchase_form_items (
   created_at timestamptz not null default now()
 );
 
+-- Audit trail for purchase forms, mirroring job_order_history.
+create table if not exists purchase_form_history (
+  id uuid primary key default gen_random_uuid(),
+  purchase_form_id uuid not null references purchase_forms(id) on delete cascade,
+  status text not null default '',
+  changed_by text not null default '',
+  comment text not null default '',
+  changed_at timestamptz not null default now()
+);
+
 create index if not exists idx_purchase_form_items_form on purchase_form_items(purchase_form_id);
+create index if not exists idx_purchase_form_history_form on purchase_form_history(purchase_form_id);
 alter table purchase_forms enable row level security;
 alter table purchase_form_items enable row level security;
+alter table purchase_form_history enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- PO Out - purchase orders placed with suppliers, filled in by Sales
+-- Support. Simple record + comment log, no approval chain.
+-- ---------------------------------------------------------------------------
+create table if not exists po_out (
+  id uuid primary key default gen_random_uuid(),
+  po_date date not null default current_date,
+  deadline date,
+  po_number text not null default '',
+  item_code text not null default '',
+  sales text not null default '',
+  customer_name text not null default '',
+  item_description text not null default '',
+  qty numeric not null default 0,
+  unit text not null default 'pcs',
+  unit_price numeric not null default 0,
+  total_price numeric not null default 0, -- qty * unit_price, computed client-side on save
+  unit_selling_price numeric not null default 0,
+  supplier text not null default '',
+  stock_export text not null default 'stock' check (stock_export in ('stock','export')),
+  status text not null default 'active' check (status in ('active','cancelled')),
+  submitted_by text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists po_out_history (
+  id uuid primary key default gen_random_uuid(),
+  po_out_id uuid not null references po_out(id) on delete cascade,
+  changed_by text not null default '',
+  comment text not null default '',
+  changed_at timestamptz not null default now()
+);
+
+create index if not exists idx_po_out_history_po on po_out_history(po_out_id);
+alter table po_out enable row level security;
+alter table po_out_history enable row level security;
 
 create index if not exists idx_job_orders_status on job_orders(status);
 create index if not exists idx_job_order_bom_job on job_order_bom(job_order_id);

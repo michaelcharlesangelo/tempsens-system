@@ -12,7 +12,7 @@ interface PrepareItem {
   material_prepared: boolean; actual_qty: number | null; actual_unit: string | null;
 }
 interface NotAvailableItem {
-  id: string; job_order_id: string; jo_number: string; customer_name: string; item_no: string; description: string; qty: number; unit: string; procurement_method: string | null;
+  id: string; job_order_id: string; jo_number: string; customer_name: string; so_no: string; item_no: string; description: string; qty: number; unit: string; procurement_method: string | null;
 }
 interface SoBlock {
   so_no: string;
@@ -153,6 +153,20 @@ export default function WarehouseManagerPage() {
     loadNotAvailable();
   }
 
+  // Local Purchase kicks off a Form A request straight from here, prefilled
+  // and tagged so the approved result lands on Sales Support Supervisor's
+  // dedicated table - only for this exact path, not a normal Form submission.
+  async function goLocalPurchase(item: NotAvailableItem) {
+    await setProcurement(item, "local_purchase");
+    const params = new URLSearchParams({
+      source: "warehouse_local_purchase",
+      name: "Warehouse Manager",
+      customerName: item.customer_name,
+      poSoNumber: item.so_no,
+    });
+    window.location.href = `/form?${params.toString()}`;
+  }
+
   return (
     <>
 
@@ -253,8 +267,8 @@ export default function WarehouseManagerPage() {
                     <td>{i.qty} {i.unit}</td>
                     <td>
                       <div style={{ display: "flex", gap: 6 }}>
+                        <button className={i.procurement_method === "local_purchase" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => goLocalPurchase(i)}>Local Purchase</button>
                         <button className={i.procurement_method === "import" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "import")}>Import</button>
-                        <button className={i.procurement_method === "local_purchase" ? "btn" : "btn secondary"} style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => setProcurement(i, "local_purchase")}>Local Purchase</button>
                       </div>
                     </td>
                   </tr>
