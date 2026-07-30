@@ -238,7 +238,8 @@ function FormPageInner() {
   }
 
   const codeOptions = formType === "B" ? EXPENSE_CODES.map((e) => ({ value: e.code, label: `${e.code} - ${e.label}` })) : FORM_A_CODES.map((c) => ({ value: c, label: c }));
-  const canSubmit = formType && name.trim() && items.some((it) => it.description.trim()) && !saving;
+  const canSubmit = formType && name.trim() && items.some((it) => it.description.trim())
+    && items.every((it) => !it.description.trim() || it.code) && !saving;
 
   const formsA = (forms ?? []).filter((f) => f.form_type === "A");
   const formsB = (forms ?? []).filter((f) => f.form_type === "B");
@@ -283,7 +284,7 @@ function FormPageInner() {
                   {formType === "A" ? "Accurate Module: RI - PI" : "Accurate Module: OP - JV"}
                 </p>
 
-                <div className="form-sheet" style={{ maxWidth: 620, margin: "14px auto" }}>
+                <div className="form-sheet" style={{ marginTop: 18 }}>
                   <div className="form-sheet-col">
                     <div className="form-row"><label>Name</label><span>:</span><input type="text" value={name} onChange={(e) => setName(e.target.value)} /></div>
                     <div className="form-row"><label>Purpose</label><span>:</span><input type="text" value={purpose} onChange={(e) => setPurpose(e.target.value)} /></div>
@@ -320,13 +321,13 @@ function FormPageInner() {
                 <div style={{ overflowX: "auto", marginTop: 14 }}>
                   <table className="data-table fixed">
                     <colgroup>
-                      <col style={{ width: "4%" }} /><col style={{ width: "24%" }} /><col style={{ width: "13%" }} />
-                      <col style={{ width: "6%" }} /><col style={{ width: "16%" }} /><col style={{ width: "16%" }} />
+                      <col style={{ width: "4%" }} /><col style={{ width: "32%" }} /><col style={{ width: "10%" }} />
+                      <col style={{ width: "6%" }} /><col style={{ width: "16%" }} /><col style={{ width: "11%" }} />
                       <col style={{ width: "15%" }} /><col style={{ width: "6%" }} />
                     </colgroup>
                     <thead>
                       <tr>
-                        <th>No.</th><th>Item Description</th><th>Budget (IDR)</th><th>PPN</th>
+                        <th>No.</th><th>Item Description</th><th>Budget (IDR)</th><th style={{ textAlign: "right" }}>PPN</th>
                         <th>Supplier Name</th><th>Code</th><th>Attachment</th><th></th>
                       </tr>
                     </thead>
@@ -342,12 +343,15 @@ function FormPageInner() {
                               placeholder="0" style={{ fontSize: "0.82rem" }}
                             />
                           </td>
-                          <td style={{ textAlign: "center", verticalAlign: "middle" }}>
+                          <td style={{ textAlign: "right", verticalAlign: "middle" }}>
                             <input type="checkbox" checked={it.ppn} onChange={(e) => updateItem(i, { ppn: e.target.checked })} style={{ width: 16, height: 16 }} />
                           </td>
                           <td><input type="text" value={it.supplierName} onChange={(e) => updateItem(i, { supplierName: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>
                           <td>
-                            <select value={it.code} onChange={(e) => updateItem(i, { code: e.target.value })} style={{ fontSize: "0.78rem" }}>
+                            <select
+                              value={it.code} onChange={(e) => updateItem(i, { code: e.target.value })}
+                              style={{ fontSize: "0.78rem", borderColor: it.description.trim() && !it.code ? "#dc2626" : undefined }}
+                            >
                               <option value="">Select...</option>
                               {codeOptions.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                             </select>
