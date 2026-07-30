@@ -36,6 +36,8 @@ export async function POST(req: NextRequest) {
   const purpose = ((formData.get("purpose") as string) || "").trim();
   const submittedBy = ((formData.get("submittedBy") as string) || "").trim();
   const source = ((formData.get("source") as string) || "").trim() || null;
+  const bomRowId = ((formData.get("bomRowId") as string) || "").trim() || null;
+  const jobOrderId = ((formData.get("jobOrderId") as string) || "").trim() || null;
 
   let items: ItemInput[] = [];
   try {
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest) {
     .from("purchase_forms")
     .insert({
       form_type: formType, request_date: requestDate, name, customer_name: customerName, po_so_number: poSoNumber, purpose,
-      submitted_by: submittedBy, source, current_approval_layer: startLayer,
+      submitted_by: submittedBy, source, bom_row_id: bomRowId, job_order_id: jobOrderId, current_approval_layer: startLayer,
     })
     .select()
     .single();

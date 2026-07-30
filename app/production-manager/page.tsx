@@ -231,6 +231,7 @@ export default function ProductionManagerPage() {
       <Collapsible
         title="In Production"
         count={inProduction.length}
+        defaultOpen
         actions={inProduction.some((jo) => jo.status === "approved") && <span className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em" }}>Action Required</span>}
       >
         {inProduction.length === 0 ? <p className="subtle">Nothing in production right now.</p> : <PagedJoSection items={inProduction} {...sharedProps} />}

@@ -439,19 +439,24 @@ export default function SettingsPage() {
             Manage the PO Out supplier dropdown and which of the 7 Excel-style tabs each supplier files under.
             Suppliers added inline from PO Out land in Other Import by default — reassign them here.
           </p>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
-            <input type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value.toUpperCase())} placeholder="New supplier name" />
-            <select value={newSupplierCategory} onChange={(e) => setNewSupplierCategory(e.target.value as typeof newSupplierCategory)}>
-              {SUPPLIER_TAB_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-            <button className="btn secondary" onClick={addSupplier} disabled={!newSupplierName.trim()}>Add</button>
-          </div>
-
-          {suppliers.length === 0 ? <p className="subtle">None yet.</p> : (
-            <table className="data-table">
-              <thead><tr><th>Name</th><th>Tab</th><th></th></tr></thead>
-              <tbody>
-                {suppliers.map((s) => (
+          <table className="data-table">
+            <thead><tr><th>Name</th><th>Tab</th><th></th></tr></thead>
+            <tbody>
+              <tr style={{ background: "var(--panel-muted)" }}>
+                <td><input type="text" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value.toUpperCase())} placeholder="New supplier name" style={{ fontSize: "0.82rem" }} /></td>
+                <td>
+                  <select value={newSupplierCategory} onChange={(e) => setNewSupplierCategory(e.target.value as typeof newSupplierCategory)} style={{ fontSize: "0.82rem" }}>
+                    {SUPPLIER_TAB_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </td>
+                <td>
+                  <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={addSupplier} disabled={!newSupplierName.trim()}>+ Add</button>
+                </td>
+              </tr>
+              {suppliers.length === 0 ? (
+                <tr><td colSpan={3} className="subtle">None yet.</td></tr>
+              ) : (
+                suppliers.map((s) => (
                   <tr key={s.id}>
                     <td>
                       {editingSupplierId === s.id ? (
@@ -474,10 +479,10 @@ export default function SettingsPage() {
                       <button className="btn danger" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => deleteSupplier(s.id)}>Delete</button>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </>

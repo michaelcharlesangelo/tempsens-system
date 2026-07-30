@@ -86,7 +86,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { href: "/items", label: "Items", icon: "box" },
     { href: "/complaints", label: "Complaints", icon: "alert" },
     { href: "/form", label: "Form", icon: "file" },
-    { href: "/po-out", label: "PO Out", icon: "send" },
+    { href: "/po-out", label: "PO Out Recap", icon: "send" },
   ];
 
   return (

@@ -5,7 +5,7 @@ import { BomItem } from "@/lib/jobOrders";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-interface JoSummary { id: string; jo_number: string; customer_name: string; so_no: string; }
+interface JoSummary { id: string; jo_number: string; customer_name: string; so_no: string; acknowledged_at: string | null; }
 
 export async function GET() {
   const admin = getSupabaseAdminClient();
@@ -14,7 +14,7 @@ export async function GET() {
   // disappear just because the JO moved on to qc/completed.
   const { data: joRowsRaw } = await admin
     .from("job_orders")
-    .select("id, jo_number, customer_name, so_no")
+    .select("id, jo_number, customer_name, so_no, acknowledged_at")
     .in("status", ["acknowledged", "in_progress", "qc", "completed"]);
   const joRows = (joRowsRaw ?? []) as JoSummary[];
 
@@ -36,6 +36,7 @@ export async function GET() {
     jo_number: joMap[b.job_order_id]?.jo_number ?? "-",
     customer_name: joMap[b.job_order_id]?.customer_name ?? "-",
     so_no: joMap[b.job_order_id]?.so_no ?? "-",
+    req_date: joMap[b.job_order_id]?.acknowledged_at ?? null,
   }));
 
   return NextResponse.json({ items });

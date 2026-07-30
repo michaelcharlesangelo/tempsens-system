@@ -9,10 +9,12 @@ import { fmtDate } from "@/lib/jobOrders";
 interface PrepareItem {
   id: string; job_order_id: string; jo_number: string; so_no: string; req_date: string | null;
   item_no: string; description: string; qty: number; unit: string; comment: string;
-  material_prepared: boolean; actual_qty: number | null; actual_unit: string | null;
+  material_prepared: boolean; actual_qty: number | null; actual_unit: string | null; material_ready: boolean;
 }
 interface NotAvailableItem {
-  id: string; job_order_id: string; jo_number: string; customer_name: string; so_no: string; item_no: string; description: string; qty: number; unit: string; procurement_method: string | null;
+  id: string; job_order_id: string; jo_number: string; customer_name: string; so_no: string; req_date: string | null;
+  item_no: string; description: string; qty: number; unit: string; comment: string;
+  material_prepared: boolean; actual_qty: number | null; actual_unit: string | null; procurement_method: string | null;
 }
 interface SoBlock {
   so_no: string;
@@ -45,6 +47,9 @@ export default function WarehouseManagerPage() {
   const [items, setItems] = useState<PrepareItem[] | null>(null);
   const [notAvailable, setNotAvailable] = useState<NotAvailableItem[] | null>(null);
   const [showRecap, setShowRecap] = useState(false);
+  // SOs unticked here are left out of the recap - default is everything
+  // ticked (nothing in this set) so the recap doesn't start out empty.
+  const [recapExcludedSo, setRecapExcludedSo] = useState<Set<string>>(new Set());
   // Actual Qty draft only - unit isn't typed by Warehouse Manager, it
   // always follows the BOM row's own unit.
   const [qtyDraft, setQtyDraft] = useState<Record<string, string>>({});
@@ -53,8 +58,18 @@ export default function WarehouseManagerPage() {
   async function loadPrepare() {
     const res = await fetch("/api/warehouse/prepare-list", { cache: "no-store" });
     const data = await res.json();
-    const rows: PrepareItem[] = data.items ?? [];
+    const rows: PrepareItem[] = (data.items ?? []).map((r: PrepareItem) => ({ ...r, material_ready: true }));
     setItems(rows);
+    seedQtyDraft(rows);
+  }
+  async function loadNotAvailable() {
+    const res = await fetch("/api/warehouse/not-ready", { cache: "no-store" });
+    const data = await res.json();
+    const rows: NotAvailableItem[] = data.items ?? [];
+    setNotAvailable(rows);
+    seedQtyDraft(rows);
+  }
+  function seedQtyDraft(rows: { id: string; actual_qty: number | null }[]) {
     setQtyDraft((cur) => {
       const next = { ...cur };
       for (const row of rows) {
@@ -63,15 +78,23 @@ export default function WarehouseManagerPage() {
       return next;
     });
   }
-  async function loadNotAvailable() {
-    const res = await fetch("/api/warehouse/not-ready", { cache: "no-store" });
-    const data = await res.json();
-    setNotAvailable(data.items ?? []);
-  }
 
   useEffect(() => { loadPrepare(); loadNotAvailable(); }, []);
 
-  const toPrepareAll = useMemo(() => groupBySo((items ?? []).filter((i) => !i.material_prepared)), [items]);
+  // Not Available rows show here too (not just in their own table below) so
+  // Warehouse Manager sees demand coming before Sales Support Supervisor has
+  // even registered an item code for it - see material_ready per-row flag.
+  const toPrepareAll = useMemo(() => {
+    const ready: PrepareItem[] = (items ?? []).filter((i) => !i.material_prepared);
+    const pending: PrepareItem[] = (notAvailable ?? [])
+      .filter((i) => !i.material_prepared)
+      .map((i) => ({
+        id: i.id, job_order_id: i.job_order_id, jo_number: i.jo_number, so_no: i.so_no, req_date: i.req_date,
+        item_no: i.item_no, description: i.description, qty: i.qty, unit: i.unit, comment: i.comment,
+        material_prepared: i.material_prepared, actual_qty: i.actual_qty, actual_unit: i.actual_unit, material_ready: false,
+      }));
+    return groupBySo([...ready, ...pending]);
+  }, [items, notAvailable]);
   const preparedAll = useMemo(() => groupBySo((items ?? []).filter((i) => i.material_prepared)), [items]);
 
   const toPreparePaged = usePagedSearch(toPrepareAll, soBlockMatches);
@@ -80,16 +103,31 @@ export default function WarehouseManagerPage() {
   const toPrepare = toPreparePaged.pageItems;
   const prepared = preparedPaged.pageItems;
 
+  function toggleRecapSo(soNo: string) {
+    setRecapExcludedSo((prev) => {
+      const next = new Set(prev);
+      if (next.has(soNo)) next.delete(soNo); else next.add(soNo);
+      return next;
+    });
+  }
+
   const recap = useMemo(() => {
-    const map = new Map<string, { itemNo: string; soNo: string; description: string; totalQty: number; unit: string }>();
-    (items ?? []).filter((i) => !i.material_prepared).forEach((i) => {
-      const key = `${i.item_no}::${i.so_no}`;
-      const existing = map.get(key);
-      if (existing) existing.totalQty += i.qty;
-      else map.set(key, { itemNo: i.item_no, soNo: i.so_no, description: i.description, totalQty: i.qty, unit: i.unit });
+    const map = new Map<string, { itemNo: string; soNo: string; description: string; totalQty: number; unit: string; comments: string[] }>();
+    toPrepareAll.forEach((block) => {
+      if (recapExcludedSo.has(block.so_no)) return;
+      block.items.forEach((i) => {
+        const key = `${i.item_no}::${i.so_no}`;
+        const existing = map.get(key);
+        if (existing) {
+          existing.totalQty += i.qty;
+          if (i.comment && !existing.comments.includes(i.comment)) existing.comments.push(i.comment);
+        } else {
+          map.set(key, { itemNo: i.item_no, soNo: i.so_no, description: i.description, totalQty: i.qty, unit: i.unit, comments: i.comment ? [i.comment] : [] });
+        }
+      });
     });
     return Array.from(map.values()).sort((a, b) => a.itemNo.localeCompare(b.itemNo) || a.soNo.localeCompare(b.soNo));
-  }, [items]);
+  }, [toPrepareAll, recapExcludedSo]);
 
   function isRowFilled(row: PrepareItem) {
     return (qtyDraft[row.id] ?? "").trim() !== "";
@@ -97,12 +135,13 @@ export default function WarehouseManagerPage() {
 
   function printRecap() {
     const rows = recap.map((r) => `
-      <tr><td>${r.itemNo}</td><td>${r.soNo}</td><td>${r.description}</td><td>${r.totalQty} ${r.unit}</td></tr>
+      <tr><td>${r.itemNo}</td><td>${r.soNo}</td><td>${r.description}</td><td>${r.totalQty} ${r.unit}</td><td>${r.comments.join("; ") || "-"}</td></tr>
     `).join("");
     const html = `
       <html><head><title>Material Recap</title>
       <style>
-        body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 16px; }
+        @page { size: A4 portrait; margin: 14mm; }
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 16px; line-height: 1.4; }
         h1 { font-size: 16px; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { border: 1px solid #999; padding: 5px 8px; text-align: left; }
@@ -111,8 +150,8 @@ export default function WarehouseManagerPage() {
       </head><body onload="window.focus();window.print();">
         <h1>Material To Be Prepared — Recap</h1>
         <table>
-          <thead><tr><th>Item Code</th><th>SO Number</th><th>Description</th><th>Total Needed</th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="4">Nothing to prepare right now.</td></tr>`}</tbody>
+          <thead><tr><th>Item Code</th><th>SO Number</th><th>Description</th><th>Total Needed</th><th>Comment</th></tr></thead>
+          <tbody>${rows || `<tr><td colspan="5">Nothing to prepare right now.</td></tr>`}</tbody>
         </table>
       </body></html>
     `;
@@ -163,6 +202,8 @@ export default function WarehouseManagerPage() {
       name: "Warehouse Manager",
       customerName: item.customer_name,
       poSoNumber: item.so_no,
+      bomRowId: item.id,
+      jobOrderId: item.job_order_id,
     });
     window.location.href = `/form?${params.toString()}`;
   }
@@ -173,18 +214,23 @@ export default function WarehouseManagerPage() {
       <Collapsible
         title="Material To Be Prepared"
         count={toPrepareAll.reduce((n, b) => n + b.items.length, 0)}
+        defaultOpen
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            {showRecap && <button className="btn secondary" onClick={printRecap}>Print recap</button>}
+            <button className="btn secondary" onClick={printRecap}>Print recap</button>
             <button className="btn secondary" onClick={() => setShowRecap((s) => !s)}>{showRecap ? "Hide recap" : "Recap"}</button>
           </div>
         }
       >
         {showRecap && (
           <table className="data-table" style={{ marginBottom: 14, background: "var(--panel-muted)" }}>
-            <thead><tr><th>Item Code</th><th>SO Number</th><th>Description</th><th>Total Needed</th></tr></thead>
+            <thead><tr><th>Item Code</th><th>SO Number</th><th>Description</th><th>Total Needed</th><th>Comment</th></tr></thead>
             <tbody>
-              {recap.map((r) => <tr key={`${r.itemNo}::${r.soNo}`}><td>{r.itemNo}</td><td>{r.soNo}</td><td>{r.description}</td><td>{r.totalQty} {r.unit}</td></tr>)}
+              {recap.length === 0 ? (
+                <tr><td colSpan={5} className="subtle">Nothing ticked for recap.</td></tr>
+              ) : (
+                recap.map((r) => <tr key={`${r.itemNo}::${r.soNo}`}><td>{r.itemNo}</td><td>{r.soNo}</td><td>{r.description}</td><td>{r.totalQty} {r.unit}</td><td className="subtle">{r.comments.join("; ") || "-"}</td></tr>)
+              )}
             </tbody>
           </table>
         )}
@@ -198,7 +244,10 @@ export default function WarehouseManagerPage() {
             return (
               <div key={block.so_no} style={{ marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                  <strong>SO {block.so_no}</strong>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!recapExcludedSo.has(block.so_no)} onChange={() => toggleRecapSo(block.so_no)} title="Include in recap" />
+                    <strong>SO {block.so_no}</strong>
+                  </label>
                   <span className="subtle">Req: {fmtDate(block.req_date)}</span>
                 </div>
                 <div style={{ overflowX: "auto" }}>
@@ -212,7 +261,10 @@ export default function WarehouseManagerPage() {
                     <tbody>
                       {block.items.map((row) => (
                         <tr key={row.id}>
-                          <td>{row.item_no}</td>
+                          <td>
+                            {row.item_no || <span className="subtle">-</span>}
+                            {!row.material_ready && <span className="pill pill-pending_approval" style={{ marginLeft: 6, fontSize: "0.6rem" }}>Pending item code</span>}
+                          </td>
                           <td>{row.description}</td>
                           <td className="subtle">{row.comment || "-"}</td>
                           <td>{row.qty} {row.unit}</td>
@@ -222,7 +274,9 @@ export default function WarehouseManagerPage() {
                                 type="number"
                                 value={qtyDraft[row.id] ?? ""}
                                 onChange={(e) => setQtyDraft((cur) => ({ ...cur, [row.id]: e.target.value }))}
-                                style={{ width: 80 }}
+                                disabled={!row.item_no}
+                                placeholder={!row.item_no ? "Awaiting item code" : undefined}
+                                style={{ width: 90, padding: "5px 8px", fontSize: "0.85rem" }}
                               />
                               <span className="subtle">{row.unit}</span>
                             </div>
@@ -250,7 +304,7 @@ export default function WarehouseManagerPage() {
         )}
       </Collapsible>
 
-      <Collapsible title="Not Available — Needs Purchase" count={notAvailable?.length}>
+      <Collapsible title="Not Available — Needs Purchase" count={notAvailable?.length} defaultOpen>
         {!notAvailable ? <p className="subtle">Loading...</p> : notAvailable.length === 0 ? <p className="subtle">Nothing flagged right now.</p> : (
           <>
           <SearchBox value={notAvailablePaged.search} onChange={notAvailablePaged.setSearch} />

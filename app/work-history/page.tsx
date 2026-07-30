@@ -6,9 +6,11 @@ import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import { JobOrder, JobOrderStatus, joMatchesSearch, fmtDate, formatSerialRange } from "@/lib/jobOrders";
 
-// Only JOs that have cleared approval are meaningful to search here - a
-// draft or rejected JO doesn't have a settled item code / BOM to link to.
-const VISIBLE_STATUSES: JobOrderStatus[] = ["approved", "acknowledged", "in_progress", "qc", "completed"];
+// Work History is the finished record, not a work-in-progress tracker -
+// only JOs that have actually finished production show up here. Their
+// detail page (/production-manager/[id]) already goes read-only/print-view
+// automatically once status is "completed", so linking there is safe.
+const VISIBLE_STATUSES: JobOrderStatus[] = ["completed"];
 
 export default function WorkHistoryPage() {
   const [jobOrders, setJobOrders] = useState<JobOrder[] | null>(null);
@@ -31,8 +33,8 @@ export default function WorkHistoryPage() {
       <div className="card">
         <h2>Work History</h2>
         <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
-          Every item code used on an approved job order. Search by date, SO number, or item code, then open a
-          row to see that job order's final BOM.
+          Every item code used on a finished job order. Search by date, SO number, or item code, then open a
+          row to see that job order's final BOM (read-only, print view).
         </p>
 
         <SearchBox value={search} onChange={setSearch} />

@@ -325,6 +325,9 @@ export interface PurchaseForm {
   current_approval_layer: 1 | 2 | null;
   submitted_by: string;
   source: string | null;
+  bom_row_id: string | null;
+  job_order_id: string | null;
+  registered: boolean;
   created_at: string;
   items: PurchaseFormItem[];
   history: PurchaseFormHistoryEntry[];
@@ -349,8 +352,8 @@ export interface Supplier {
   created_at: string;
 }
 
-export type Currency = "IDR" | "USD" | "SGD" | "EUR";
-export const CURRENCY_SYMBOLS: Record<Currency, string> = { IDR: "Rp", USD: "$", SGD: "SGD", EUR: "€" };
+export type Currency = "IDR" | "USD" | "SGD" | "EUR" | "CNY" | "JPY";
+export const CURRENCY_SYMBOLS: Record<Currency, string> = { IDR: "Rp", USD: "$", SGD: "SGD", EUR: "€", CNY: "CNY", JPY: "¥" };
 export const PO_OUT_STATUSES: { value: PoOutStatus; label: string; color: string }[] = [
   { value: "production", label: "Production", color: "#eab308" },
   { value: "shipment", label: "Shipment", color: "#3b82f6" },

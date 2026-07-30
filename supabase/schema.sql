@@ -278,6 +278,15 @@ create table if not exists purchase_forms (
   -- up on Sales Support Supervisor's dedicated table - a normal form
   -- submission (even for the same customer/SO) never does.
   source text,
+  -- Only set for the Not Available -> Local Purchase flow - links the
+  -- approved Form A back to the exact BOM row it was raised for, so Sales
+  -- Support Supervisor's item-code registration can update that specific
+  -- row (not just guess by SO number, which can have several N/A rows).
+  bom_row_id uuid references job_order_bom(id) on delete set null,
+  job_order_id uuid references job_orders(id) on delete set null,
+  -- True once Sales Support Supervisor has typed in the real item code and
+  -- saved - at that point the form drops off their registration table.
+  registered boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -328,10 +337,10 @@ create table if not exists po_out (
   qty numeric not null default 0,
   unit text not null default 'pcs',
   unit_price numeric not null default 0,
-  unit_price_currency text not null default 'IDR' check (unit_price_currency in ('IDR','USD','SGD','EUR')),
+  unit_price_currency text not null default 'IDR' check (unit_price_currency in ('IDR','USD','SGD','EUR','CNY','JPY')),
   total_price numeric not null default 0, -- qty * unit_price, computed client-side on save
   unit_selling_price numeric not null default 0,
-  unit_selling_price_currency text not null default 'IDR' check (unit_selling_price_currency in ('IDR','USD','SGD','EUR')),
+  unit_selling_price_currency text not null default 'IDR' check (unit_selling_price_currency in ('IDR','USD','SGD','EUR','CNY','JPY')),
   supplier text not null default '',
   status text not null default 'production' check (status in ('production','shipment','arrived')),
   submitted_by text not null default '',

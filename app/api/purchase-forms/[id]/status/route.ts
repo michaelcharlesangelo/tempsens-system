@@ -4,7 +4,7 @@ import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type Action = "approve" | "reject" | "cancel";
+type Action = "approve" | "reject" | "cancel" | "register";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json();
@@ -43,6 +43,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       updates.status = newStatus;
       updates.current_approval_layer = null;
     }
+  } else if (action === "register") {
+    if (form.status !== "approved") {
+      return NextResponse.json({ error: `Can't register a form that's "${form.status}".` }, { status: 400 });
+    }
+    updates.registered = true;
   } else {
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   }

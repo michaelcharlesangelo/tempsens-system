@@ -61,19 +61,36 @@ function printForm(form: PurchaseForm) {
     </tr>`).join("");
   const total = form.items.reduce((n, it) => n + Number(it.budget || 0), 0);
   const title = form.form_type === "A" ? "FORM A (INVENTORY/SERVICE)" : "FORM B (EXPENSE)";
+
+  const comments = form.history.filter((h) => h.comment);
+  const commentRows = comments.length
+    ? comments.map((h) => `<div class="comment"><b>${esc(h.changed_by)}</b> <span class="muted">(${esc(fmtDateTime(h.changed_at))})</span>: ${esc(h.comment)}</div>`).join("")
+    : `<div class="muted">None.</div>`;
+
+  const expenseCodeSection = form.form_type === "B" ? `
+    <div class="section-title">Expense Code</div>
+    <div class="expense-codes">
+      ${EXPENSE_CODES.map((e) => `<div>${e.code === "J" ? "<b>J)</b> Fixed Asset*<div class=\"muted\" style=\"font-size:8.5px;padding-left:12px;\">*Fixed Asset price is &ge; Rp.1.000.000</div>" : `<b>${esc(e.code)})</b> ${esc(e.label)}`}</div>`).join("")}
+    </div>
+  ` : "";
+
   const html = `
     <html><head><title>${esc(title)} - ${esc(form.name)}</title>
     <style>
       @page { size: A4 portrait; margin: 14mm; }
-      body { font-family: Arial, sans-serif; font-size: 11px; color: #111; }
+      body { font-family: Arial, sans-serif; font-size: 11px; color: #111; line-height: 1.45; }
       h1 { font-size: 16px; text-align: center; }
       table.info { width: 100%; border-collapse: collapse; margin: 10px 0; table-layout: fixed; }
-      table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
+      table.info td { padding: 4px 6px; vertical-align: top; word-wrap: break-word; }
       table.info td.label { font-weight: bold; width: 25%; white-space: nowrap; }
       table.items { width: 100%; border-collapse: collapse; margin-top: 6px; table-layout: fixed; }
-      table.items th, table.items td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10px; word-wrap: break-word; }
+      table.items th, table.items td { border: 1px solid #999; padding: 5px 7px; text-align: left; font-size: 10px; line-height: 1.4; word-wrap: break-word; }
       table.items th { background: #eee; }
       .total { text-align: right; font-weight: bold; margin-top: 8px; }
+      .section-title { font-weight: bold; text-transform: uppercase; font-size: 10px; margin: 10px 0 4px; border-top: 1px solid #999; padding-top: 6px; }
+      .comment { font-size: 10px; padding: 2px 0; }
+      .muted { color: #666; }
+      .expense-codes { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; font-size: 9.5px; background: #f4f4f4; padding: 8px 10px; border-radius: 4px; }
     </style>
     </head><body onload="window.focus();window.print();">
       <h1>${esc(title)}</h1>
@@ -84,11 +101,17 @@ function printForm(form: PurchaseForm) {
         ${form.po_so_number ? `<tr><td class="label">PO / SO Number</td><td>${esc(form.po_so_number)}</td></tr>` : ""}
         <tr><td class="label">Purpose</td><td>${esc(form.purpose)}</td></tr>
       </table>
-      <table class="items">
+
+      ${expenseCodeSection}
+
+      <table class="items" style="margin-top:10px">
         <thead><tr><th>Item Description</th><th>Budget (IDR)</th><th>PPN</th><th>Supplier Name</th><th>Code</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="total">Total Budget: Rp ${total.toLocaleString("id-ID")}</div>
+
+      <div class="section-title">Comments</div>
+      ${commentRows}
     </body></html>
   `;
   const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
@@ -111,6 +134,9 @@ function FormPageInner() {
   const [formType, setFormType] = useState<FormType | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [sourceTag, setSourceTag] = useState<string | null>(null);
+  const [bomRowId, setBomRowId] = useState<string | null>(null);
+  const [jobOrderId, setJobOrderId] = useState<string | null>(null);
+  const [justSubmittedFromWarehouse, setJustSubmittedFromWarehouse] = useState(false);
 
   const [name, setName] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -145,6 +171,8 @@ function FormPageInner() {
     setName(searchParams.get("name") || "Warehouse Manager");
     setCustomerName(searchParams.get("customerName") || "");
     setPoSoNumber(searchParams.get("poSoNumber") || "");
+    setBomRowId(searchParams.get("bomRowId"));
+    setJobOrderId(searchParams.get("jobOrderId"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -152,6 +180,9 @@ function FormPageInner() {
     setFormType(null);
     setEditingId(null);
     setSourceTag(null);
+    setBomRowId(null);
+    setJobOrderId(null);
+    setJustSubmittedFromWarehouse(false);
     setName(""); setCustomerName(""); setPoSoNumber(""); setPurpose("");
     setItems([blankItem()]);
     setShowForm(false);
@@ -208,6 +239,8 @@ function FormPageInner() {
       if (!editingId) {
         formData.append("submittedBy", currentRole.label);
         if (sourceTag) formData.append("source", sourceTag);
+        if (bomRowId) formData.append("bomRowId", bomRowId);
+        if (jobOrderId) formData.append("jobOrderId", jobOrderId);
       }
       formData.append("items", JSON.stringify(items.map((it) => ({
         description: it.description, budget: parseBudget(it.budget), ppn: it.ppn, supplierName: it.supplierName, code: it.code,
@@ -215,11 +248,13 @@ function FormPageInner() {
       }))));
       items.forEach((it, i) => { if (it.file) formData.append(`attachment_${i}`, it.file); });
 
+      const wasWarehouseFlow = !editingId && sourceTag === "warehouse_local_purchase";
       const url = editingId ? `/api/purchase-forms/${editingId}` : "/api/purchase-forms";
       const res = await fetch(url, { method: editingId ? "PATCH" : "POST", body: formData });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to submit form."); return; }
       resetForm();
+      if (wasWarehouseFlow) setJustSubmittedFromWarehouse(true);
       load();
     } finally {
       setSaving(false);
@@ -247,6 +282,17 @@ function FormPageInner() {
   return (
     <>
       <div className="card">
+        {sourceTag === "warehouse_local_purchase" && showForm && (
+          <p style={{ marginTop: 0, marginBottom: 10 }}>
+            <a href="/warehouse-manager" style={{ fontSize: "0.85rem" }}>&larr; Back to Warehouse Manager</a>
+          </p>
+        )}
+        {justSubmittedFromWarehouse && (
+          <div className="warn" style={{ marginTop: 0, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>Form submitted for approval.</span>
+            <a href="/jo-input" className="btn secondary" style={{ fontSize: "0.8rem" }}>Go to JO page</a>
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ margin: 0 }}>{editingId ? "Edit form" : "Submit a form"}</h2>
           {!showForm && <button className="btn" onClick={() => setShowForm(true)}>+ New Form</button>}
@@ -296,7 +342,7 @@ function FormPageInner() {
                 </div>
 
                 {formType === "B" && (
-                  <div className="card" style={{ background: "var(--panel-muted)" }}>
+                  <div className="card" style={{ background: "var(--panel-muted)", marginTop: 14 }}>
                     <div className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase", marginBottom: 8 }}>Expense Code</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 24px" }}>
                       <div>
@@ -321,13 +367,13 @@ function FormPageInner() {
                 <div style={{ overflowX: "auto", marginTop: 14 }}>
                   <table className="data-table fixed">
                     <colgroup>
-                      <col style={{ width: "4%" }} /><col style={{ width: "32%" }} /><col style={{ width: "10%" }} />
-                      <col style={{ width: "6%" }} /><col style={{ width: "16%" }} /><col style={{ width: "11%" }} />
-                      <col style={{ width: "15%" }} /><col style={{ width: "6%" }} />
+                      <col style={{ width: "4%" }} /><col style={{ width: "29%" }} /><col style={{ width: "10%" }} />
+                      <col style={{ width: "7%" }} /><col style={{ width: "16%" }} /><col style={{ width: "14%" }} />
+                      <col style={{ width: "14%" }} /><col style={{ width: "6%" }} />
                     </colgroup>
                     <thead>
                       <tr>
-                        <th>No.</th><th>Item Description</th><th>Budget (IDR)</th><th style={{ textAlign: "right" }}>PPN</th>
+                        <th>No.</th><th>Item Description</th><th>Budget (IDR)</th><th style={{ textAlign: "center", paddingLeft: 10 }}>PPN</th>
                         <th>Supplier Name</th><th>Code</th><th>Attachment</th><th></th>
                       </tr>
                     </thead>
@@ -343,7 +389,7 @@ function FormPageInner() {
                               placeholder="0" style={{ fontSize: "0.82rem" }}
                             />
                           </td>
-                          <td style={{ textAlign: "right", verticalAlign: "middle" }}>
+                          <td style={{ textAlign: "center", verticalAlign: "middle", paddingLeft: 10 }}>
                             <input type="checkbox" checked={it.ppn} onChange={(e) => updateItem(i, { ppn: e.target.checked })} style={{ width: 16, height: 16 }} />
                           </td>
                           <td><input type="text" value={it.supplierName} onChange={(e) => updateItem(i, { supplierName: e.target.value })} style={{ fontSize: "0.82rem" }} /></td>

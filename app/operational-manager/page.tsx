@@ -8,8 +8,8 @@ export default function OperationalManagerPage() {
     <>
       <SubmittedJobOrders tab="operational-manager" by="Operational Manager" />
       <CostingTables tab="operational-manager" includeToBeCosting={false} filterBySubmitter="Operational Manager" />
-      <FormApprovalView layer={1} label="Operational Manager" />
       <ApprovalTabView tab="operational-manager" layer={2} label="Operational Manager" />
+      <FormApprovalView layer={1} label="Operational Manager" />
     </>
   );
 }

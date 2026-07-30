@@ -7,7 +7,7 @@ import Collapsible from "@/app/components/Collapsible";
 import DateField from "@/app/components/DateField";
 import PoStatusSlider from "@/app/components/PoStatusSlider";
 import {
-  PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, CURRENCY_SYMBOLS, PoOutStatus,
+  PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, CURRENCY_SYMBOLS, PoOutStatus, PO_OUT_STATUSES,
   fmtDate, fmtDateTime,
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
@@ -97,15 +97,13 @@ function SupplierSelect({
   }
 
   return (
-    <select
-      value={value}
-      onChange={(e) => { if (e.target.value === "__add__") { setAdding(true); return; } onChange(e.target.value); }}
-      style={style}
-    >
-      <option value="">Select...</option>
-      {suppliers.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
-      <option value="__add__">+ Add new supplier...</option>
-    </select>
+    <div style={{ display: "flex", gap: 4 }}>
+      <select value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1, minWidth: 0, ...style }}>
+        <option value="">Select...</option>
+        {suppliers.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+      </select>
+      <button type="button" className="btn secondary" style={{ padding: "0 10px", fontSize: "0.9rem", flex: "none" }} title="Add new supplier" onClick={() => setAdding(true)}>+</button>
+    </div>
   );
 }
 
@@ -120,14 +118,14 @@ function CurrencyInput({
         value={currency}
         disabled={readOnly}
         onChange={(e) => onCurrencyChange?.(e.target.value as Currency)}
-        style={{ border: "none", borderRight: "1px solid var(--border)", background: "var(--panel-muted)", fontSize: compact ? "0.72rem" : "0.8rem", padding: "0 4px", borderRadius: 0, flex: "none" }}
+        style={{ border: "none", borderRight: "1px solid var(--border)", background: "var(--panel-muted)", fontSize: compact ? "0.68rem" : "0.74rem", padding: "0 2px", borderRadius: 0, flex: "none", width: compact ? 40 : 50 }}
       >
         {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_SYMBOLS[c]}</option>)}
       </select>
       <input
         type="text" inputMode="decimal" readOnly={readOnly} value={value}
         onChange={(e) => onValueChange?.(e.target.value.replace(/[^\d.]/g, ""))}
-        style={{ border: "none", flex: 1, minWidth: 0, fontSize: compact ? "0.8rem" : undefined }}
+        style={{ border: "none", flex: 1, minWidth: 0, width: "100%", fontSize: compact ? "0.8rem" : undefined }}
       />
     </div>
   );
@@ -145,7 +143,7 @@ export default function PoOutPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Draft | null>(null);
-  const [logOpenId, setLogOpenId] = useState<string | null>(null);
+  const [updatesOpenId, setUpdatesOpenId] = useState<string | null>(null);
 
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -340,14 +338,19 @@ export default function PoOutPage() {
       },
       {
         key: "status",
-        node: (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <PoStatusSlider status={p.status} onChange={(s) => changeStatus(p.id, s)} />
-            <button type="button" className="btn secondary" style={{ padding: "2px 6px", fontSize: "0.64rem" }} onClick={() => setLogOpenId(logOpenId === p.id ? null : p.id)}>
-              {logOpenId === p.id ? "Hide" : "Log"}
-            </button>
-          </div>
-        ),
+        node: (() => {
+          const meta = PO_OUT_STATUSES.find((s) => s.value === p.status)!;
+          return (
+            <span
+              className="pill"
+              style={{ background: meta.color, color: "white", cursor: "pointer" }}
+              onClick={() => setUpdatesOpenId(updatesOpenId === p.id ? null : p.id)}
+              title="Click to view updates from Exim Team"
+            >
+              {meta.label}
+            </span>
+          );
+        })(),
       },
     ];
   }
@@ -356,12 +359,7 @@ export default function PoOutPage() {
     <>
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <div>
-            <h2 style={{ margin: 0 }}>PO Out</h2>
-            <p className="subtle" style={{ margin: "2px 0 0", fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em" }}>
-              Filled in by Sales Support
-            </p>
-          </div>
+          <h2 style={{ margin: 0 }}>PO Out</h2>
           {!showForm && <button className="btn" onClick={() => setShowForm(true)}>+ New</button>}
         </div>
 
@@ -427,9 +425,35 @@ export default function PoOutPage() {
 
       {message && <div className="warn">{message}</div>}
 
-      <Collapsible title="PO OUT RECAP" count={pos?.length}>
+      <Collapsible title="PO OUT RECAP" count={pos?.length} defaultOpen>
         {!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
           <>
+            <div style={{ display: "flex", gap: 2, marginBottom: 14, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+              <button
+                className="btn secondary"
+                style={{
+                  fontSize: "0.75rem", borderRadius: "6px 6px 0 0", borderBottom: "none",
+                  background: activeTab === "ALL" ? "var(--accent)" : undefined, color: activeTab === "ALL" ? "white" : undefined,
+                }}
+                onClick={() => setActiveTab("ALL")}
+              >
+                All
+              </button>
+              {SUPPLIER_TAB_CATEGORIES.map((c) => (
+                <button
+                  key={c.value}
+                  className="btn secondary"
+                  style={{
+                    fontSize: "0.75rem", borderRadius: "6px 6px 0 0", borderBottom: "none",
+                    background: activeTab === c.value ? "var(--accent)" : undefined, color: activeTab === c.value ? "white" : undefined,
+                  }}
+                  onClick={() => setActiveTab(c.value)}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <SearchBox value={search} onChange={setSearch} />
               <div ref={columnsMenuRef} style={{ position: "relative" }}>
@@ -490,16 +514,21 @@ export default function PoOutPage() {
                             )}
                           </td>
                         </tr>
-                        {logOpenId === p.id && (
+                        {updatesOpenId === p.id && (
                           <tr>
                             <td colSpan={cells.length + 1} style={{ background: "var(--panel-muted)" }}>
-                              <div style={{ padding: "6px 2px" }}>
-                                <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Update log</div>
-                                {p.history.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : p.history.map((h) => (
-                                  <div key={h.id} style={{ fontSize: "0.82rem", padding: "3px 0" }}>
-                                    <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
-                                  </div>
-                                ))}
+                              <div style={{ padding: "8px 2px" }}>
+                                <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
+                                  Updates from Exim Team
+                                </div>
+                                <PoStatusSlider status={p.status} onChange={(s) => changeStatus(p.id, s)} />
+                                <div style={{ marginTop: 10 }}>
+                                  {p.history.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : p.history.map((h) => (
+                                    <div key={h.id} style={{ fontSize: "0.82rem", padding: "3px 0" }}>
+                                      <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -511,32 +540,6 @@ export default function PoOutPage() {
               </table>
             </div>
             <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
-
-            <div style={{ display: "flex", gap: 2, marginTop: 14, borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-              <button
-                className="btn secondary"
-                style={{
-                  fontSize: "0.75rem", borderRadius: "6px 6px 0 0", borderBottom: "none",
-                  background: activeTab === "ALL" ? "var(--accent)" : undefined, color: activeTab === "ALL" ? "white" : undefined,
-                }}
-                onClick={() => setActiveTab("ALL")}
-              >
-                All
-              </button>
-              {SUPPLIER_TAB_CATEGORIES.map((c) => (
-                <button
-                  key={c.value}
-                  className="btn secondary"
-                  style={{
-                    fontSize: "0.75rem", borderRadius: "6px 6px 0 0", borderBottom: "none",
-                    background: activeTab === c.value ? "var(--accent)" : undefined, color: activeTab === c.value ? "white" : undefined,
-                  }}
-                  onClick={() => setActiveTab(c.value)}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
           </>
         )}
       </Collapsible>

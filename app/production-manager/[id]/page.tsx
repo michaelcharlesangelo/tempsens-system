@@ -99,19 +99,19 @@ export default function ProductionJobOrderDetailPage() {
       <html><head><title>${title}</title>
       <style>
         @page { size: A4 portrait; margin: 14mm; }
-        body { font-family: Arial, sans-serif; font-size: 11px; color: #111; }
+        body { font-family: Arial, sans-serif; font-size: 11px; color: #111; line-height: 1.45; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .header h1 { font-size: 18px; margin: 0; flex: 1; text-align: center; }
-        .qr { display: flex; align-items: center; gap: 8px; }
+        .qr { display: flex; align-items: center; gap: 8px; width: 70px; justify-content: flex-end; }
         .qr img { display: block; }
         table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
-        table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
+        table.info td { padding: 4px 6px; vertical-align: top; word-wrap: break-word; }
         table.info td.label { font-weight: bold; white-space: nowrap; }
         .section-title { font-weight: bold; text-transform: uppercase; font-size: 10px; margin: 10px 0 4px; border-top: 1px solid #999; padding-top: 6px; }
         .comment { font-size: 10px; padding: 2px 0; }
         .muted { color: #666; }
         table.bom, table.qc { width: 100%; border-collapse: collapse; margin-top: 4px; table-layout: fixed; }
-        table.bom th, table.bom td, table.qc th, table.qc td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 10px; word-wrap: break-word; white-space: normal; }
+        table.bom th, table.bom td, table.qc th, table.qc td { border: 1px solid #999; padding: 5px 7px; text-align: left; font-size: 10px; line-height: 1.4; word-wrap: break-word; white-space: normal; }
         table.bom th { background: #eee; }
         table.qc th { background: #eee; }
       </style>
@@ -148,6 +148,9 @@ export default function ProductionJobOrderDetailPage() {
 
         <div class="section-title">QC — Parameter</div>
         <table class="qc">
+          <colgroup>
+            <col style="width:16%"><col style="width:16%"><col style="width:30%"><col style="width:20%"><col style="width:18%">
+          </colgroup>
           <thead><tr><th>Time</th><th>Station</th><th>Parameter</th><th>Actual</th><th>Checked By</th></tr></thead>
           <tbody>${qcRows || `<tr><td colspan="5">No station scans yet.</td></tr>`}</tbody>
         </table>
