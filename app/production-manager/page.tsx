@@ -1,18 +1,128 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, ReactNode, useEffect, useMemo, useState } from "react";
 import Collapsible from "@/app/components/Collapsible";
+import ToggleSwitch from "@/app/components/ToggleSwitch";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
-import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
+import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime, formatSerialRange } from "@/lib/jobOrders";
 import { printFileUrl } from "@/lib/printFile";
+
+type AllJoSortCol = "jo_date" | "so_no" | "customer_name" | "item_no" | "serial_number";
+
+// Reference table for the whole job order history (any status) - lets
+// Production look up the most recent serial number for an item before
+// filling in a new JO's Serial Number field. Category toggles default to
+// all-on; categories are derived from the data instead of hardcoded so a
+// newly added item_category shows up automatically.
+function AllJobOrdersSection({ jobOrders }: { jobOrders: JobOrder[] }) {
+  const [offCategories, setOffCategories] = useState<Set<string>>(new Set());
+  const [sortCol, setSortCol] = useState<AllJoSortCol>("jo_date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const categories = useMemo(
+    () => Array.from(new Set(jobOrders.map((jo) => jo.item_category).filter(Boolean))).sort(),
+    [jobOrders]
+  );
+
+  function sortBy(col: AllJoSortCol) {
+    if (sortCol === col) { setSortDir((d) => (d === "asc" ? "desc" : "asc")); return; }
+    setSortCol(col);
+    setSortDir("asc");
+  }
+
+  const sorted = useMemo(() => {
+    const visible = jobOrders.filter((jo) => !offCategories.has(jo.item_category));
+    return [...visible].sort((a, b) => {
+      const av = sortCol === "serial_number" ? (a.serial_numbers?.[0] ?? "") : a[sortCol];
+      const bv = sortCol === "serial_number" ? (b.serial_numbers?.[0] ?? "") : b[sortCol];
+      const cmp = String(av ?? "").localeCompare(String(bv ?? ""));
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [jobOrders, offCategories, sortCol, sortDir]);
+
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(sorted, joMatchesSearch);
+
+  function SortHeader({ col, children }: { col: AllJoSortCol; children: ReactNode }) {
+    return (
+      <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy(col)}>
+        {children} {sortCol === col ? (sortDir === "asc" ? "▲" : "▼") : ""}
+      </th>
+    );
+  }
+
+  return (
+    <>
+      <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>
+        Every job order regardless of status - use this to look up the last serial number used before filling in a new one.
+      </p>
+      {categories.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 12 }}>
+          {categories.map((cat) => (
+            <ToggleSwitch
+              key={cat}
+              checked={!offCategories.has(cat)}
+              label={cat}
+              onChange={(v) => setOffCategories((cur) => {
+                const next = new Set(cur);
+                if (v) next.delete(cat); else next.add(cat);
+                return next;
+              })}
+            />
+          ))}
+        </div>
+      )}
+      <SearchBox value={search} onChange={setSearch} />
+      {totalCount === 0 ? <p className="subtle">No matching job orders.</p> : (
+        <>
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <SortHeader col="jo_date">JO Date</SortHeader>
+                  <SortHeader col="so_no">SO Number</SortHeader>
+                  <SortHeader col="customer_name">Customer Name</SortHeader>
+                  <SortHeader col="item_no">Item Code</SortHeader>
+                  <th>Description</th>
+                  <th>Qty</th>
+                  <SortHeader col="serial_number">Serial Number(s)</SortHeader>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageItems.map((jo) => {
+                  const serialLabel = formatSerialRange(jo.serial_numbers ?? []);
+                  return (
+                    <tr key={jo.id}>
+                      <td style={{ whiteSpace: "nowrap" }}>{fmtDate(jo.jo_date)}</td>
+                      <td>{jo.so_no}</td>
+                      <td>{jo.customer_name}</td>
+                      <td>{jo.item_no}</td>
+                      <td>{jo.item_description}</td>
+                      <td>{jo.quantity}</td>
+                      <td>{serialLabel === "-" ? <span className="subtle">-</span> : serialLabel}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <a href={`/production-manager/${jo.id}`} className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }}>View</a>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+        </>
+      )}
+    </>
+  );
+}
 
 // Row-level stage within the single "In Production" table - replaces the
 // old 3-way table split (Not Acknowledged / Acknowledged / Ready for
 // Production) with one status pill per row instead.
-function stageOf(jo: JobOrder): { label: string; bg: string; fg: string } {
+function stageOf(jo: JobOrder): { label: string; twoLine?: [string, string]; bg: string; fg: string } {
   if (jo.status === "completed") return { label: "Finished", bg: "#dcfce7", fg: "#15803d" };
-  if (jo.status === "approved") return { label: "Awaiting Acknowledgement", bg: "var(--panel-muted)", fg: "var(--text-muted)" };
+  if (jo.status === "approved") return { label: "Awaiting Acknowledgement", twoLine: ["Awaiting", "Acknowledgement"], bg: "var(--panel-muted)", fg: "var(--text-muted)" };
   if (jo.material_prepared_all) return { label: "Material Ready", bg: "#dcfce7", fg: "#15803d" };
   return { label: "Preparing Material", bg: "var(--warn-bg)", fg: "var(--warn-text)" };
 }
@@ -58,7 +168,10 @@ function JoTable({
               <Fragment key={jo.id}>
                 <tr>
                   <td style={{ whiteSpace: "nowrap" }}>{fmtDate(jo.created_at)}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{jo.so_no}{jo.urgent && <span className="pill pill-rejected" style={{ marginLeft: 6 }}>URGENT</span>}</td>
+                  <td>
+                    {jo.so_no}
+                    {jo.urgent && <span className="pill pill-rejected" style={{ display: "block", width: "fit-content", marginTop: 2 }}>URGENT</span>}
+                  </td>
                   <td>{jo.item_no}</td>
                   <td>{jo.sales_person_name}</td>
                   <td>{jo.customer_name}</td>
@@ -70,7 +183,9 @@ function JoTable({
                     <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => printDrawing(jo.id)}>Print</button>
                   </td>
                   <td>
-                    <span className="pill" style={{ background: stage.bg, color: stage.fg, whiteSpace: "nowrap" }}>{stage.label}</span>
+                    <span className="pill" style={{ background: stage.bg, color: stage.fg, whiteSpace: stage.twoLine ? "normal" : "nowrap", lineHeight: 1.3 }}>
+                      {stage.twoLine ? <>{stage.twoLine[0]}<br />{stage.twoLine[1]}</> : stage.label}
+                    </span>
                   </td>
                   <td>
                     <button
@@ -154,18 +269,20 @@ function PagedJoSection({
 export default function ProductionManagerPage() {
   const [inProduction, setInProduction] = useState<JobOrder[]>([]);
   const [finishedProduction, setFinishedProduction] = useState<JobOrder[]>([]);
+  const [allJobOrders, setAllJobOrders] = useState<JobOrder[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [acking, setAcking] = useState<string | null>(null);
   const [finishing, setFinishing] = useState<string | null>(null);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
 
   async function load() {
-    const [approvedRes, ackRes, inProgressRes, qcRes, completedRes] = await Promise.all([
+    const [approvedRes, ackRes, inProgressRes, qcRes, completedRes, allRes] = await Promise.all([
       fetch("/api/job-orders?status=approved&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=acknowledged&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=in_progress&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=qc&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=completed&tab=production-manager", { cache: "no-store" }),
+      fetch("/api/job-orders?tab=production-manager", { cache: "no-store" }),
     ]);
     const approved: JobOrder[] = (await approvedRes.json()).jobOrders ?? [];
     const acknowledged: JobOrder[] = (await ackRes.json()).jobOrders ?? [];
@@ -176,6 +293,7 @@ export default function ProductionManagerPage() {
     // production. Status pill on each row shows exactly where it's at.
     setInProduction([...approved, ...acknowledged, ...inProgress, ...qc]);
     setFinishedProduction((await completedRes.json()).jobOrders ?? []);
+    setAllJobOrders((await allRes.json()).jobOrders ?? []);
   }
 
   useEffect(() => { load(); }, []);
@@ -239,6 +357,10 @@ export default function ProductionManagerPage() {
 
       <Collapsible title="Finished Production" count={finishedProduction.length}>
         {finishedProduction.length === 0 ? <p className="subtle">None yet.</p> : <PagedJoSection items={finishedProduction} {...sharedProps} />}
+      </Collapsible>
+
+      <Collapsible title="All Job Orders" count={allJobOrders.length}>
+        {allJobOrders.length === 0 ? <p className="subtle">No job orders yet.</p> : <AllJobOrdersSection jobOrders={allJobOrders} />}
       </Collapsible>
     </>
   );

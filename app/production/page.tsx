@@ -19,10 +19,16 @@ export default function ProductionScanPage() {
   const [jobOrder, setJobOrder] = useState<JobOrder | null>(null);
   const [station, setStation] = useState<StationCode | null>(null);
 
-  const [actualValues, setActualValues] = useState<string[]>([]);
+  // Outer index = unit (0-based, matches jobOrder.serial_numbers), inner
+  // index = parameter - a JO with qty > 1 needs its own reading per unit,
+  // not one shared set for the whole batch.
+  const [actualValues, setActualValues] = useState<string[][]>([]);
+  const [showAllUnits, setShowAllUnits] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const VISIBLE_UNITS = 3;
 
   function resetToScanJo() {
     setStep("scan-jo");
@@ -31,6 +37,7 @@ export default function ProductionScanPage() {
     setJobOrder(null);
     setStation(null);
     setActualValues([]);
+    setShowAllUnits(false);
     setSuccessMsg(null);
   }
 
@@ -68,7 +75,9 @@ export default function ProductionScanPage() {
       const found = stations.find((s) => s.code.toLowerCase() === code.trim().toLowerCase());
       if (!found) { setLookupError(`No station found for that QR code.`); return; }
       setStation(found);
-      setActualValues(found.parameters.map(() => ""));
+      const qty = Math.max(1, jobOrder?.quantity ?? 1);
+      setActualValues(Array.from({ length: qty }, () => found.parameters.map(() => "")));
+      setShowAllUnits(false);
       setStep("form");
     } finally {
       setLookingUp(false);
@@ -80,7 +89,9 @@ export default function ProductionScanPage() {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const results = station.parameters.map((p, i) => ({ parameter: p, actual: actualValues[i] ?? "" }));
+      const results = actualValues.flatMap((unitValues, unit) =>
+        station.parameters.map((p, pi) => ({ parameter: p, actual: unitValues[pi] ?? "", unit }))
+      );
       const res = await fetch("/api/production-logs", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobOrderId: jobOrder.id, stationId: station.id, results }),
@@ -94,7 +105,12 @@ export default function ProductionScanPage() {
     }
   }
 
-  const allFilled = actualValues.length > 0 && actualValues.every((v) => v.trim() !== "");
+  const allFilled = actualValues.length > 0 && actualValues.every((unitValues) => unitValues.every((v) => v.trim() !== ""));
+
+  function unitLabel(unitIndex: number): string {
+    const serial = jobOrder?.serial_numbers?.[unitIndex];
+    return serial || `Unit ${unitIndex + 1}`;
+  }
 
   return (
     <>
@@ -163,28 +179,43 @@ export default function ProductionScanPage() {
           {station.parameters.length === 0 ? (
             <p className="subtle">No parameters configured for this station yet - add some under Settings &gt; Production first.</p>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table className="data-table">
-                <thead><tr><th>No.</th><th>Parameter</th><th>Actual</th><th>Checked By</th></tr></thead>
-                <tbody>
-                  {station.parameters.map((p, i) => (
-                    <tr key={i}>
-                      <td>{i + 1}</td>
-                      <td>{p}</td>
-                      <td>
-                        <input
-                          type="text"
-                          value={actualValues[i] ?? ""}
-                          onChange={(e) => setActualValues((cur) => cur.map((v, vi) => (vi === i ? e.target.value : v)))}
-                          style={{ width: 140 }}
-                        />
-                      </td>
-                      <td>{SCANNED_BY_LABEL}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {actualValues.slice(0, showAllUnits ? actualValues.length : VISIBLE_UNITS).map((unitValues, unit) => (
+                <div key={unit} style={{ marginBottom: 16 }}>
+                  {actualValues.length > 1 && <div style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: 6 }}>{unitLabel(unit)}</div>}
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="data-table">
+                      <thead><tr><th>No.</th><th>Parameter</th><th>Actual</th><th>Checked By</th></tr></thead>
+                      <tbody>
+                        {station.parameters.map((p, pi) => (
+                          <tr key={pi}>
+                            <td>{pi + 1}</td>
+                            <td>{p}</td>
+                            <td>
+                              <input
+                                type="text"
+                                value={unitValues[pi] ?? ""}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  setActualValues((cur) => cur.map((uv, ui) => (ui === unit ? uv.map((v, vi) => (vi === pi ? value : v)) : uv)));
+                                }}
+                                style={{ width: 140 }}
+                              />
+                            </td>
+                            <td>{SCANNED_BY_LABEL}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+              {actualValues.length > VISIBLE_UNITS && (
+                <button className="btn secondary" style={{ marginBottom: 12 }} onClick={() => setShowAllUnits((v) => !v)}>
+                  {showAllUnits ? "Hide" : `Show remaining ${actualValues.length - VISIBLE_UNITS} unit${actualValues.length - VISIBLE_UNITS > 1 ? "s" : ""}`}
+                </button>
+              )}
+            </>
           )}
 
           {submitError && <p className="error-text" style={{ marginTop: 8 }}>{submitError}</p>}

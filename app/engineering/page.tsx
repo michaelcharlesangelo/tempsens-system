@@ -15,7 +15,7 @@ import { getCurrentRole } from "@/lib/roles";
 function EngineeringTable({
   items, title, historyItems, historyTitle,
   updatesOpenId, setUpdatesOpenId, statusDraft, setStatusDraft, commentDraft, setCommentDraft,
-  saveUpdate, savingId, photoFiles, setPhotoFiles, uploadingPhotosId, uploadPhotos, viewPhoto,
+  saveUpdate, savingId, photoFiles, setPhotoFiles, photoInputKey, uploadingPhotosId, uploadPhotos, viewPhoto,
   finishing, finishComplaint,
 }: {
   items: Complaint[]; title: string; historyItems: Complaint[]; historyTitle: string;
@@ -24,6 +24,7 @@ function EngineeringTable({
   commentDraft: Record<string, string>; setCommentDraft: (fn: (cur: Record<string, string>) => Record<string, string>) => void;
   saveUpdate: (c: Complaint) => void; savingId: string | null;
   photoFiles: Record<string, File[]>; setPhotoFiles: (fn: (cur: Record<string, File[]>) => Record<string, File[]>) => void;
+  photoInputKey: Record<string, number>;
   uploadingPhotosId: string | null; uploadPhotos: (c: Complaint) => void; viewPhoto: (path: string) => void;
   finishing: string | null; finishComplaint: (c: Complaint) => void;
 }) {
@@ -48,7 +49,11 @@ function EngineeringTable({
               <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
             ))}
           </td>
-          <td>{c.suggested_action || <span className="subtle">-</span>}</td>
+          <td>
+            {c.engineering_photo_paths.length === 0 ? <span className="subtle">-</span> : c.engineering_photo_paths.map((p, i) => (
+              <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.engineering_photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+            ))}
+          </td>
           <td>
             <span
               className="pill" style={{ background: meta.color, color: "white", cursor: editable ? "pointer" : "default" }}
@@ -77,6 +82,7 @@ function EngineeringTable({
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
                   <label className="subtle" style={{ fontSize: "0.72rem", fontWeight: 700, textTransform: "uppercase" }}>Photos</label>
                   <input
+                    key={photoInputKey[c.id] ?? 0}
                     type="file" multiple accept="image/*,application/pdf"
                     onChange={(e) => setPhotoFiles((cur) => ({ ...cur, [c.id]: Array.from(e.target.files || []) }))}
                   />
@@ -126,7 +132,7 @@ function EngineeringTable({
               <div style={{ overflowX: "auto" }}>
                 <table className="data-table">
                   <thead>
-                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Suggested action</th><th>Status</th></tr>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Photos Update</th><th>Status</th></tr>
                   </thead>
                   <tbody>{pageItems.map((c) => renderRow(c, true))}</tbody>
                 </table>
@@ -146,7 +152,7 @@ function EngineeringTable({
               <div style={{ overflowX: "auto" }}>
                 <table className="data-table">
                   <thead>
-                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Suggested action</th><th>Status</th></tr>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Photos Update</th><th>Status</th></tr>
                   </thead>
                   <tbody>{historyPaged.pageItems.map((c) => renderRow(c, false))}</tbody>
                 </table>
@@ -170,6 +176,7 @@ export default function EngineeringPage() {
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [photoFiles, setPhotoFiles] = useState<Record<string, File[]>>({});
+  const [photoInputKey, setPhotoInputKey] = useState<Record<string, number>>({});
   const [uploadingPhotosId, setUploadingPhotosId] = useState<string | null>(null);
   const [finishing, setFinishing] = useState<string | null>(null);
 
@@ -216,6 +223,7 @@ export default function EngineeringPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setMessage(data.error || "Failed to upload photos."); return; }
       setPhotoFiles((cur) => ({ ...cur, [c.id]: [] }));
+      setPhotoInputKey((cur) => ({ ...cur, [c.id]: (cur[c.id] ?? 0) + 1 }));
       load();
     } finally {
       setUploadingPhotosId(null);
@@ -253,7 +261,7 @@ export default function EngineeringPage() {
 
   const sharedProps = {
     updatesOpenId, setUpdatesOpenId, statusDraft, setStatusDraft, commentDraft, setCommentDraft,
-    saveUpdate, savingId, photoFiles, setPhotoFiles, uploadingPhotosId, uploadPhotos, viewPhoto, finishing, finishComplaint,
+    saveUpdate, savingId, photoFiles, setPhotoFiles, photoInputKey, uploadingPhotosId, uploadPhotos, viewPhoto, finishing, finishComplaint,
   };
 
   return (

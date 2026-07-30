@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import {
-  Complaint, JobOrder, PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PO_OUT_STATUSES,
+  Complaint, JobOrder, PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PO_OUT_STATUSES, COMPLAINT_STATUSES,
   complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate, fmtDateTime,
 } from "@/lib/jobOrders";
 
@@ -240,30 +240,58 @@ export default function DashboardPage() {
     if (data.url) window.open(data.url, "_blank");
   }
 
-  function complaintRows(items: Complaint[]) {
-    return items.map((c) => (
-      <tr key={c.id}>
-        <td>{fmtDate(c.created_at)}</td>
-        <td>{c.customer_name}</td>
-        <td>{c.so_no}</td>
-        <td>{c.item_description}</td>
-        <td>{c.quantity}</td>
-        <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
-        <td>
-          {c.photo_paths.length === 0 ? <span className="subtle">-</span> : c.photo_paths.map((p, i) => (
-            <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
-          ))}
-        </td>
-        <td>{c.status === "not_done" ? "Not Done" : c.status === "in_progress" ? "In Progress" : "Done"}</td>
-        <td style={{ minWidth: 180 }}>{c.suggested_action || <span className="subtle">-</span>}</td>
-      </tr>
-    ));
+  function complaintRows(items: Complaint[], logOpenId: string | null, setLogOpenId: (id: string | null) => void) {
+    return items.map((c) => {
+      const meta = COMPLAINT_STATUSES.find((s) => s.value === c.status)!;
+      return (
+        <Fragment key={c.id}>
+          <tr>
+            <td>{fmtDate(c.created_at)}</td>
+            <td>{c.customer_name}</td>
+            <td>{c.so_no}</td>
+            <td>{c.item_description}</td>
+            <td>{c.quantity}</td>
+            <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
+            <td>
+              {c.photo_paths.length === 0 ? <span className="subtle">-</span> : c.photo_paths.map((p, i) => (
+                <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+              ))}
+            </td>
+            <td>
+              <span className="pill" style={{ background: meta.color, color: "white", cursor: "pointer" }} onClick={() => setLogOpenId(logOpenId === c.id ? null : c.id)}>
+                {meta.label}
+              </span>
+            </td>
+            <td>
+              {c.engineering_photo_paths.length === 0 ? <span className="subtle">-</span> : c.engineering_photo_paths.map((p, i) => (
+                <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.engineering_photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+              ))}
+            </td>
+          </tr>
+          {logOpenId === c.id && (
+            <tr>
+              <td colSpan={9} style={{ background: "var(--panel-muted)" }}>
+                <div style={{ padding: "8px 2px" }}>
+                  <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Updates from Engineering</div>
+                  {c.history.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : c.history.map((h) => (
+                    <div key={h.id} style={{ fontSize: "0.82rem", padding: "3px 0" }}>
+                      <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>: {h.comment}
+                    </div>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          )}
+        </Fragment>
+      );
+    });
   }
 
   function ComplaintTable({ items, title, historyItems, historyTitle }: { items: Complaint[]; title: string; historyItems: Complaint[]; historyTitle: string }) {
     const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch, 5);
     const [historyOpen, setHistoryOpen] = useState(false);
     const historyPaged = usePagedSearch(historyItems, complaintMatchesSearch, 5);
+    const [logOpenId, setLogOpenId] = useState<string | null>(null);
     return (
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -278,9 +306,9 @@ export default function DashboardPage() {
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
               <thead>
-                <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
+                <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Photos Update</th></tr>
               </thead>
-              <tbody>{complaintRows(pageItems)}</tbody>
+              <tbody>{complaintRows(pageItems, logOpenId, setLogOpenId)}</tbody>
             </table>
           </div>
           <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
@@ -295,9 +323,9 @@ export default function DashboardPage() {
               <div style={{ overflowX: "auto" }}>
                 <table className="data-table">
                   <thead>
-                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Photos Update</th></tr>
                   </thead>
-                  <tbody>{complaintRows(historyPaged.pageItems)}</tbody>
+                  <tbody>{complaintRows(historyPaged.pageItems, logOpenId, setLogOpenId)}</tbody>
                 </table>
               </div>
               <Pager page={historyPaged.page} totalPages={historyPaged.totalPages} totalCount={historyPaged.totalCount} onChange={historyPaged.setPage} />

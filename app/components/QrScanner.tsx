@@ -44,7 +44,7 @@ export default function QrScanner({ onScan, onClose }: { onScan: (value: string)
     <div className="card">
       <h2>Scan QR code</h2>
       <div id={regionIdRef.current} style={{ width: "100%", maxWidth: 340, margin: "0 auto" }} />
-      <button className="btn secondary" style={{ marginTop: 10 }} onClick={onClose}>Cancel</button>
+      <button className="btn secondary" style={{ marginTop: 10 }} onClick={onClose}>Done</button>
     </div>
   );
 }

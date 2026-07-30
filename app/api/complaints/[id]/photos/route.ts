@@ -6,15 +6,16 @@ export const revalidate = 0;
 
 const BUCKET = "tempsens-files";
 
-// Engineering attaches its own photos (e.g. proof of fix) on top of
-// whatever the original submitter attached - appends, never replaces.
+// Engineering attaches its own photos (e.g. proof of fix) under "Photos
+// Update" - kept in a separate column from the original submitter's
+// photo_paths, appending each time so multiple upload rounds all land here.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const formData = await req.formData();
   const photos = formData.getAll("photos") as File[];
   if (photos.length === 0) return NextResponse.json({ error: "No photos provided." }, { status: 400 });
 
   const admin = getSupabaseAdminClient();
-  const { data: current } = await admin.from("complaints").select("photo_paths").eq("id", params.id).maybeSingle();
+  const { data: current } = await admin.from("complaints").select("engineering_photo_paths").eq("id", params.id).maybeSingle();
   if (!current) return NextResponse.json({ error: "Complaint not found." }, { status: 404 });
 
   const newPaths: string[] = [];
@@ -28,8 +29,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (!upErr) newPaths.push(path);
   }
 
-  const photoPaths = [...(current.photo_paths ?? []), ...newPaths];
-  const { data, error } = await admin.from("complaints").update({ photo_paths: photoPaths }).eq("id", params.id).select().single();
+  const photoPaths = [...(current.engineering_photo_paths ?? []), ...newPaths];
+  const { data, error } = await admin.from("complaints").update({ engineering_photo_paths: photoPaths }).eq("id", params.id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ complaint: data });
 }

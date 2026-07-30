@@ -27,6 +27,8 @@ export default function ProductionJobOrderDetailPage() {
   const [productionLogs, setProductionLogs] = useState<ProductionLog[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [savedRowId, setSavedRowId] = useState<string | null>(null);
+  const [detailsSaved, setDetailsSaved] = useState(false);
+  const [showAllUnitsQc, setShowAllUnitsQc] = useState(false);
 
   // A single base serial (e.g. "2604/0100") generates the full sequential
   // range for the JO's quantity on save - see generateSerials(). Editing
@@ -73,7 +75,7 @@ export default function ProductionJobOrderDetailPage() {
     const esc = (value: unknown): string =>
       String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 
-    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(jobOrder.barcode, { width: 110, margin: 1 }) : "";
+    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(jobOrder.barcode, { width: 165, margin: 1 }) : "";
 
     const bomRows = bom.map((b) => `
       <tr>
@@ -86,45 +88,49 @@ export default function ProductionJobOrderDetailPage() {
       ? comments.map((h) => `<div class="comment"><b>${esc(h.changed_by)}</b> <span class="muted">(${esc(fmtDateTime(h.changed_at))})</span>: ${esc(h.comment)}</div>`).join("")
       : `<div class="muted">None.</div>`;
 
-    const qcRows = productionLogs.flatMap((log) =>
-      (log.results.length > 0 ? log.results : [{ parameter: "-", actual: "-" }]).map((r) => `
+    const qcRows = productionLogs.flatMap((log) => {
+      // Print only shows the first unit's readings - full per-unit detail is
+      // available on-screen instead of bloating the printed sheet.
+      const firstUnitResults = log.results.filter((r) => (r.unit ?? 0) === 0);
+      const rows = firstUnitResults.length > 0 ? firstUnitResults : (log.results.length > 0 ? [] : [{ parameter: "-", actual: "-" }]);
+      return rows.map((r) => `
         <tr>
           <td>${esc(fmtDateTime(log.scanned_at))}</td><td>${esc(log.station?.station_name ?? "-")}</td>
           <td>${esc(r.parameter)}</td><td>${esc(r.actual || "-")}</td><td>${esc(log.account?.full_name ?? log.scanned_by_label ?? "-")}</td>
-        </tr>`)
-    ).join("");
+        </tr>`);
+    }).join("");
 
     const title = `Job Order, ${esc(jobOrder.so_no)}`;
     const html = `
       <html><head><meta charset="utf-8"><title>${title}</title>
       <style>
         @page { size: A4 portrait; margin: 14mm; }
-        body { font-family: Arial, sans-serif; font-size: 11px; color: #111; line-height: 1.45; }
+        body { font-family: Arial, sans-serif; font-size: 9.5px; color: #111; line-height: 1.4; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .header h1 { font-size: 18px; margin: 0; flex: 1; text-align: center; }
-        .qr { display: flex; align-items: center; gap: 8px; width: 70px; justify-content: flex-end; }
+        .header h1 { font-size: 16px; margin: 0; flex: 1; text-align: center; }
+        .qr { display: flex; align-items: center; gap: 8px; width: 100px; justify-content: flex-end; }
         .qr img { display: block; }
-        table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
-        table.info td { padding: 4px 6px; vertical-align: top; word-wrap: break-word; }
+        table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; font-size: 9.5px; }
+        table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
         table.info td.label { font-weight: bold; white-space: nowrap; }
-        .section-title { font-weight: bold; text-transform: uppercase; font-size: 10px; margin: 10px 0 4px; border-top: 1px solid #999; padding-top: 6px; }
-        .comment { font-size: 10px; padding: 2px 0; }
+        .section-title { font-weight: bold; text-transform: uppercase; font-size: 9px; margin: 8px 0 4px; border-top: 1px solid #999; padding-top: 5px; }
+        .comment { font-size: 9px; padding: 2px 0; }
         .muted { color: #666; }
         table.bom, table.qc { width: 100%; border-collapse: collapse; margin-top: 4px; table-layout: fixed; }
-        table.bom th, table.bom td, table.qc th, table.qc td { border: 1px solid #999; padding: 5px 7px; text-align: left; font-size: 10px; line-height: 1.4; word-wrap: break-word; white-space: normal; }
+        table.bom th, table.bom td, table.qc th, table.qc td { border: 1px solid #999; padding: 4px 6px; text-align: left; font-size: 9px; line-height: 1.35; word-wrap: break-word; white-space: normal; }
         table.bom th { background: #eee; }
         table.qc th { background: #eee; }
       </style>
       </head><body onload="window.focus();window.print();">
         <div class="header">
-          <div style="width:70px"></div>
+          <div style="width:100px"></div>
           <h1>JOB ORDER</h1>
           <div class="qr">
-            ${qrDataUrl ? `<img src="${qrDataUrl}" width="60" height="60" />` : ""}
+            ${qrDataUrl ? `<img src="${qrDataUrl}" width="90" height="90" />` : ""}
           </div>
         </div>
         <table class="info">
-          <colgroup><col style="width:14%"><col style="width:36%"><col style="width:14%"><col style="width:36%"></colgroup>
+          <colgroup><col style="width:17%"><col style="width:33%"><col style="width:17%"><col style="width:33%"></colgroup>
           <tr><td class="label">Customer Name</td><td>${esc(jobOrder.customer_name)}</td><td class="label">Item Code</td><td>${esc(jobOrder.item_no)}</td></tr>
           <tr><td class="label">SO Number</td><td>${esc(jobOrder.so_no)}</td><td class="label">JO Date</td><td>${esc(fmtDate(jobOrder.created_at))}</td></tr>
           <tr><td class="label">Item Description</td><td>${esc(jobOrder.item_description)}</td><td class="label">Deadline</td><td>${esc(fmtDate(jobOrder.deadline))}</td></tr>
@@ -173,17 +179,8 @@ export default function ProductionJobOrderDetailPage() {
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error || "Failed to save."); return; }
-    setMessage("Saved.");
-    load();
-  }
-
-  async function toggleReadyForProduction() {
-    const res = await fetch(`/api/job-orders/${id}/details`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ readyForProduction: !jobOrder?.ready_for_production }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setMessage(data.error || "Failed to update."); return; }
+    setDetailsSaved(true);
+    setTimeout(() => setDetailsSaved(false), 1800);
     load();
   }
 
@@ -324,7 +321,7 @@ export default function ProductionJobOrderDetailPage() {
           <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>JOB ORDER</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px", whiteSpace: "nowrap" }} onClick={printJobOrder}>Print JO</button>
-            {jobOrder.barcode && <QrImage value={jobOrder.barcode} size={60} />}
+            {jobOrder.barcode && <QrImage value={jobOrder.barcode} size={90} />}
           </div>
         </div>
 
@@ -389,19 +386,16 @@ export default function ProductionJobOrderDetailPage() {
           </div>
         </div>
         {!readOnly && (
-          <button className="btn secondary" style={{ marginTop: 10 }} onClick={saveDetails}>Save Serial Number / Est. Finish Date</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+            <button className="btn secondary" onClick={saveDetails}>Save Serial Number / Est. Finish Date</button>
+            {detailsSaved && <span style={{ color: "var(--good)", fontSize: "0.82rem" }}>✓ Saved</span>}
+          </div>
         )}
       </div>
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ margin: 0 }}>Material BOM</h2>
-          {!readOnly && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8, textTransform: "none", cursor: "pointer", fontWeight: 700, fontSize: "0.85rem" }}>
-              <input type="checkbox" checked={jobOrder.ready_for_production} onChange={toggleReadyForProduction} style={{ width: "auto" }} />
-              Ready for Production
-            </label>
-          )}
         </div>
 
         {bom.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No items yet.</p> : (
@@ -519,26 +513,54 @@ export default function ProductionJobOrderDetailPage() {
 
       <div className="card">
         <h2>QC Parameter</h2>
-        {productionLogs.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No station scans yet.</p> : (
-          <div style={{ overflowX: "auto", marginTop: 10 }}>
-            <table className="data-table">
-              <thead><tr><th>Time</th><th>Station</th><th>Parameter</th><th>Actual</th><th>Checked By</th></tr></thead>
-              <tbody>
-                {productionLogs.flatMap((log) =>
-                  (log.results.length > 0 ? log.results : [{ parameter: "-", actual: "-" }]).map((r, i) => (
-                    <tr key={`${log.id}-${i}`}>
-                      <td>{fmtDateTime(log.scanned_at)}</td>
-                      <td>{log.station?.station_name ?? "-"}</td>
-                      <td>{r.parameter}</td>
-                      <td>{r.actual || "-"}</td>
-                      <td>{log.account?.full_name ?? log.scanned_by_label ?? "-"}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {productionLogs.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No station scans yet.</p> : (() => {
+          const VISIBLE_UNITS = 3;
+          const unitCount = Math.max(1, jobOrder.quantity ?? 1);
+          const units = Array.from({ length: unitCount }, (_, i) => i);
+          const unitLabel = (unit: number) => jobOrder.serial_numbers?.[unit] || `Unit ${unit + 1}`;
+          const rowsForUnit = (unit: number) =>
+            productionLogs.flatMap((log) => {
+              const results = log.results.filter((r) => (r.unit ?? 0) === unit);
+              const rows = results.length > 0 ? results : (log.results.length > 0 ? [] : [{ parameter: "-", actual: "-" }]);
+              return rows.map((r, i) => ({ key: `${log.id}-${unit}-${i}`, log, r }));
+            });
+
+          return (
+            <>
+              {units.slice(0, showAllUnitsQc ? units.length : VISIBLE_UNITS).map((unit) => {
+                const rows = rowsForUnit(unit);
+                return (
+                  <div key={unit} style={{ marginTop: 10 }}>
+                    {unitCount > 1 && <div style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: 6 }}>{unitLabel(unit)}</div>}
+                    <div style={{ overflowX: "auto" }}>
+                      <table className="data-table">
+                        <thead><tr><th>Time</th><th>Station</th><th>Parameter</th><th>Actual</th><th>Checked By</th></tr></thead>
+                        <tbody>
+                          {rows.length === 0 ? (
+                            <tr><td colSpan={5} className="subtle">No station scans yet.</td></tr>
+                          ) : rows.map(({ key, log, r }) => (
+                            <tr key={key}>
+                              <td>{fmtDateTime(log.scanned_at)}</td>
+                              <td>{log.station?.station_name ?? "-"}</td>
+                              <td>{r.parameter}</td>
+                              <td>{r.actual || "-"}</td>
+                              <td>{log.account?.full_name ?? log.scanned_by_label ?? "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+              {units.length > VISIBLE_UNITS && (
+                <button className="btn secondary" style={{ marginTop: 12 }} onClick={() => setShowAllUnitsQc((v) => !v)}>
+                  {showAllUnitsQc ? "Hide" : `Show remaining ${units.length - VISIBLE_UNITS} unit${units.length - VISIBLE_UNITS > 1 ? "s" : ""}`}
+                </button>
+              )}
+            </>
+          );
+        })()}
       </div>
     </>
   );

@@ -40,6 +40,7 @@ export default function SubmittedJobOrders({
     // login exist, this becomes genuine per-user filtering.
     const all: JobOrder[] = data.jobOrders ?? [];
     setJobOrders(all.filter((jo) => {
+      if (jo.costing_done) return false; // moved to "Job Order Finish Costing" instead
       if (by === "Sales Support") return !OTHER_TAGGED_ROLES.includes(jo.sales_support_name);
       return jo.sales_support_name === by;
     }));

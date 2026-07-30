@@ -10,7 +10,7 @@ interface SalesAccount { id: string; full_name: string; }
 type ComplaintType = "indonesia" | "traded";
 
 interface EditDraft {
-  customerName: string; soNo: string; itemDescription: string; quantity: string; problemDescription: string; suggestedAction: string;
+  customerName: string; soNo: string; itemDescription: string; quantity: string; problemDescription: string;
 }
 
 // Module-scope (not defined inside ComplaintsPage's render body) so typing
@@ -61,8 +61,10 @@ function ComplaintTable({
               {meta.label}
             </span>
           </td>
-          <td style={{ minWidth: 160 }}>
-            {isEditing && d ? <input type="text" value={d.suggestedAction} onChange={(e) => setEditDraft({ ...d, suggestedAction: e.target.value })} style={{ fontSize: "0.82rem" }} /> : (c.suggested_action || <span className="subtle">-</span>)}
+          <td>
+            {c.engineering_photo_paths.length === 0 ? <span className="subtle">-</span> : c.engineering_photo_paths.map((p, i) => (
+              <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{c.engineering_photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+            ))}
           </td>
           {editable && (
             <td style={{ whiteSpace: "nowrap" }}>
@@ -79,7 +81,7 @@ function ComplaintTable({
         </tr>
         {editable && logOpenId === c.id && (
           <tr>
-            <td colSpan={9} style={{ background: "var(--panel-muted)" }}>
+            <td colSpan={10} style={{ background: "var(--panel-muted)" }}>
               <div style={{ padding: "8px 2px" }}>
                 <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Updates from Engineering</div>
                 {c.history.length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : c.history.map((h) => (
@@ -115,7 +117,7 @@ function ComplaintTable({
               <div style={{ overflowX: "auto" }}>
                 <table className="data-table">
                   <thead>
-                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th><th></th></tr>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Photos Update</th><th></th></tr>
                   </thead>
                   <tbody>
                     {pageItems.map((c) => renderRow(c, true))}
@@ -137,7 +139,7 @@ function ComplaintTable({
               <div style={{ overflowX: "auto" }}>
                 <table className="data-table">
                   <thead>
-                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Suggested action</th></tr>
+                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Photos Update</th></tr>
                   </thead>
                   <tbody>
                     {historyPaged.pageItems.map((c) => renderRow(c, false))}
@@ -253,7 +255,7 @@ export default function ComplaintsPage() {
     setEditingId(c.id);
     setEditDraft({
       customerName: c.customer_name, soNo: c.so_no, itemDescription: c.item_description,
-      quantity: String(c.quantity), problemDescription: c.problem_description, suggestedAction: c.suggested_action,
+      quantity: String(c.quantity), problemDescription: c.problem_description,
     });
     setLogOpenId(null);
   }
@@ -266,7 +268,7 @@ export default function ComplaintsPage() {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerName: editDraft.customerName, soNo: editDraft.soNo, itemDescription: editDraft.itemDescription,
-          quantity: editDraft.quantity, problemDescription: editDraft.problemDescription, suggestedAction: editDraft.suggestedAction,
+          quantity: editDraft.quantity, problemDescription: editDraft.problemDescription,
         }),
       });
       const data = await res.json().catch(() => ({}));

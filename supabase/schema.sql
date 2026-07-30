@@ -245,7 +245,7 @@ create table if not exists production_logs (
   station_id uuid not null references station_codes(id),
   scanned_by uuid references production_accounts(id), -- null while Production login is bypassed (see CLAUDE.md)
   scanned_by_label text, -- e.g. "Production" - used in place of a real account while login is bypassed
-  results jsonb not null default '[]'::jsonb, -- [{parameter, actual}] - one scan covers every parameter configured for that station
+  results jsonb not null default '[]'::jsonb, -- [{parameter, actual, unit}] - one scan covers every parameter for every unit (unit = 0-based index into quantity/serial_numbers) at that station
   scanned_at timestamptz not null default now()
 );
 
@@ -280,7 +280,11 @@ create table if not exists complaints (
   submitted_by text not null default '', -- sales person name, free text
   created_at timestamptz not null default now(),
   resolved_at timestamptz,
-  archived boolean not null default false
+  archived boolean not null default false,
+  -- Engineering's own photos (e.g. proof of fix) - kept separate from the
+  -- original submitter's photo_paths above, shown under its own "Photos
+  -- Update" column instead of merged into the initial submission's photos.
+  engineering_photo_paths text[] not null default '{}'
 );
 
 -- Engineering's status/progress log (app/engineering) - separate page from

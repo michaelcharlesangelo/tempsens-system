@@ -115,6 +115,10 @@ export interface StationCode {
 export interface ProductionLogResult {
   parameter: string;
   actual: string;
+  // 0-based index into the JO's quantity/serial_numbers - which unit this
+  // reading belongs to. Missing on older records (pre-multi-unit), which
+  // should be treated as unit 0.
+  unit?: number;
 }
 
 export interface ProductionLog {
@@ -261,6 +265,7 @@ export interface Complaint {
   created_at: string;
   resolved_at: string | null;
   archived: boolean;
+  engineering_photo_paths: string[];
   history: ComplaintHistoryEntry[];
 }
 

@@ -289,7 +289,7 @@ function FormPageInner() {
         {justSubmittedFromWarehouse && (
           <div className="warn" style={{ marginTop: 0, marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span>Form submitted for approval.</span>
-            <a href="/jo-input" className="btn secondary" style={{ fontSize: "0.8rem" }}>Go to JO page</a>
+            <a href="/warehouse-manager" className="btn secondary" style={{ fontSize: "0.8rem" }}>Back to Warehouse Manager</a>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -453,13 +453,11 @@ function FormList({
   const [showPending, setShowPending] = useState(true);
   const [showApproved, setShowApproved] = useState(false);
   const [showRejected, setShowRejected] = useState(false);
-  const [showCancelled, setShowCancelled] = useState(false);
 
   const filtered = items.filter((f) => (
     (f.status === "pending_approval" && showPending) ||
     (f.status === "approved" && showApproved) ||
-    (f.status === "rejected" && showRejected) ||
-    (f.status === "cancelled" && showCancelled)
+    (f.status === "rejected" && showRejected)
   ));
 
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(filtered, formMatches);
@@ -475,7 +473,6 @@ function FormList({
           <ToggleSwitch checked={showPending} onChange={setShowPending} label={`Pending (${items.filter((f) => f.status === "pending_approval").length})`} />
           <ToggleSwitch checked={showApproved} onChange={setShowApproved} label={`Approved (${items.filter((f) => f.status === "approved").length})`} color="var(--good)" />
           <ToggleSwitch checked={showRejected} onChange={setShowRejected} label={`Rejected (${items.filter((f) => f.status === "rejected").length})`} color="var(--bad)" />
-          <ToggleSwitch checked={showCancelled} onChange={setShowCancelled} label={`Cancelled (${items.filter((f) => f.status === "cancelled").length})`} />
         </div>
       }
     >
