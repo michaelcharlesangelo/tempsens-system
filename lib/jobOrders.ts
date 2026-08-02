@@ -532,6 +532,7 @@ export interface Shipment {
   awb_bl_file_name: string | null;
   photo_paths: string[];
   submitted_by: string;
+  shipped: boolean;
   arrived: boolean;
   created_at: string;
 }

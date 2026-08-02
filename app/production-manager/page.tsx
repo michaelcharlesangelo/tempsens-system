@@ -14,53 +14,194 @@ function fabricationMatches(f: FabricationItem, term: string): boolean {
   return f.so_no.toLowerCase().includes(term) || f.description.toLowerCase().includes(term) || fmtDate(f.jo_date).includes(term);
 }
 
+const escHtml = (value: unknown): string =>
+  String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+
 // Every fabrication item across every JO (plus standalone ones added via
 // "+New Fabrication JO"), with a Production/Finish toggle filter - same
-// underlying rows as the Fabrication table on a JO's own detail page, this
-// is just the cross-JO view of them.
-function FabricationJoSection({ items, onToggleStatus, togglingId }: {
-  items: FabricationItem[]; onToggleStatus: (item: FabricationItem) => void; togglingId: string | null;
+// underlying rows AND same full feature set (edit, comment, photos, print)
+// as the Fabrication table on a JO's own detail page. Standalone rows have
+// no JO detail page to visit, so this list is the only place to manage them.
+function FabricationJoSection({ items, showProduction, showFinish, onToggleStatus, togglingId, onReload }: {
+  items: FabricationItem[]; showProduction: boolean; showFinish: boolean;
+  onToggleStatus: (item: FabricationItem) => void; togglingId: string | null; onReload: () => void;
 }) {
-  const [showProduction, setShowProduction] = useState(true);
-  const [showFinish, setShowFinish] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ description: "", qty: "", unit: "" });
+  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
+  const [savedRowId, setSavedRowId] = useState<string | null>(null);
 
   const filtered = items.filter((f) => (f.status === "production" && showProduction) || (f.status === "finish" && showFinish));
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(filtered, fabricationMatches);
 
+  function startEdit(row: FabricationItem) {
+    setEditingId(row.id);
+    setEditDraft({ description: row.description, qty: String(row.qty), unit: row.unit });
+  }
+
+  async function saveEdit(rowId: string) {
+    const fd = new FormData();
+    fd.append("description", editDraft.description);
+    fd.append("qty", editDraft.qty);
+    fd.append("unit", editDraft.unit);
+    await fetch(`/api/fabrication/${rowId}`, { method: "PATCH", body: fd });
+    setEditingId(null);
+    onReload();
+  }
+
+  async function saveComment(row: FabricationItem) {
+    const fd = new FormData();
+    fd.append("comment", commentDraft[row.id] ?? row.comment ?? "");
+    await fetch(`/api/fabrication/${row.id}`, { method: "PATCH", body: fd });
+    setSavedRowId(row.id);
+    setTimeout(() => setSavedRowId((cur) => (cur === row.id ? null : cur)), 1800);
+    onReload();
+  }
+
+  async function uploadPhotos(row: FabricationItem, files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const fd = new FormData();
+    Array.from(files).forEach((f) => fd.append("photos", f));
+    await fetch(`/api/fabrication/${row.id}`, { method: "PATCH", body: fd });
+    onReload();
+  }
+
+  async function deleteRow(rowId: string) {
+    if (!confirm("Remove this fabrication item?")) return;
+    await fetch(`/api/fabrication/${rowId}`, { method: "DELETE" });
+    onReload();
+  }
+
+  async function viewPhoto(path: string) {
+    const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+    const data = await res.json();
+    if (data.url) window.open(data.url, "_blank");
+  }
+
+  async function printRow(row: FabricationItem) {
+    const photoUrls = (
+      await Promise.all(
+        row.photo_paths.map(async (p) => {
+          try {
+            const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(p)}`, { cache: "no-store" });
+            const data = await res.json();
+            return typeof data.url === "string" ? data.url : null;
+          } catch {
+            return null;
+          }
+        })
+      )
+    ).filter((u): u is string => !!u);
+
+    const html = `
+      <html><head><meta charset="utf-8"><title>Fabrication JO - ${escHtml(row.so_no || "Standalone")}</title>
+      <style>
+        @page { size: A4 portrait; margin: 15mm; }
+        html, body { height: 100%; }
+        body { font-family: Arial, sans-serif; font-size: 10px; color: #111; line-height: 1.4; }
+        .sheet { max-height: 135mm; overflow: hidden; }
+        h1 { font-size: 14px; text-align: center; margin: 0 0 10px; }
+        table.info { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; }
+        table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
+        table.info td.label { font-weight: bold; white-space: nowrap; width: 22%; }
+        .note-title { font-weight: bold; text-transform: uppercase; font-size: 9px; margin: 6px 0 3px; border-top: 1px solid #999; padding-top: 5px; }
+        .note-box { border: 1px solid #999; height: 60mm; padding: 5px; overflow: hidden; font-size: 9.5px; }
+        .note-photos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; height: 45mm; overflow: hidden; }
+        .note-photos img { height: 100%; width: auto; max-width: 45mm; object-fit: contain; border: 1px solid #ccc; }
+      </style>
+      </head><body onload="window.focus();window.print();">
+        <div class="sheet">
+          <h1>FABRICATION JO</h1>
+          <table class="info">
+            <colgroup><col style="width:12%"><col style="width:38%"><col style="width:12%"><col style="width:38%"></colgroup>
+            <tr><td class="label">SO Number</td><td>${escHtml(row.so_no || "-")}</td><td class="label">JO Date</td><td>${escHtml(fmtDate(row.jo_date))}</td></tr>
+            <tr><td class="label">Item Description</td><td>${escHtml(row.description)}</td><td class="label">Deadline</td><td>${escHtml(row.job_order?.deadline ? fmtDate(row.job_order.deadline) : "-")}</td></tr>
+            <tr><td class="label">Qty</td><td>${escHtml(row.qty)} ${escHtml(row.unit)}</td><td class="label">Drawing Number</td><td>${escHtml(row.job_order?.drawing_number || "-")}</td></tr>
+          </table>
+          <div class="note-title">Note (Production Manager)</div>
+          <div class="note-box">
+            ${row.comment ? escHtml(row.comment) : '<span style="color:#999;">No comment.</span>'}
+            ${photoUrls.length > 0 ? `<div class="note-photos">${photoUrls.map((u) => `<img src="${escHtml(u)}" />`).join("")}</div>` : ""}
+          </div>
+        </div>
+      </body></html>
+    `;
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    window.open(blobUrl, "_blank", "width=850,height=650");
+  }
+
   return (
     <>
-      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 10 }}>
-        <ToggleSwitch checked={showProduction} onChange={setShowProduction} label={`Production (${items.filter((f) => f.status === "production").length})`} />
-        <ToggleSwitch checked={showFinish} onChange={setShowFinish} label={`Finish (${items.filter((f) => f.status === "finish").length})`} color="var(--good)" />
-      </div>
       {totalCount === 0 ? <p className="subtle">Nothing to show for the selected filters.</p> : (
         <>
           <SearchBox value={search} onChange={setSearch} />
           <div style={{ overflowX: "auto" }}>
-            <table className="data-table">
-              <thead><tr><th>JO Date</th><th>SO Number</th><th>Item Description</th><th>Qty</th><th>Unit</th><th>Status</th></tr></thead>
+            <table className="data-table fixed">
+              <colgroup>
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "18%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "18%" }} />
+              </colgroup>
+              <thead><tr><th>JO Date</th><th>SO Number</th><th>Description</th><th>Qty</th><th>Unit</th><th>Finish</th><th>Comment (to Machine Shop)</th><th>Photos</th><th></th></tr></thead>
               <tbody>
                 {pageItems.map((f) => (
                   <tr key={f.id}>
                     <td style={{ whiteSpace: "nowrap" }}>{fmtDate(f.jo_date)}</td>
                     <td>{f.so_no || <span className="subtle">-</span>}</td>
-                    <td><TruncatedText text={f.description} /></td>
-                    <td>{f.qty}</td>
-                    <td>{f.unit}</td>
-                    <td>
-                      <span
-                        className="pill"
-                        style={{
-                          cursor: togglingId === f.id ? "default" : "pointer",
-                          background: f.status === "finish" ? "#dcfce7" : "var(--warn-bg)",
-                          color: f.status === "finish" ? "#15803d" : "var(--warn-text)",
-                        }}
-                        onClick={() => togglingId !== f.id && onToggleStatus(f)}
-                        title="Click to update status"
-                      >
-                        {f.status === "finish" ? "Finish" : "Production"}
-                      </span>
-                    </td>
+                    {editingId === f.id ? (
+                      <>
+                        <td><input type="text" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
+                        <td><input type="number" value={editDraft.qty} onChange={(e) => setEditDraft({ ...editDraft, qty: e.target.value })} style={{ width: 60 }} /></td>
+                        <td><input type="text" value={editDraft.unit} onChange={(e) => setEditDraft({ ...editDraft, unit: e.target.value })} style={{ width: 55 }} /></td>
+                        <td style={{ textAlign: "center" }}>
+                          <input type="checkbox" checked={f.status === "finish"} onChange={() => togglingId !== f.id && onToggleStatus(f)} style={{ width: "auto" }} />
+                        </td>
+                        <td className="subtle">{f.comment || "-"}</td>
+                        <td className="subtle">{f.photo_paths.length} photo(s)</td>
+                        <td><button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => saveEdit(f.id)}>Save</button></td>
+                      </>
+                    ) : (
+                      <>
+                        <td><TruncatedText text={f.description} maxWidth={160} /></td>
+                        <td>{f.qty}</td>
+                        <td>{f.unit}</td>
+                        <td style={{ textAlign: "center" }}>
+                          <input type="checkbox" checked={f.status === "finish"} onChange={() => togglingId !== f.id && onToggleStatus(f)} style={{ width: "auto" }} />
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            <input
+                              type="text"
+                              placeholder="Note for Machine Shop..."
+                              value={commentDraft[f.id] ?? f.comment ?? ""}
+                              onChange={(e) => setCommentDraft((d) => ({ ...d, [f.id]: e.target.value }))}
+                              style={{ fontSize: "0.78rem", padding: "4px 6px" }}
+                            />
+                            <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "4px 6px" }} onClick={() => saveComment(f)}>Save</button>
+                            {savedRowId === f.id && <span style={{ color: "var(--good)", fontSize: "0.72rem", whiteSpace: "nowrap" }}>✓ Saved</span>}
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                            {f.photo_paths.map((p, i) => (
+                              <button key={i} className="btn secondary" style={{ fontSize: "0.68rem", padding: "2px 6px" }} onClick={() => viewPhoto(p)}>Photo{f.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+                            ))}
+                            <input type="file" accept="image/*,application/pdf" multiple style={{ fontSize: "0.68rem", maxWidth: 110 }} onChange={(e) => uploadPhotos(f, e.target.files)} />
+                          </div>
+                        </td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => startEdit(f)}>Edit</button>{" "}
+                          <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => deleteRow(f.id)}>Remove</button>{" "}
+                          <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => printRow(f)}>Print Fabrication JO</button>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -454,6 +595,8 @@ export default function ProductionManagerPage() {
 
   const [fabricationItems, setFabricationItems] = useState<FabricationItem[]>([]);
   const [togglingFabId, setTogglingFabId] = useState<string | null>(null);
+  const [showFabProduction, setShowFabProduction] = useState(true);
+  const [showFabFinish, setShowFabFinish] = useState(false);
   const [showNewFabForm, setShowNewFabForm] = useState(false);
   const [newFabJoDate, setNewFabJoDate] = useState(new Date().toISOString().slice(0, 10));
   const [newFabSoNo, setNewFabSoNo] = useState("");
@@ -605,7 +748,11 @@ export default function ProductionManagerPage() {
         count={fabricationItems.length}
         defaultOpen
         actions={
-          !showNewFabForm && <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => setShowNewFabForm(true)}>+ New Fabrication JO</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+            <ToggleSwitch checked={showFabProduction} onChange={setShowFabProduction} label={`Production (${fabricationItems.filter((f) => f.status === "production").length})`} />
+            <ToggleSwitch checked={showFabFinish} onChange={setShowFabFinish} label={`Finish (${fabricationItems.filter((f) => f.status === "finish").length})`} color="var(--good)" />
+            {!showNewFabForm && <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => setShowNewFabForm(true)}>+ New Fabrication JO</button>}
+          </div>
         }
       >
         {showNewFabForm && (
@@ -624,7 +771,14 @@ export default function ProductionManagerPage() {
           </div>
         )}
         {fabricationItems.length === 0 ? <p className="subtle">Nothing yet.</p> : (
-          <FabricationJoSection items={fabricationItems} onToggleStatus={toggleFabricationStatus} togglingId={togglingFabId} />
+          <FabricationJoSection
+            items={fabricationItems}
+            showProduction={showFabProduction}
+            showFinish={showFabFinish}
+            onToggleStatus={toggleFabricationStatus}
+            togglingId={togglingFabId}
+            onReload={load}
+          />
         )}
       </Collapsible>
 

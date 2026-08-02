@@ -470,9 +470,11 @@ create table if not exists shipments (
   awb_bl_file_name text,
   photo_paths text[] not null default '{}',
   submitted_by text not null default '',
-  -- Ticking Arrived cascades every PO Out row on this shipment to status
-  -- 'arrived' (see /api/shipments/[id] PATCH) - a shipment either hasn't
-  -- landed yet or it has, no separate per-PO confirmation needed.
+  -- Two-step progression, each cascading every PO Out row on this shipment
+  -- at once (see /api/shipments/[id]/shipped and /arrived): Shipped moves
+  -- rows still at 'production' to 'shipment', Arrived moves everything to
+  -- 'arrived' - no separate per-PO confirmation needed either step.
+  shipped boolean not null default false,
   arrived boolean not null default false,
   created_at timestamptz not null default now()
 );

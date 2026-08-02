@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import DateField from "@/app/components/DateField";
 import QrImage from "@/app/components/QrImage";
+import TruncatedText from "@/app/components/TruncatedText";
 import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, FabricationItem, fmtDate, fmtDateTime, generateSerials, formatSerialRange, splitMatch } from "@/lib/jobOrders";
 
 interface CatalogItem { item_no: string; description: string; unit?: string; }
@@ -362,33 +363,61 @@ export default function ProductionJobOrderDetailPage() {
     if (data.url) window.open(data.url, "_blank");
   }
 
-  function printFabricationJo(row: FabricationItem) {
+  async function printFabricationJo(row: FabricationItem) {
     if (!jobOrder) return;
     const esc = (value: unknown): string =>
       String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 
+    // Signed URLs can't be fetched inline inside the template string below
+    // (it has to stay synchronous once we start building it), so resolve
+    // every attached photo's URL up front.
+    const photoUrls = (
+      await Promise.all(
+        row.photo_paths.map(async (p) => {
+          try {
+            const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(p)}`, { cache: "no-store" });
+            const data = await res.json();
+            return typeof data.url === "string" ? data.url : null;
+          } catch {
+            return null;
+          }
+        })
+      )
+    ).filter((u): u is string => !!u);
+
     const html = `
       <html><head><meta charset="utf-8"><title>Fabrication JO - ${esc(jobOrder.so_no)}</title>
       <style>
-        @page { size: A5 landscape; margin: 10mm; }
+        @page { size: A4 portrait; margin: 15mm; }
+        html, body { height: 100%; }
         body { font-family: Arial, sans-serif; font-size: 10px; color: #111; line-height: 1.4; }
+        /* Fixed-height sheet (~half an A4 page) so the printout never spills
+           onto a second physical page, however many photos are attached. */
+        .sheet { max-height: 135mm; overflow: hidden; }
         h1 { font-size: 14px; text-align: center; margin: 0 0 10px; }
-        table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
+        table.info { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; }
         table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
-        table.info td.label { font-weight: bold; white-space: nowrap; width: 32%; }
-        .note-title { font-weight: bold; text-transform: uppercase; font-size: 9px; margin: 8px 0 4px; border-top: 1px solid #999; padding-top: 5px; }
-        .note-box { border: 1px solid #999; height: 130mm; }
+        table.info td.label { font-weight: bold; white-space: nowrap; width: 22%; }
+        .note-title { font-weight: bold; text-transform: uppercase; font-size: 9px; margin: 6px 0 3px; border-top: 1px solid #999; padding-top: 5px; }
+        .note-box { border: 1px solid #999; height: 60mm; padding: 5px; overflow: hidden; font-size: 9.5px; }
+        .note-photos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; height: 45mm; overflow: hidden; }
+        .note-photos img { height: 100%; width: auto; max-width: 45mm; object-fit: contain; border: 1px solid #ccc; }
       </style>
       </head><body onload="window.focus();window.print();">
-        <h1>FABRICATION JO</h1>
-        <table class="info">
-          <colgroup><col style="width:17%"><col style="width:33%"><col style="width:17%"><col style="width:33%"></colgroup>
-          <tr><td class="label">SO Number</td><td>${esc(jobOrder.so_no)}</td><td class="label">JO Date</td><td>${esc(fmtDate(jobOrder.created_at))}</td></tr>
-          <tr><td class="label">Item Description</td><td>${esc(row.description)}</td><td class="label">Deadline</td><td>${esc(fmtDate(jobOrder.deadline))}</td></tr>
-          <tr><td class="label">Qty</td><td>${esc(row.qty)} ${esc(row.unit)}</td><td class="label">Drawing Number</td><td>${esc(jobOrder.drawing_number || "-")}</td></tr>
-        </table>
-        <div class="note-title">Note</div>
-        <div class="note-box"></div>
+        <div class="sheet">
+          <h1>FABRICATION JO</h1>
+          <table class="info">
+            <colgroup><col style="width:12%"><col style="width:38%"><col style="width:12%"><col style="width:38%"></colgroup>
+            <tr><td class="label">SO Number</td><td>${esc(jobOrder.so_no)}</td><td class="label">JO Date</td><td>${esc(fmtDate(jobOrder.created_at))}</td></tr>
+            <tr><td class="label">Item Description</td><td>${esc(row.description)}</td><td class="label">Deadline</td><td>${esc(fmtDate(jobOrder.deadline))}</td></tr>
+            <tr><td class="label">Qty</td><td>${esc(row.qty)} ${esc(row.unit)}</td><td class="label">Drawing Number</td><td>${esc(jobOrder.drawing_number || "-")}</td></tr>
+          </table>
+          <div class="note-title">Note (Production Manager)</div>
+          <div class="note-box">
+            ${row.comment ? esc(row.comment) : '<span style="color:#999;">No comment.</span>'}
+            ${photoUrls.length > 0 ? `<div class="note-photos">${photoUrls.map((u) => `<img src="${esc(u)}" />`).join("")}</div>` : ""}
+          </div>
+        </div>
       </body></html>
     `;
     const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
@@ -658,7 +687,7 @@ export default function ProductionJobOrderDetailPage() {
                       </>
                     ) : (
                       <>
-                        <td>{row.description}</td>
+                        <td><TruncatedText text={row.description} maxWidth={180} /></td>
                         <td>{row.qty}</td>
                         <td>{row.unit}</td>
                         <td style={{ textAlign: "center" }}>

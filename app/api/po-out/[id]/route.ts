@@ -63,11 +63,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // A newly-typed HS Code auto-registers a bare entry (blank description,
-  // 0% BM) so the registry page has something to fill in - never overwrites
-  // an existing entry's description/BM.
+  // whatever BM was typed alongside it here) so the registry page has
+  // something to fill the description in on later - never overwrites an
+  // already-registered code's description/BM.
   if (typeof body.hsCode === "string" && body.hsCode.trim()) {
     await admin.from("hs_codes").upsert(
-      { code: body.hsCode.trim().toUpperCase(), description: "", bm: 0 },
+      { code: body.hsCode.trim().toUpperCase(), description: "", bm: body.bm !== undefined ? Number(body.bm) || 0 : 0 },
       { onConflict: "code", ignoreDuplicates: true }
     );
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import { HsCode } from "@/lib/jobOrders";
@@ -72,6 +73,7 @@ export default function HsCodesPage() {
 
   return (
     <>
+      <p style={{ marginBottom: 10 }}><Link href="/exim" className="subtle">← Back to Exim</Link></p>
       <div className="card">
         <h2>HS Code</h2>
         <p className="subtle" style={{ marginTop: -6, marginBottom: 12 }}>

@@ -145,6 +145,7 @@ export default function EximPage() {
   const [editPhotoFiles, setEditPhotoFiles] = useState<File[]>([]);
   const [hideArrived, setHideArrived] = useState(true);
   const [togglingArrivedId, setTogglingArrivedId] = useState<string | null>(null);
+  const [togglingShippedId, setTogglingShippedId] = useState<string | null>(null);
 
   // ---------------- PO table ----------------
   const [pos, setPos] = useState<PoOut[] | null>(null);
@@ -164,6 +165,8 @@ export default function EximPage() {
   const [fieldsDraft, setFieldsDraft] = useState<FieldsDraft | null>(null);
   const [boxDraft, setBoxDraft] = useState<Record<string, string>>({});
   const [hsCodeDraft, setHsCodeDraft] = useState<Record<string, string>>({});
+  const [bmDraft, setBmDraft] = useState<Record<string, string>>({});
+  const [hsSuggestOpenId, setHsSuggestOpenId] = useState<string | null>(null);
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(RECAP_DEFAULT_HIDDEN);
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
   const columnsMenuRef = useRef<HTMLDivElement>(null);
@@ -354,10 +357,38 @@ export default function EximPage() {
   }
 
   async function saveBoxHsCode(p: PoOut) {
-    await updatePoField(p.id, { box: boxDraft[p.id] ?? p.box, hsCode: hsCodeDraft[p.id] ?? p.hs_code });
+    const code = hsCodeDraft[p.id] ?? p.hs_code;
+    const bm = bmDraft[p.id] ?? String(bmFor(code) ?? "");
+    await updatePoField(p.id, { box: boxDraft[p.id] ?? p.box, hsCode: code, bm });
+  }
+
+  function pickHsSuggestion(p: PoOut, code: HsCode) {
+    setHsCodeDraft((cur) => ({ ...cur, [p.id]: code.code }));
+    setBmDraft((cur) => ({ ...cur, [p.id]: String(code.bm) }));
+    setHsSuggestOpenId(null);
+    updatePoField(p.id, { box: boxDraft[p.id] ?? p.box, hsCode: code.code, bm: code.bm });
+  }
+
+  async function toggleShipped(shipment: Shipment) {
+    if (!shipment.shipped) {
+      if (!confirm(`Mark shipment ${shipment.shipment_number} as Shipped? This moves every PO Out row still at Production on this shipment to Shipment status, and can't be undone.`)) return;
+    }
+    setTogglingShippedId(shipment.id);
+    try {
+      await fetch(`/api/shipments/${shipment.id}/shipped`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shipped: !shipment.shipped, changedBy: currentRole.label }),
+      });
+      await Promise.all([loadShipments(), loadPos()]);
+    } finally {
+      setTogglingShippedId(null);
+    }
   }
 
   async function toggleArrived(shipment: Shipment) {
+    if (!shipment.arrived) {
+      if (!confirm(`Mark shipment ${shipment.shipment_number} as Arrived? This moves every PO Out row on this shipment to Arrived status, and can't be undone.`)) return;
+    }
     setTogglingArrivedId(shipment.id);
     try {
       await fetch(`/api/shipments/${shipment.id}/arrived`, {
@@ -509,7 +540,7 @@ export default function EximPage() {
       {
         key: "via",
         node: (
-          <select value={p.via ?? ""} onChange={(e) => updatePoField(p.id, { via: e.target.value })} style={{ fontSize: "0.8rem" }}>
+          <select value={p.via ?? ""} onChange={(e) => updatePoField(p.id, { via: e.target.value })} style={{ fontSize: "0.8rem", minWidth: 72 }}>
             <option value="">Select...</option>
             <option value="AIR">AIR</option>
             <option value="SEA">SEA</option>
@@ -519,17 +550,10 @@ export default function EximPage() {
       {
         key: "shipment",
         node: (
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <select value={p.shipment} onChange={(e) => updatePoField(p.id, { shipment: e.target.value })} style={{ fontSize: "0.8rem" }}>
-              <option value="">Select...</option>
-              {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
-            </select>
-            {p.shipment && (
-              <button className="btn secondary" style={{ fontSize: "0.68rem", padding: "3px 6px" }} onClick={() => openRecap(p.shipment)}>
-                {recapOpenFor === p.shipment ? "Hide" : "View"}
-              </button>
-            )}
-          </div>
+          <select value={p.shipment} onChange={(e) => updatePoField(p.id, { shipment: e.target.value })} style={{ fontSize: "0.8rem", minWidth: 120 }}>
+            <option value="">Select...</option>
+            {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
+          </select>
         ),
       },
     ];
@@ -621,7 +645,7 @@ export default function EximPage() {
                 <thead>
                   <tr>
                     <th>Shipment No.</th><th>Supplier</th><th>Via</th><th>Incoterms</th><th>Invoice</th>
-                    <th>AWB/BL</th><th>ATD</th><th>ETA JKT</th><th>SPPB</th><th>Delivery</th><th>Files</th><th>Arrived</th><th></th>
+                    <th>AWB/BL</th><th>ATD</th><th>ETA JKT</th><th>SPPB</th><th>Delivery</th><th>Files</th><th>Shipped</th><th>Arrived</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -665,6 +689,13 @@ export default function EximPage() {
                         </td>
                         <td style={{ textAlign: "center" }}>
                           <input
+                            type="checkbox" checked={s.shipped} disabled={togglingShippedId === s.id}
+                            onChange={() => toggleShipped(s)} style={{ width: "auto" }}
+                            title="Ticking this marks every PO Out row still at Production on this shipment as Shipment"
+                          />
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <input
                             type="checkbox" checked={s.arrived} disabled={togglingArrivedId === s.id}
                             onChange={() => toggleArrived(s)} style={{ width: "auto" }}
                             title="Ticking this marks every PO Out row on this shipment as Arrived"
@@ -677,7 +708,16 @@ export default function EximPage() {
                               <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => deleteShipment(s.id)}>Delete</button>
                             </>
                           ) : (
-                            <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startShipmentEdit(s)}>Edit</button>
+                            <>
+                              {s.shipment_number && (
+                                <>
+                                  <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => openRecap(s.shipment_number)}>
+                                    {recapOpenFor === s.shipment_number ? "Hide Recap" : "Recap"}
+                                  </button>{" "}
+                                </>
+                              )}
+                              <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startShipmentEdit(s)}>Edit</button>
+                            </>
                           )}
                         </td>
                       </tr>
@@ -687,6 +727,163 @@ export default function EximPage() {
               </table>
             </div>
             <Pager page={shipmentsPaged.page} totalPages={shipmentsPaged.totalPages} totalCount={shipmentsPaged.totalCount} onChange={shipmentsPaged.setPage} />
+
+            {recapOpenFor && (() => {
+              const items = (pos ?? []).filter((p) => p.shipment === recapOpenFor);
+              const totalSum = items.reduce((n, p) => n + Number(p.total_price || 0), 0);
+              return (
+                <div className="card" style={{ marginTop: 14, background: "var(--panel-muted)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                    <h3 style={{ margin: 0 }}>Shipment Recap — {recapOpenFor}</h3>
+                    <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => togglePackingList(recapOpenFor)}>
+                      {packingListOpen ? "Hide Packing List" : "Packing List"}
+                    </button>
+                  </div>
+                  <div style={{ overflowX: "auto", marginTop: 10 }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr><th>PO Number</th><th>Item Code</th><th>Customer Name</th><th>Item Description</th><th>Qty</th><th>Total Price</th><th>Box</th><th>HS Code</th><th>BM (%)</th></tr>
+                      </thead>
+                      <tbody>
+                        {items.map((p) => {
+                          const bm = bmFor(hsCodeDraft[p.id] ?? p.hs_code);
+                          const term = (hsCodeDraft[p.id] ?? p.hs_code ?? "").trim().toUpperCase();
+                          const suggestions = hsCodes.filter((h) => (term ? h.code.includes(term) : true));
+                          return (
+                            <tr key={p.id}>
+                              <td>{p.po_number}</td>
+                              <td>{p.item_code}</td>
+                              <td>{p.customer_name}</td>
+                              <td><TruncatedText text={p.item_description} /></td>
+                              <td>{p.qty}</td>
+                              <td>{CURRENCY_SYMBOLS[p.unit_price_currency]} {Number(p.total_price).toLocaleString("id-ID")}</td>
+                              <td>
+                                <input
+                                  type="text" value={boxDraft[p.id] ?? p.box} style={{ fontSize: "0.8rem", width: 70 }}
+                                  onChange={(e) => setBoxDraft((cur) => ({ ...cur, [p.id]: e.target.value }))}
+                                  onBlur={() => saveBoxHsCode(p)}
+                                />
+                              </td>
+                              <td style={{ position: "relative" }}>
+                                <input
+                                  type="text" value={hsCodeDraft[p.id] ?? p.hs_code} style={{ fontSize: "0.8rem", width: 90 }}
+                                  onChange={(e) => { setHsCodeDraft((cur) => ({ ...cur, [p.id]: e.target.value.toUpperCase() })); setHsSuggestOpenId(p.id); }}
+                                  onFocus={() => setHsSuggestOpenId(p.id)}
+                                  onBlur={() => { setTimeout(() => setHsSuggestOpenId((cur) => (cur === p.id ? null : cur)), 150); saveBoxHsCode(p); }}
+                                  placeholder="Not registered? type it"
+                                />
+                                {hsSuggestOpenId === p.id && suggestions.length > 0 && (
+                                  <div
+                                    style={{
+                                      position: "absolute", zIndex: 20, top: "100%", left: 0, marginTop: 2, minWidth: 200,
+                                      background: "var(--panel, #fff)", border: "1px solid var(--border)", borderRadius: 6,
+                                      boxShadow: "0 4px 12px rgba(0,0,0,0.12)", maxHeight: 160, overflowY: "auto",
+                                    }}
+                                  >
+                                    {suggestions.slice(0, 8).map((h) => (
+                                      <div
+                                        key={h.id} onMouseDown={() => pickHsSuggestion(p, h)}
+                                        style={{ padding: "6px 8px", cursor: "pointer", fontSize: "0.78rem", borderBottom: "1px solid var(--panel-muted)" }}
+                                      >
+                                        <b>{h.code}</b> — {h.description || <span className="subtle">no description yet</span>} ({h.bm}%)
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                              <td>
+                                <input
+                                  type="number" value={bmDraft[p.id] ?? (bm !== null ? String(bm) : "")} style={{ fontSize: "0.8rem", width: 60 }}
+                                  onChange={(e) => setBmDraft((cur) => ({ ...cur, [p.id]: e.target.value }))}
+                                  onBlur={() => saveBoxHsCode(p)}
+                                  placeholder="Not registered? type it"
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ fontWeight: 700 }}>
+                          <td colSpan={5} style={{ textAlign: "right" }}>Total</td>
+                          <td>Rp {totalSum.toLocaleString("id-ID")}</td>
+                          <td colSpan={3}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {packingListOpen && (
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                      <div className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase", marginBottom: 8 }}>Packing List</div>
+                      {packingBoxes === null ? <p className="subtle">Loading...</p> : (
+                        <div style={{ overflowX: "auto" }}>
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th>Box No.</th><th>Length (cm)</th><th>Width (cm)</th><th>Height (cm)</th><th>M3</th>
+                                <th>Gross Weight (kg)</th><th>Net Weight (kg)</th><th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {packingBoxes.map((box) => {
+                                const isEditing = editingBoxId === box.id;
+                                const d = editBoxDraft;
+                                const m3 = isEditing
+                                  ? m3For(Number(d.lengthCm) || 0, Number(d.widthCm) || 0, Number(d.heightCm) || 0)
+                                  : m3For(box.length_cm, box.width_cm, box.height_cm);
+                                return (
+                                  <tr key={box.id}>
+                                    <td>{isEditing ? <input type="text" value={d.boxNo} onChange={(e) => setEditBoxDraft({ ...d, boxNo: e.target.value })} style={{ width: 70 }} /> : box.box_no}</td>
+                                    <td>{isEditing ? <input type="number" value={d.lengthCm} onChange={(e) => setEditBoxDraft({ ...d, lengthCm: e.target.value })} style={{ width: 70 }} /> : box.length_cm}</td>
+                                    <td>{isEditing ? <input type="number" value={d.widthCm} onChange={(e) => setEditBoxDraft({ ...d, widthCm: e.target.value })} style={{ width: 70 }} /> : box.width_cm}</td>
+                                    <td>{isEditing ? <input type="number" value={d.heightCm} onChange={(e) => setEditBoxDraft({ ...d, heightCm: e.target.value })} style={{ width: 70 }} /> : box.height_cm}</td>
+                                    <td>{m3.toFixed(4)}</td>
+                                    <td>{isEditing ? <input type="number" value={d.grossWeightKg} onChange={(e) => setEditBoxDraft({ ...d, grossWeightKg: e.target.value })} style={{ width: 80 }} /> : box.gross_weight_kg}</td>
+                                    <td>{isEditing ? <input type="number" value={d.netWeightKg} onChange={(e) => setEditBoxDraft({ ...d, netWeightKg: e.target.value })} style={{ width: 80 }} /> : box.net_weight_kg}</td>
+                                    <td style={{ whiteSpace: "nowrap" }}>
+                                      {isEditing ? (
+                                        <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveEditBox(recapOpenFor, box.id)}>Save</button>
+                                      ) : (
+                                        <>
+                                          <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startEditBox(box)}>Edit</button>{" "}
+                                          <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => deleteBox(recapOpenFor, box.id)}>Delete</button>
+                                        </>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              <tr>
+                                <td><input type="text" value={newBoxDraft.boxNo} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, boxNo: e.target.value })} placeholder="Box No." style={{ width: 70 }} /></td>
+                                <td><input type="number" value={newBoxDraft.lengthCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, lengthCm: e.target.value })} style={{ width: 70 }} /></td>
+                                <td><input type="number" value={newBoxDraft.widthCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, widthCm: e.target.value })} style={{ width: 70 }} /></td>
+                                <td><input type="number" value={newBoxDraft.heightCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, heightCm: e.target.value })} style={{ width: 70 }} /></td>
+                                <td className="subtle">{m3For(Number(newBoxDraft.lengthCm) || 0, Number(newBoxDraft.widthCm) || 0, Number(newBoxDraft.heightCm) || 0).toFixed(4)}</td>
+                                <td><input type="number" value={newBoxDraft.grossWeightKg} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, grossWeightKg: e.target.value })} style={{ width: 80 }} /></td>
+                                <td><input type="number" value={newBoxDraft.netWeightKg} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, netWeightKg: e.target.value })} style={{ width: 80 }} /></td>
+                                <td>
+                                  <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} disabled={savingBox} onClick={() => addPackingBox(recapOpenFor)}>+ Add</button>
+                                </td>
+                              </tr>
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ fontWeight: 700 }}>
+                                <td colSpan={4} style={{ textAlign: "right" }}>Sum</td>
+                                <td>{packingBoxes.reduce((n, b) => n + m3For(b.length_cm, b.width_cm, b.height_cm), 0).toFixed(4)}</td>
+                                <td>{packingBoxes.reduce((n, b) => n + Number(b.gross_weight_kg || 0), 0).toLocaleString("id-ID")}</td>
+                                <td>{packingBoxes.reduce((n, b) => n + Number(b.net_weight_kg || 0), 0).toLocaleString("id-ID")}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
       </Collapsible>
@@ -821,134 +1018,6 @@ export default function EximPage() {
               </table>
             </div>
             <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
-
-            {recapOpenFor && (() => {
-              const items = (pos ?? []).filter((p) => p.shipment === recapOpenFor);
-              const totalSum = items.reduce((n, p) => n + Number(p.total_price || 0), 0);
-              return (
-                <div className="card" style={{ marginTop: 14, background: "var(--panel-muted)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-                    <h3 style={{ margin: 0 }}>Shipment Recap — {recapOpenFor}</h3>
-                    <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => togglePackingList(recapOpenFor)}>
-                      {packingListOpen ? "Hide Packing List" : "Packing List"}
-                    </button>
-                  </div>
-                  <div style={{ overflowX: "auto", marginTop: 10 }}>
-                    <table className="data-table">
-                      <thead>
-                        <tr><th>PO Number</th><th>Item Code</th><th>Customer Name</th><th>Item Description</th><th>Qty</th><th>Total Price</th><th>Box</th><th>HS Code</th><th>BM</th></tr>
-                      </thead>
-                      <tbody>
-                        {items.map((p) => {
-                          const bm = bmFor(hsCodeDraft[p.id] ?? p.hs_code);
-                          return (
-                            <tr key={p.id}>
-                              <td>{p.po_number}</td>
-                              <td>{p.item_code}</td>
-                              <td>{p.customer_name}</td>
-                              <td><TruncatedText text={p.item_description} /></td>
-                              <td>{p.qty}</td>
-                              <td>{CURRENCY_SYMBOLS[p.unit_price_currency]} {Number(p.total_price).toLocaleString("id-ID")}</td>
-                              <td>
-                                <input
-                                  type="text" value={boxDraft[p.id] ?? p.box} style={{ fontSize: "0.8rem", width: 70 }}
-                                  onChange={(e) => setBoxDraft((cur) => ({ ...cur, [p.id]: e.target.value }))}
-                                  onBlur={() => saveBoxHsCode(p)}
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  type="text" value={hsCodeDraft[p.id] ?? p.hs_code} style={{ fontSize: "0.8rem", width: 90 }}
-                                  onChange={(e) => setHsCodeDraft((cur) => ({ ...cur, [p.id]: e.target.value.toUpperCase() }))}
-                                  onBlur={() => saveBoxHsCode(p)}
-                                />
-                              </td>
-                              <td>{bm !== null ? `${bm}%` : <span className="subtle">-</span>}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ fontWeight: 700 }}>
-                          <td colSpan={5} style={{ textAlign: "right" }}>Total</td>
-                          <td>Rp {totalSum.toLocaleString("id-ID")}</td>
-                          <td colSpan={3}></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-
-                  {packingListOpen && (
-                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-                      <div className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase", marginBottom: 8 }}>Packing List</div>
-                      {packingBoxes === null ? <p className="subtle">Loading...</p> : (
-                        <div style={{ overflowX: "auto" }}>
-                          <table className="data-table">
-                            <thead>
-                              <tr>
-                                <th>Box No.</th><th>Length (cm)</th><th>Width (cm)</th><th>Height (cm)</th><th>M3</th>
-                                <th>Gross Weight (kg)</th><th>Net Weight (kg)</th><th></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {packingBoxes.map((box) => {
-                                const isEditing = editingBoxId === box.id;
-                                const d = editBoxDraft;
-                                const m3 = isEditing
-                                  ? m3For(Number(d.lengthCm) || 0, Number(d.widthCm) || 0, Number(d.heightCm) || 0)
-                                  : m3For(box.length_cm, box.width_cm, box.height_cm);
-                                return (
-                                  <tr key={box.id}>
-                                    <td>{isEditing ? <input type="text" value={d.boxNo} onChange={(e) => setEditBoxDraft({ ...d, boxNo: e.target.value })} style={{ width: 70 }} /> : box.box_no}</td>
-                                    <td>{isEditing ? <input type="number" value={d.lengthCm} onChange={(e) => setEditBoxDraft({ ...d, lengthCm: e.target.value })} style={{ width: 70 }} /> : box.length_cm}</td>
-                                    <td>{isEditing ? <input type="number" value={d.widthCm} onChange={(e) => setEditBoxDraft({ ...d, widthCm: e.target.value })} style={{ width: 70 }} /> : box.width_cm}</td>
-                                    <td>{isEditing ? <input type="number" value={d.heightCm} onChange={(e) => setEditBoxDraft({ ...d, heightCm: e.target.value })} style={{ width: 70 }} /> : box.height_cm}</td>
-                                    <td>{m3.toFixed(4)}</td>
-                                    <td>{isEditing ? <input type="number" value={d.grossWeightKg} onChange={(e) => setEditBoxDraft({ ...d, grossWeightKg: e.target.value })} style={{ width: 80 }} /> : box.gross_weight_kg}</td>
-                                    <td>{isEditing ? <input type="number" value={d.netWeightKg} onChange={(e) => setEditBoxDraft({ ...d, netWeightKg: e.target.value })} style={{ width: 80 }} /> : box.net_weight_kg}</td>
-                                    <td style={{ whiteSpace: "nowrap" }}>
-                                      {isEditing ? (
-                                        <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveEditBox(recapOpenFor, box.id)}>Save</button>
-                                      ) : (
-                                        <>
-                                          <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startEditBox(box)}>Edit</button>{" "}
-                                          <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => deleteBox(recapOpenFor, box.id)}>Delete</button>
-                                        </>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                              <tr>
-                                <td><input type="text" value={newBoxDraft.boxNo} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, boxNo: e.target.value })} placeholder="Box No." style={{ width: 70 }} /></td>
-                                <td><input type="number" value={newBoxDraft.lengthCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, lengthCm: e.target.value })} style={{ width: 70 }} /></td>
-                                <td><input type="number" value={newBoxDraft.widthCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, widthCm: e.target.value })} style={{ width: 70 }} /></td>
-                                <td><input type="number" value={newBoxDraft.heightCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, heightCm: e.target.value })} style={{ width: 70 }} /></td>
-                                <td className="subtle">{m3For(Number(newBoxDraft.lengthCm) || 0, Number(newBoxDraft.widthCm) || 0, Number(newBoxDraft.heightCm) || 0).toFixed(4)}</td>
-                                <td><input type="number" value={newBoxDraft.grossWeightKg} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, grossWeightKg: e.target.value })} style={{ width: 80 }} /></td>
-                                <td><input type="number" value={newBoxDraft.netWeightKg} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, netWeightKg: e.target.value })} style={{ width: 80 }} /></td>
-                                <td>
-                                  <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} disabled={savingBox} onClick={() => addPackingBox(recapOpenFor)}>+ Add</button>
-                                </td>
-                              </tr>
-                            </tbody>
-                            <tfoot>
-                              <tr style={{ fontWeight: 700 }}>
-                                <td colSpan={4} style={{ textAlign: "right" }}>Sum</td>
-                                <td>{packingBoxes.reduce((n, b) => n + m3For(b.length_cm, b.width_cm, b.height_cm), 0).toFixed(4)}</td>
-                                <td>{packingBoxes.reduce((n, b) => n + Number(b.gross_weight_kg || 0), 0).toLocaleString("id-ID")}</td>
-                                <td>{packingBoxes.reduce((n, b) => n + Number(b.net_weight_kg || 0), 0).toLocaleString("id-ID")}</td>
-                                <td></td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
           </>
         )}
       </Collapsible>
