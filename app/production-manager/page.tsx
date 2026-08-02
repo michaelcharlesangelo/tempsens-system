@@ -3,10 +3,74 @@
 import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Collapsible from "@/app/components/Collapsible";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
+import DateField from "@/app/components/DateField";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
-import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime, formatSerialRange } from "@/lib/jobOrders";
+import { JobOrder, JobOrderHistoryEntry, FabricationItem, joMatchesSearch, fmtDate, fmtDateTime, formatSerialRange } from "@/lib/jobOrders";
 import { printFileUrl } from "@/lib/printFile";
+
+function fabricationMatches(f: FabricationItem, term: string): boolean {
+  return f.so_no.toLowerCase().includes(term) || f.description.toLowerCase().includes(term) || fmtDate(f.jo_date).includes(term);
+}
+
+// Every fabrication item across every JO (plus standalone ones added via
+// "+New Fabrication JO"), with a Production/Finish toggle filter - same
+// underlying rows as the Fabrication table on a JO's own detail page, this
+// is just the cross-JO view of them.
+function FabricationJoSection({ items, onToggleStatus, togglingId }: {
+  items: FabricationItem[]; onToggleStatus: (item: FabricationItem) => void; togglingId: string | null;
+}) {
+  const [showProduction, setShowProduction] = useState(true);
+  const [showFinish, setShowFinish] = useState(false);
+
+  const filtered = items.filter((f) => (f.status === "production" && showProduction) || (f.status === "finish" && showFinish));
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(filtered, fabricationMatches);
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 10 }}>
+        <ToggleSwitch checked={showProduction} onChange={setShowProduction} label={`Production (${items.filter((f) => f.status === "production").length})`} />
+        <ToggleSwitch checked={showFinish} onChange={setShowFinish} label={`Finish (${items.filter((f) => f.status === "finish").length})`} color="var(--good)" />
+      </div>
+      {totalCount === 0 ? <p className="subtle">Nothing to show for the selected filters.</p> : (
+        <>
+          <SearchBox value={search} onChange={setSearch} />
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table">
+              <thead><tr><th>JO Date</th><th>SO Number</th><th>Item Description</th><th>Qty</th><th>Unit</th><th>Status</th></tr></thead>
+              <tbody>
+                {pageItems.map((f) => (
+                  <tr key={f.id}>
+                    <td style={{ whiteSpace: "nowrap" }}>{fmtDate(f.jo_date)}</td>
+                    <td>{f.so_no || <span className="subtle">-</span>}</td>
+                    <td>{f.description}</td>
+                    <td>{f.qty}</td>
+                    <td>{f.unit}</td>
+                    <td>
+                      <span
+                        className="pill"
+                        style={{
+                          cursor: togglingId === f.id ? "default" : "pointer",
+                          background: f.status === "finish" ? "#dcfce7" : "var(--warn-bg)",
+                          color: f.status === "finish" ? "#15803d" : "var(--warn-text)",
+                        }}
+                        onClick={() => togglingId !== f.id && onToggleStatus(f)}
+                        title="Click to update status"
+                      >
+                        {f.status === "finish" ? "Finish" : "Production"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+        </>
+      )}
+    </>
+  );
+}
 
 type AllJoSortCol = "jo_date" | "so_no" | "customer_name" | "item_no" | "serial_number";
 
@@ -386,14 +450,25 @@ export default function ProductionManagerPage() {
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
 
+  const [fabricationItems, setFabricationItems] = useState<FabricationItem[]>([]);
+  const [togglingFabId, setTogglingFabId] = useState<string | null>(null);
+  const [showNewFabForm, setShowNewFabForm] = useState(false);
+  const [newFabJoDate, setNewFabJoDate] = useState(new Date().toISOString().slice(0, 10));
+  const [newFabSoNo, setNewFabSoNo] = useState("");
+  const [newFabDescription, setNewFabDescription] = useState("");
+  const [newFabQty, setNewFabQty] = useState("1");
+  const [newFabUnit, setNewFabUnit] = useState("pcs");
+  const [savingNewFab, setSavingNewFab] = useState(false);
+
   async function load() {
-    const [approvedRes, ackRes, inProgressRes, qcRes, completedRes, allRes] = await Promise.all([
+    const [approvedRes, ackRes, inProgressRes, qcRes, completedRes, allRes, fabRes] = await Promise.all([
       fetch("/api/job-orders?status=approved&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=acknowledged&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=in_progress&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=qc&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?status=completed&tab=production-manager", { cache: "no-store" }),
       fetch("/api/job-orders?tab=production-manager", { cache: "no-store" }),
+      fetch("/api/fabrication", { cache: "no-store" }),
     ]);
     const approved: JobOrder[] = (await approvedRes.json()).jobOrders ?? [];
     const acknowledged: JobOrder[] = (await ackRes.json()).jobOrders ?? [];
@@ -405,6 +480,7 @@ export default function ProductionManagerPage() {
     setInProduction([...approved, ...acknowledged, ...inProgress, ...qc]);
     setFinishedProduction((await completedRes.json()).jobOrders ?? []);
     setAllJobOrders((await allRes.json()).jobOrders ?? []);
+    setFabricationItems((await fabRes.json()).items ?? []);
   }
 
   useEffect(() => { load(); }, []);
@@ -469,6 +545,41 @@ export default function ProductionManagerPage() {
     }
   }
 
+  async function toggleFabricationStatus(item: FabricationItem) {
+    setTogglingFabId(item.id);
+    try {
+      const fd = new FormData();
+      fd.append("status", item.status === "finish" ? "production" : "finish");
+      await fetch(`/api/fabrication/${item.id}`, { method: "PATCH", body: fd });
+      load();
+    } finally {
+      setTogglingFabId(null);
+    }
+  }
+
+  function resetNewFabForm() {
+    setShowNewFabForm(false);
+    setNewFabJoDate(new Date().toISOString().slice(0, 10));
+    setNewFabSoNo(""); setNewFabDescription(""); setNewFabQty("1"); setNewFabUnit("pcs");
+  }
+
+  async function submitNewFabrication() {
+    if (!newFabDescription.trim()) return;
+    setSavingNewFab(true);
+    try {
+      const res = await fetch("/api/fabrication", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ joDate: newFabJoDate, soNo: newFabSoNo, description: newFabDescription, qty: newFabQty, unit: newFabUnit }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMessage(data.error || "Failed to add fabrication JO."); return; }
+      resetNewFabForm();
+      load();
+    } finally {
+      setSavingNewFab(false);
+    }
+  }
+
   const sharedProps = {
     historyOpenId, setHistoryOpenId, viewDrawing, printDrawing, acking, acknowledge, finishing, onFinish: finishProduction,
     commentDraft, setCommentDraft, savingCommentId, onAddComment: addComment,
@@ -485,6 +596,33 @@ export default function ProductionManagerPage() {
         actions={inProduction.some((jo) => jo.status === "approved") && <span className="subtle" style={{ fontWeight: 700, textTransform: "uppercase", fontSize: "0.72rem", letterSpacing: "0.03em" }}>Action Required</span>}
       >
         {inProduction.length === 0 ? <p className="subtle">Nothing in production right now.</p> : <PagedJoSection items={inProduction} {...sharedProps} />}
+      </Collapsible>
+
+      <Collapsible
+        title="Fabrication Job Order"
+        count={fabricationItems.length}
+        actions={
+          !showNewFabForm && <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => setShowNewFabForm(true)}>+ New Fabrication JO</button>
+        }
+      >
+        {showNewFabForm && (
+          <div className="card" style={{ background: "var(--panel-muted)", marginBottom: 14 }}>
+            <div className="grid" style={{ gridTemplateColumns: "1fr 1fr 2fr 0.6fr 0.6fr" }}>
+              <div className="field"><label>JO Date</label><DateField value={newFabJoDate} onChange={setNewFabJoDate} /></div>
+              <div className="field"><label>SO Number</label><input type="text" value={newFabSoNo} onChange={(e) => setNewFabSoNo(e.target.value.toUpperCase())} /></div>
+              <div className="field"><label>Item Description</label><input type="text" value={newFabDescription} onChange={(e) => setNewFabDescription(e.target.value)} /></div>
+              <div className="field"><label>Qty</label><input type="number" value={newFabQty} onChange={(e) => setNewFabQty(e.target.value)} /></div>
+              <div className="field"><label>Unit</label><input type="text" value={newFabUnit} onChange={(e) => setNewFabUnit(e.target.value)} /></div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button className="btn" onClick={submitNewFabrication} disabled={savingNewFab || !newFabDescription.trim()}>{savingNewFab ? "Saving..." : "Submit"}</button>
+              <button className="btn secondary" onClick={resetNewFabForm}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {fabricationItems.length === 0 ? <p className="subtle">Nothing yet.</p> : (
+          <FabricationJoSection items={fabricationItems} onToggleStatus={toggleFabricationStatus} togglingId={togglingFabId} />
+        )}
       </Collapsible>
 
       <Collapsible title="Finished Production" count={finishedProduction.length}>

@@ -404,6 +404,9 @@ create table if not exists po_out (
   oc text not null default '', -- Order Confirmation reference
   origin text not null default '', -- country/port of origin
   shipment text not null default '', -- free-text shipment number tie-in to the Shipment Plan table
+  via text check (via in ('AIR','SEA')),
+  box text not null default '', -- which packing box(es) this line item was packed into
+  hs_code text not null default '', -- free-text, matched against hs_codes.code - BM% is looked up from there, not stored here
   submitted_by text not null default '',
   created_at timestamptz not null default now()
 );
@@ -467,16 +470,84 @@ create table if not exists shipments (
   awb_bl_file_name text,
   photo_paths text[] not null default '{}',
   submitted_by text not null default '',
+  -- Ticking Arrived cascades every PO Out row on this shipment to status
+  -- 'arrived' (see /api/shipments/[id] PATCH) - a shipment either hasn't
+  -- landed yet or it has, no separate per-PO confirmation needed.
+  arrived boolean not null default false,
   created_at timestamptz not null default now()
 );
 
 alter table shipments enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- HS Code registry (app/hs-codes) - code + description + BM (import duty %).
+-- A code typed directly into a PO Out row's HS Code cell auto-creates a bare
+-- entry here (blank description, BM 0) via upsert so the recap table always
+-- has something to look up against; the registry page is where the
+-- description/BM actually get filled in afterward.
+-- ---------------------------------------------------------------------------
+create table if not exists hs_codes (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  description text not null default '',
+  bm numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table hs_codes enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Packing list boxes for a shipment (app/exim shipment recap) - m3 is
+-- computed client-side from length*width*height/1,000,000 and stored
+-- alongside so it doesn't need recomputing on every read.
+-- ---------------------------------------------------------------------------
+create table if not exists shipment_packing_boxes (
+  id uuid primary key default gen_random_uuid(),
+  shipment_id uuid not null references shipments(id) on delete cascade,
+  box_no text not null default '',
+  length_cm numeric not null default 0,
+  width_cm numeric not null default 0,
+  height_cm numeric not null default 0,
+  gross_weight_kg numeric not null default 0,
+  net_weight_kg numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table shipment_packing_boxes enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Fabrication items (app/production-manager) - a lighter-weight parallel
+-- workflow to the main BOM: pieces sent to the machine shop. job_order_id is
+-- nullable - rows added from inside a JO's detail page (Fabrication table
+-- under Material BOM) inherit jo_date/so_no from that JO; rows added via the
+-- top-level "+New Fabrication JO" button on the list page are typed in
+-- manually and stand alone. Both surface in the same top-level Fabrication
+-- Job Order table - status flips 'production' -> 'finish' via the same
+-- Finish tickbox from either place.
+-- ---------------------------------------------------------------------------
+create table if not exists fabrication_items (
+  id uuid primary key default gen_random_uuid(),
+  job_order_id uuid references job_orders(id) on delete cascade,
+  jo_date date not null default current_date,
+  so_no text not null default '',
+  description text not null default '',
+  qty numeric not null default 0,
+  unit text not null default 'pcs',
+  status text not null default 'production' check (status in ('production','finish')),
+  comment text not null default '', -- note to Machine Shop
+  photo_paths text[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+alter table fabrication_items enable row level security;
 
 create index if not exists idx_job_orders_status on job_orders(status);
 create index if not exists idx_job_order_bom_job on job_order_bom(job_order_id);
 create index if not exists idx_production_logs_job on production_logs(job_order_id);
 create index if not exists idx_qc_checks_job on qc_checks(job_order_id);
 create index if not exists idx_complaints_traded on complaints(is_traded);
+create index if not exists idx_fabrication_items_job on fabrication_items(job_order_id);
+create index if not exists idx_shipment_packing_boxes_shipment on shipment_packing_boxes(shipment_id);
 
 alter table positions enable row level security;
 alter table production_accounts enable row level security;

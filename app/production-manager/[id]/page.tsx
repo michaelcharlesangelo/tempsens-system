@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import DateField from "@/app/components/DateField";
 import QrImage from "@/app/components/QrImage";
-import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, fmtDate, fmtDateTime, generateSerials, formatSerialRange, splitMatch } from "@/lib/jobOrders";
+import { JobOrder, BomItem, JobOrderHistoryEntry, ProductionLog, FabricationItem, fmtDate, fmtDateTime, generateSerials, formatSerialRange, splitMatch } from "@/lib/jobOrders";
 
 interface CatalogItem { item_no: string; description: string; unit?: string; }
 
@@ -48,6 +48,17 @@ export default function ProductionJobOrderDetailPage() {
   const [editDraft, setEditDraft] = useState<{ itemNo: string; description: string; qty: string; unit: string }>({ itemNo: "", description: "", qty: "", unit: "" });
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
 
+  // ---------------- Fabrication ----------------
+  const [fabricationItems, setFabricationItems] = useState<FabricationItem[]>([]);
+  const [newFabDescription, setNewFabDescription] = useState("");
+  const [newFabQty, setNewFabQty] = useState("1");
+  const [newFabUnit, setNewFabUnit] = useState("pcs");
+  const [savingFabRow, setSavingFabRow] = useState(false);
+  const [editingFabRowId, setEditingFabRowId] = useState<string | null>(null);
+  const [editFabDraft, setEditFabDraft] = useState<{ description: string; qty: string; unit: string }>({ description: "", qty: "", unit: "" });
+  const [fabCommentDraft, setFabCommentDraft] = useState<Record<string, string>>({});
+  const [savedFabRowId, setSavedFabRowId] = useState<string | null>(null);
+
   async function load() {
     const res = await fetch(`/api/job-orders/${id}?tab=production-manager`, { cache: "no-store" });
     const data = await res.json();
@@ -60,6 +71,10 @@ export default function ProductionJobOrderDetailPage() {
     setProductionLogs(data.productionLogs ?? []);
     setBaseSerial(data.jobOrder?.serial_numbers?.[0] ?? "");
     setFinishDate(data.jobOrder?.finish_date ? data.jobOrder.finish_date.slice(0, 10) : "");
+
+    const fabRes = await fetch(`/api/fabrication?jobOrderId=${id}`, { cache: "no-store" });
+    const fabData = await fabRes.json();
+    setFabricationItems(fabData.items ?? []);
   }
 
   useEffect(() => { if (id) load(); }, [id]);
@@ -277,6 +292,107 @@ export default function ProductionJobOrderDetailPage() {
     if (!confirm("Remove this BOM item?")) return;
     await fetch(`/api/job-orders/${id}/bom/${rowId}`, { method: "DELETE" });
     load();
+  }
+
+  // ---------------- Fabrication ----------------
+  async function addFabRow() {
+    setSavingFabRow(true);
+    try {
+      const res = await fetch("/api/fabrication", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobOrderId: id, description: newFabDescription, qty: newFabQty, unit: newFabUnit }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMessage(data.error || "Failed to add fabrication item."); return; }
+      setNewFabDescription(""); setNewFabQty("1"); setNewFabUnit("pcs");
+      load();
+    } finally {
+      setSavingFabRow(false);
+    }
+  }
+
+  function startEditFabRow(row: FabricationItem) {
+    setEditingFabRowId(row.id);
+    setEditFabDraft({ description: row.description, qty: String(row.qty), unit: row.unit });
+  }
+
+  async function saveEditFabRow(rowId: string) {
+    const fd = new FormData();
+    fd.append("description", editFabDraft.description);
+    fd.append("qty", editFabDraft.qty);
+    fd.append("unit", editFabDraft.unit);
+    await fetch(`/api/fabrication/${rowId}`, { method: "PATCH", body: fd });
+    setEditingFabRowId(null);
+    load();
+  }
+
+  async function toggleFabFinish(row: FabricationItem) {
+    const fd = new FormData();
+    fd.append("status", row.status === "finish" ? "production" : "finish");
+    await fetch(`/api/fabrication/${row.id}`, { method: "PATCH", body: fd });
+    load();
+  }
+
+  async function saveFabComment(row: FabricationItem) {
+    const fd = new FormData();
+    fd.append("comment", fabCommentDraft[row.id] ?? row.comment ?? "");
+    await fetch(`/api/fabrication/${row.id}`, { method: "PATCH", body: fd });
+    setSavedFabRowId(row.id);
+    setTimeout(() => setSavedFabRowId((cur) => (cur === row.id ? null : cur)), 1800);
+    load();
+  }
+
+  async function uploadFabPhotos(row: FabricationItem, files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const fd = new FormData();
+    Array.from(files).forEach((f) => fd.append("photos", f));
+    await fetch(`/api/fabrication/${row.id}`, { method: "PATCH", body: fd });
+    load();
+  }
+
+  async function deleteFabRow(rowId: string) {
+    if (!confirm("Remove this fabrication item?")) return;
+    await fetch(`/api/fabrication/${rowId}`, { method: "DELETE" });
+    load();
+  }
+
+  async function viewFabPhoto(path: string) {
+    const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+    const data = await res.json();
+    if (data.url) window.open(data.url, "_blank");
+  }
+
+  function printFabricationJo(row: FabricationItem) {
+    if (!jobOrder) return;
+    const esc = (value: unknown): string =>
+      String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+
+    const html = `
+      <html><head><meta charset="utf-8"><title>Fabrication JO - ${esc(jobOrder.so_no)}</title>
+      <style>
+        @page { size: A5 landscape; margin: 10mm; }
+        body { font-family: Arial, sans-serif; font-size: 10px; color: #111; line-height: 1.4; }
+        h1 { font-size: 14px; text-align: center; margin: 0 0 10px; }
+        table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; }
+        table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
+        table.info td.label { font-weight: bold; white-space: nowrap; width: 32%; }
+        .note-title { font-weight: bold; text-transform: uppercase; font-size: 9px; margin: 8px 0 4px; border-top: 1px solid #999; padding-top: 5px; }
+        .note-box { border: 1px solid #999; height: 130mm; }
+      </style>
+      </head><body onload="window.focus();window.print();">
+        <h1>FABRICATION JO</h1>
+        <table class="info">
+          <colgroup><col style="width:17%"><col style="width:33%"><col style="width:17%"><col style="width:33%"></colgroup>
+          <tr><td class="label">SO Number</td><td>${esc(jobOrder.so_no)}</td><td class="label">JO Date</td><td>${esc(fmtDate(jobOrder.created_at))}</td></tr>
+          <tr><td class="label">Item Description</td><td>${esc(row.description)}</td><td class="label">Deadline</td><td>${esc(fmtDate(jobOrder.deadline))}</td></tr>
+          <tr><td class="label">Qty</td><td>${esc(row.qty)} ${esc(row.unit)}</td><td class="label">Drawing Number</td><td>${esc(jobOrder.drawing_number || "-")}</td></tr>
+        </table>
+        <div class="note-title">Note</div>
+        <div class="note-box"></div>
+      </body></html>
+    `;
+    const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    window.open(blobUrl, "_blank", "width=850,height=650");
   }
 
   if (!jobOrder) {
@@ -507,6 +623,102 @@ export default function ProductionJobOrderDetailPage() {
               </p>
             )}
             <button className="btn secondary" onClick={addRow} disabled={savingRow}>{savingRow ? "Adding..." : "+ Add item"}</button>
+          </>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Fabrication</h2>
+
+        {fabricationItems.length === 0 ? <p className="subtle" style={{ marginTop: 10 }}>No fabrication items yet.</p> : (
+          <div style={{ overflowX: "auto", marginTop: 10 }}>
+            <table className="data-table fixed">
+              <colgroup>
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "18%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "24%" }} />
+              </colgroup>
+              <thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Finish</th><th>Comment (to Machine Shop)</th><th>Photos</th>{!readOnly && <th></th>}</tr></thead>
+              <tbody>
+                {fabricationItems.map((row) => (
+                  <tr key={row.id}>
+                    {!readOnly && editingFabRowId === row.id ? (
+                      <>
+                        <td><input type="text" value={editFabDraft.description} onChange={(e) => setEditFabDraft({ ...editFabDraft, description: e.target.value })} /></td>
+                        <td><input type="number" value={editFabDraft.qty} onChange={(e) => setEditFabDraft({ ...editFabDraft, qty: e.target.value })} style={{ width: 60 }} /></td>
+                        <td><input type="text" value={editFabDraft.unit} onChange={(e) => setEditFabDraft({ ...editFabDraft, unit: e.target.value })} style={{ width: 55 }} /></td>
+                        <td style={{ textAlign: "center" }}><input type="checkbox" checked={row.status === "finish"} onChange={() => toggleFabFinish(row)} style={{ width: "auto" }} /></td>
+                        <td className="subtle">{row.comment || "-"}</td>
+                        <td className="subtle">{row.photo_paths.length} photo(s)</td>
+                        <td><button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => saveEditFabRow(row.id)}>Save</button></td>
+                      </>
+                    ) : (
+                      <>
+                        <td>{row.description}</td>
+                        <td>{row.qty}</td>
+                        <td>{row.unit}</td>
+                        <td style={{ textAlign: "center" }}>
+                          {readOnly ? (
+                            row.status === "finish" ? "✓" : ""
+                          ) : (
+                            <input type="checkbox" checked={row.status === "finish"} onChange={() => toggleFabFinish(row)} style={{ width: "auto" }} />
+                          )}
+                        </td>
+                        {readOnly ? (
+                          <td>{row.comment || <span className="subtle">-</span>}</td>
+                        ) : (
+                          <td>
+                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                              <input
+                                type="text"
+                                placeholder="Note for Machine Shop..."
+                                value={fabCommentDraft[row.id] ?? row.comment ?? ""}
+                                onChange={(e) => setFabCommentDraft((d) => ({ ...d, [row.id]: e.target.value }))}
+                                style={{ fontSize: "0.78rem", padding: "4px 6px" }}
+                              />
+                              <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "4px 6px" }} onClick={() => saveFabComment(row)}>Save</button>
+                              {savedFabRowId === row.id && <span style={{ color: "var(--good)", fontSize: "0.72rem", whiteSpace: "nowrap" }}>✓ Saved</span>}
+                            </div>
+                          </td>
+                        )}
+                        <td>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                            {row.photo_paths.map((p, i) => (
+                              <button key={i} className="btn secondary" style={{ fontSize: "0.68rem", padding: "2px 6px" }} onClick={() => viewFabPhoto(p)}>Photo{row.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+                            ))}
+                            {!readOnly && (
+                              <input type="file" accept="image/*,application/pdf" multiple style={{ fontSize: "0.68rem", maxWidth: 120 }} onChange={(e) => uploadFabPhotos(row, e.target.files)} />
+                            )}
+                          </div>
+                        </td>
+                        {!readOnly && (
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => startEditFabRow(row)}>Edit</button>{" "}
+                            <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => deleteFabRow(row.id)}>Remove</button>{" "}
+                            <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => printFabricationJo(row)}>Print Fabrication JO</button>
+                          </td>
+                        )}
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!readOnly && (
+          <>
+            <div className="grid" style={{ marginTop: 14, gridTemplateColumns: "2fr 0.5fr 0.5fr" }}>
+              <div className="field"><label>Description</label><input type="text" value={newFabDescription} onChange={(e) => setNewFabDescription(e.target.value)} /></div>
+              <div className="field"><label>Qty</label><input type="number" value={newFabQty} onChange={(e) => setNewFabQty(e.target.value)} /></div>
+              <div className="field"><label>Unit</label><input type="text" value={newFabUnit} onChange={(e) => setNewFabUnit(e.target.value)} /></div>
+            </div>
+            <button className="btn secondary" onClick={addFabRow} disabled={savingFabRow || !newFabDescription.trim()}>{savingFabRow ? "Adding..." : "+ Add item"}</button>
           </>
         )}
       </div>

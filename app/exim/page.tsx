@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
@@ -9,9 +10,19 @@ import PoStatusSlider from "@/app/components/PoStatusSlider";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
 import {
   PoOut, Shipment, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PoOutStatus, PO_OUT_STATUSES,
+  HsCode, ShipmentPackingBox, CURRENCY_SYMBOLS,
   fmtDate, fmtDateTime, exportPoOutRecapToExcel,
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
+
+function m3For(lengthCm: number, widthCm: number, heightCm: number): number {
+  return (lengthCm * widthCm * heightCm) / 1_000_000;
+}
+
+interface PackingBoxDraft { boxNo: string; lengthCm: string; widthCm: string; heightCm: string; grossWeightKg: string; netWeightKg: string; }
+function blankPackingBoxDraft(): PackingBoxDraft {
+  return { boxNo: "", lengthCm: "", widthCm: "", heightCm: "", grossWeightKg: "", netWeightKg: "" };
+}
 
 const EXIM_COLUMNS: { key: string; label: string }[] = [
   { key: "poDate", label: "PO Date" },
@@ -24,10 +35,12 @@ const EXIM_COLUMNS: { key: string; label: string }[] = [
   { key: "itemDescription", label: "Item Description" },
   { key: "qty", label: "Qty" },
   { key: "unit", label: "Unit" },
+  { key: "totalPrice", label: "Total Price" },
   { key: "supplier", label: "Supplier" },
   { key: "status", label: "Status" },
   { key: "oc", label: "OC" },
   { key: "origin", label: "Origin" },
+  { key: "via", label: "Via" },
   { key: "shipment", label: "Shipment" },
 ];
 
@@ -43,6 +56,8 @@ function eximCellText(p: PoOut, key: string): string {
     case "itemDescription": return p.item_description;
     case "qty": return String(p.qty);
     case "unit": return p.unit;
+    case "totalPrice": return `${CURRENCY_SYMBOLS[p.unit_price_currency]} ${Number(p.total_price).toLocaleString("id-ID")}`;
+    case "via": return p.via ?? "";
     case "supplier": return p.supplier;
     case "status": return PO_OUT_STATUSES.find((s) => s.value === p.status)?.label ?? p.status;
     case "oc": return p.oc;
@@ -103,10 +118,13 @@ export default function EximPage() {
   const [editShipmentDraft, setEditShipmentDraft] = useState<ShipmentDraft | null>(null);
   const [editAwbBlFile, setEditAwbBlFile] = useState<File | null>(null);
   const [editPhotoFiles, setEditPhotoFiles] = useState<File[]>([]);
+  const [hideArrived, setHideArrived] = useState(true);
+  const [togglingArrivedId, setTogglingArrivedId] = useState<string | null>(null);
 
   // ---------------- PO table ----------------
   const [pos, setPos] = useState<PoOut[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [hsCodes, setHsCodes] = useState<HsCode[]>([]);
   const [activeTab, setActiveTab] = useState<SupplierTabCategory | "ALL">("ALL");
   const [showProduction, setShowProduction] = useState(true);
   const [showShipment, setShowShipment] = useState(true);
@@ -119,12 +137,28 @@ export default function EximPage() {
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [editingFieldsId, setEditingFieldsId] = useState<string | null>(null);
   const [fieldsDraft, setFieldsDraft] = useState<FieldsDraft | null>(null);
+  const [boxDraft, setBoxDraft] = useState<Record<string, string>>({});
+  const [hsCodeDraft, setHsCodeDraft] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
+
+  // ---------------- Shipment recap ----------------
+  const [recapOpenFor, setRecapOpenFor] = useState<string | null>(null); // shipment_number
+  const [packingListOpen, setPackingListOpen] = useState(false);
+  const [packingBoxes, setPackingBoxes] = useState<ShipmentPackingBox[] | null>(null);
+  const [newBoxDraft, setNewBoxDraft] = useState<PackingBoxDraft>(blankPackingBoxDraft());
+  const [editingBoxId, setEditingBoxId] = useState<string | null>(null);
+  const [editBoxDraft, setEditBoxDraft] = useState<PackingBoxDraft>(blankPackingBoxDraft());
+  const [savingBox, setSavingBox] = useState(false);
 
   async function loadPos() {
     const res = await fetch("/api/po-out", { cache: "no-store" });
     const data = await res.json();
     setPos(data.pos ?? []);
+  }
+  async function loadHsCodes() {
+    const res = await fetch("/api/hs-codes", { cache: "no-store" });
+    const data = await res.json();
+    setHsCodes(data.hsCodes ?? []);
   }
   async function loadSuppliers() {
     const res = await fetch("/api/suppliers", { cache: "no-store" });
@@ -137,7 +171,7 @@ export default function EximPage() {
     setShipments(data.shipments ?? []);
   }
 
-  useEffect(() => { loadPos(); loadSuppliers(); loadShipments(); }, []);
+  useEffect(() => { loadPos(); loadSuppliers(); loadShipments(); loadHsCodes(); }, []);
 
   // ---------------- Shipment Plan actions ----------------
   function resetShipmentForm() {
@@ -229,7 +263,8 @@ export default function EximPage() {
     if (data.url) window.open(data.url, "_blank");
   }
 
-  const shipmentsPaged = usePagedSearch(shipments ?? [], shipmentMatches);
+  const shipmentsVisible = (shipments ?? []).filter((s) => !hideArrived || !s.arrived);
+  const shipmentsPaged = usePagedSearch(shipmentsVisible, shipmentMatches);
 
   // ---------------- PO table actions ----------------
   function openUpdates(p: PoOut) {
@@ -274,15 +309,111 @@ export default function EximPage() {
     loadPos();
   }
 
-  // Shipment is its own standalone dropdown (not gated behind the OC/Origin
-  // Edit flow) - picking a value saves immediately.
-  async function updateShipment(id: string, shipment: string) {
+  // Shipment/Via are their own standalone dropdowns (not gated behind the
+  // OC/Origin Edit flow) - picking a value saves immediately.
+  async function updatePoField(id: string, patch: Record<string, unknown>) {
     const res = await fetch(`/api/po-out/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shipment }),
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error || "Failed to save."); return; }
     loadPos();
+    if (patch.hsCode) loadHsCodes();
+  }
+
+  async function saveBoxHsCode(p: PoOut) {
+    await updatePoField(p.id, { box: boxDraft[p.id] ?? p.box, hsCode: hsCodeDraft[p.id] ?? p.hs_code });
+  }
+
+  async function toggleArrived(shipment: Shipment) {
+    setTogglingArrivedId(shipment.id);
+    try {
+      await fetch(`/api/shipments/${shipment.id}/arrived`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ arrived: !shipment.arrived, changedBy: currentRole.label }),
+      });
+      await Promise.all([loadShipments(), loadPos()]);
+    } finally {
+      setTogglingArrivedId(null);
+    }
+  }
+
+  function bmFor(code: string): number | null {
+    const match = hsCodes.find((h) => h.code === code.trim().toUpperCase());
+    return match ? match.bm : null;
+  }
+
+  async function openRecap(shipmentNumber: string) {
+    if (recapOpenFor === shipmentNumber) { setRecapOpenFor(null); setPackingListOpen(false); return; }
+    setRecapOpenFor(shipmentNumber);
+    setPackingListOpen(false);
+    setPackingBoxes(null);
+  }
+
+  async function togglePackingList(shipmentNumber: string) {
+    if (packingListOpen) { setPackingListOpen(false); return; }
+    setPackingListOpen(true);
+    const s = (shipments ?? []).find((sh) => sh.shipment_number === shipmentNumber);
+    if (!s) { setPackingBoxes([]); return; }
+    const res = await fetch(`/api/shipments/${s.id}/packing-boxes`, { cache: "no-store" });
+    const data = await res.json();
+    setPackingBoxes(data.boxes ?? []);
+  }
+
+  async function addPackingBox(shipmentNumber: string) {
+    const s = (shipments ?? []).find((sh) => sh.shipment_number === shipmentNumber);
+    if (!s) return;
+    setSavingBox(true);
+    try {
+      const res = await fetch(`/api/shipments/${s.id}/packing-boxes`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          boxNo: newBoxDraft.boxNo, lengthCm: newBoxDraft.lengthCm, widthCm: newBoxDraft.widthCm,
+          heightCm: newBoxDraft.heightCm, grossWeightKg: newBoxDraft.grossWeightKg, netWeightKg: newBoxDraft.netWeightKg,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMessage(data.error || "Failed to add box."); return; }
+      setNewBoxDraft(blankPackingBoxDraft());
+      togglePackingList(shipmentNumber); // refresh (re-open with same state)
+      setPackingListOpen(true);
+      const refreshed = await fetch(`/api/shipments/${s.id}/packing-boxes`, { cache: "no-store" });
+      setPackingBoxes((await refreshed.json()).boxes ?? []);
+    } finally {
+      setSavingBox(false);
+    }
+  }
+
+  function startEditBox(box: ShipmentPackingBox) {
+    setEditingBoxId(box.id);
+    setEditBoxDraft({
+      boxNo: box.box_no, lengthCm: String(box.length_cm), widthCm: String(box.width_cm), heightCm: String(box.height_cm),
+      grossWeightKg: String(box.gross_weight_kg), netWeightKg: String(box.net_weight_kg),
+    });
+  }
+
+  async function saveEditBox(shipmentNumber: string, boxId: string) {
+    const s = (shipments ?? []).find((sh) => sh.shipment_number === shipmentNumber);
+    if (!s) return;
+    await fetch(`/api/shipments/${s.id}/packing-boxes/${boxId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        boxNo: editBoxDraft.boxNo, lengthCm: editBoxDraft.lengthCm, widthCm: editBoxDraft.widthCm,
+        heightCm: editBoxDraft.heightCm, grossWeightKg: editBoxDraft.grossWeightKg, netWeightKg: editBoxDraft.netWeightKg,
+      }),
+    });
+    setEditingBoxId(null);
+    const refreshed = await fetch(`/api/shipments/${s.id}/packing-boxes`, { cache: "no-store" });
+    setPackingBoxes((await refreshed.json()).boxes ?? []);
+  }
+
+  async function deleteBox(shipmentNumber: string, boxId: string) {
+    if (!confirm("Remove this box?")) return;
+    const s = (shipments ?? []).find((sh) => sh.shipment_number === shipmentNumber);
+    if (!s) return;
+    await fetch(`/api/shipments/${s.id}/packing-boxes/${boxId}`, { method: "DELETE" });
+    const refreshed = await fetch(`/api/shipments/${s.id}/packing-boxes`, { cache: "no-store" });
+    setPackingBoxes((await refreshed.json()).boxes ?? []);
   }
 
   function sortBy(key: SortKey) {
@@ -306,11 +437,19 @@ export default function EximPage() {
     <>
       {message && <div className="warn">{message}</div>}
 
-      <Collapsible title="Shipment Plan" count={shipments?.length} defaultOpen>
+      <Collapsible
+        title="Shipment Plan"
+        count={shipments?.length}
+        defaultOpen
+        actions={<ToggleSwitch checked={hideArrived} onChange={setHideArrived} label="Hide Arrived" />}
+      >
         {!showShipmentForm && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
             {shipments && shipments.length > 0 ? <SearchBox value={shipmentsPaged.search} onChange={shipmentsPaged.setSearch} /> : <div />}
-            <button className="btn" onClick={() => setShowShipmentForm(true)}>+ New Shipment</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <Link href="/hs-codes" className="subtle" style={{ fontSize: "0.85rem", textDecoration: "underline", cursor: "pointer" }}>HS Code</Link>
+              <button className="btn" onClick={() => setShowShipmentForm(true)}>+ New Shipment</button>
+            </div>
           </div>
         )}
 
@@ -369,7 +508,7 @@ export default function EximPage() {
                 <thead>
                   <tr>
                     <th>Shipment No.</th><th>Supplier</th><th>Via</th><th>Incoterms</th><th>Invoice</th>
-                    <th>AWB/BL</th><th>ATD</th><th>ETA JKT</th><th>SPPB</th><th>Delivery</th><th>Files</th><th></th>
+                    <th>AWB/BL</th><th>ATD</th><th>ETA JKT</th><th>SPPB</th><th>Delivery</th><th>Files</th><th>Arrived</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -410,6 +549,13 @@ export default function EximPage() {
                               {!s.awb_bl_file_path && s.photo_paths.length === 0 && <span className="subtle">-</span>}
                             </>
                           )}
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox" checked={s.arrived} disabled={togglingArrivedId === s.id}
+                            onChange={() => toggleArrived(s)} style={{ width: "auto" }}
+                            title="Ticking this marks every PO Out row on this shipment as Arrived"
+                          />
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           {isEditing ? (
@@ -485,8 +631,10 @@ export default function EximPage() {
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("sales")}>Sales {sortKey === "sales" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("customer_name")}>Customer Name {sortKey === "customer_name" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
                     <th>Item Description</th><th>Qty</th><th>Unit</th>
+                    <th>Total Price</th>
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("supplier")}>Supplier {sortKey === "supplier" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
                     <th>Status</th><th>OC</th><th>Origin</th>
+                    <th>Via</th>
                     <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("shipment")}>Shipment {sortKey === "shipment" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
                     <th></th>
                   </tr>
@@ -511,6 +659,7 @@ export default function EximPage() {
                           <td>{p.item_description}</td>
                           <td>{p.qty}</td>
                           <td>{p.unit}</td>
+                          <td>{CURRENCY_SYMBOLS[p.unit_price_currency]} {Number(p.total_price).toLocaleString("id-ID")}</td>
                           <td>{p.supplier}</td>
                           <td>
                             {(() => {
@@ -525,10 +674,24 @@ export default function EximPage() {
                           <td>{isEditingFields && fd ? <input type="text" value={fd.oc} onChange={(e) => setFieldsDraft({ ...fd, oc: e.target.value })} style={{ fontSize: "0.8rem", width: 90 }} /> : (p.oc || <span className="subtle">-</span>)}</td>
                           <td>{isEditingFields && fd ? <input type="text" value={fd.origin} onChange={(e) => setFieldsDraft({ ...fd, origin: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : (p.origin || <span className="subtle">-</span>)}</td>
                           <td>
-                            <select value={p.shipment} onChange={(e) => updateShipment(p.id, e.target.value)} style={{ fontSize: "0.8rem" }}>
+                            <select value={p.via ?? ""} onChange={(e) => updatePoField(p.id, { via: e.target.value })} style={{ fontSize: "0.8rem" }}>
                               <option value="">Select...</option>
-                              {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
+                              <option value="AIR">AIR</option>
+                              <option value="SEA">SEA</option>
                             </select>
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <select value={p.shipment} onChange={(e) => updatePoField(p.id, { shipment: e.target.value })} style={{ fontSize: "0.8rem" }}>
+                                <option value="">Select...</option>
+                                {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
+                              </select>
+                              {p.shipment && (
+                                <button className="btn secondary" style={{ fontSize: "0.68rem", padding: "3px 6px" }} onClick={() => openRecap(p.shipment)}>
+                                  {recapOpenFor === p.shipment ? "Hide" : "View"}
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td style={{ whiteSpace: "nowrap" }}>
                             {isEditingFields ? (
@@ -540,7 +703,7 @@ export default function EximPage() {
                         </tr>
                         {updatesOpenId === p.id && (
                           <tr>
-                            <td colSpan={16} style={{ background: "var(--panel-muted)" }}>
+                            <td colSpan={18} style={{ background: "var(--panel-muted)" }}>
                               <div style={{ padding: "8px 2px" }}>
                                 <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>Update progress</div>
                                 <PoStatusSlider status={statusDraft[p.id] ?? p.status} onChange={(s) => setStatusDraft((cur) => ({ ...cur, [p.id]: s }))} />
@@ -572,6 +735,134 @@ export default function EximPage() {
               </table>
             </div>
             <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+
+            {recapOpenFor && (() => {
+              const items = (pos ?? []).filter((p) => p.shipment === recapOpenFor);
+              const totalSum = items.reduce((n, p) => n + Number(p.total_price || 0), 0);
+              return (
+                <div className="card" style={{ marginTop: 14, background: "var(--panel-muted)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                    <h3 style={{ margin: 0 }}>Shipment Recap — {recapOpenFor}</h3>
+                    <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => togglePackingList(recapOpenFor)}>
+                      {packingListOpen ? "Hide Packing List" : "Packing List"}
+                    </button>
+                  </div>
+                  <div style={{ overflowX: "auto", marginTop: 10 }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr><th>PO Number</th><th>Item Code</th><th>Customer Name</th><th>Item Description</th><th>Qty</th><th>Total Price</th><th>Box</th><th>HS Code</th><th>BM</th></tr>
+                      </thead>
+                      <tbody>
+                        {items.map((p) => {
+                          const bm = bmFor(hsCodeDraft[p.id] ?? p.hs_code);
+                          return (
+                            <tr key={p.id}>
+                              <td>{p.po_number}</td>
+                              <td>{p.item_code}</td>
+                              <td>{p.customer_name}</td>
+                              <td>{p.item_description}</td>
+                              <td>{p.qty}</td>
+                              <td>{CURRENCY_SYMBOLS[p.unit_price_currency]} {Number(p.total_price).toLocaleString("id-ID")}</td>
+                              <td>
+                                <input
+                                  type="text" value={boxDraft[p.id] ?? p.box} style={{ fontSize: "0.8rem", width: 70 }}
+                                  onChange={(e) => setBoxDraft((cur) => ({ ...cur, [p.id]: e.target.value }))}
+                                  onBlur={() => saveBoxHsCode(p)}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="text" value={hsCodeDraft[p.id] ?? p.hs_code} style={{ fontSize: "0.8rem", width: 90 }}
+                                  onChange={(e) => setHsCodeDraft((cur) => ({ ...cur, [p.id]: e.target.value.toUpperCase() }))}
+                                  onBlur={() => saveBoxHsCode(p)}
+                                />
+                              </td>
+                              <td>{bm !== null ? `${bm}%` : <span className="subtle">-</span>}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ fontWeight: 700 }}>
+                          <td colSpan={5} style={{ textAlign: "right" }}>Total</td>
+                          <td>Rp {totalSum.toLocaleString("id-ID")}</td>
+                          <td colSpan={3}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {packingListOpen && (
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+                      <div className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase", marginBottom: 8 }}>Packing List</div>
+                      {packingBoxes === null ? <p className="subtle">Loading...</p> : (
+                        <div style={{ overflowX: "auto" }}>
+                          <table className="data-table">
+                            <thead>
+                              <tr>
+                                <th>Box No.</th><th>Length (cm)</th><th>Width (cm)</th><th>Height (cm)</th><th>M3</th>
+                                <th>Gross Weight (kg)</th><th>Net Weight (kg)</th><th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {packingBoxes.map((box) => {
+                                const isEditing = editingBoxId === box.id;
+                                const d = editBoxDraft;
+                                const m3 = isEditing
+                                  ? m3For(Number(d.lengthCm) || 0, Number(d.widthCm) || 0, Number(d.heightCm) || 0)
+                                  : m3For(box.length_cm, box.width_cm, box.height_cm);
+                                return (
+                                  <tr key={box.id}>
+                                    <td>{isEditing ? <input type="text" value={d.boxNo} onChange={(e) => setEditBoxDraft({ ...d, boxNo: e.target.value })} style={{ width: 70 }} /> : box.box_no}</td>
+                                    <td>{isEditing ? <input type="number" value={d.lengthCm} onChange={(e) => setEditBoxDraft({ ...d, lengthCm: e.target.value })} style={{ width: 70 }} /> : box.length_cm}</td>
+                                    <td>{isEditing ? <input type="number" value={d.widthCm} onChange={(e) => setEditBoxDraft({ ...d, widthCm: e.target.value })} style={{ width: 70 }} /> : box.width_cm}</td>
+                                    <td>{isEditing ? <input type="number" value={d.heightCm} onChange={(e) => setEditBoxDraft({ ...d, heightCm: e.target.value })} style={{ width: 70 }} /> : box.height_cm}</td>
+                                    <td>{m3.toFixed(4)}</td>
+                                    <td>{isEditing ? <input type="number" value={d.grossWeightKg} onChange={(e) => setEditBoxDraft({ ...d, grossWeightKg: e.target.value })} style={{ width: 80 }} /> : box.gross_weight_kg}</td>
+                                    <td>{isEditing ? <input type="number" value={d.netWeightKg} onChange={(e) => setEditBoxDraft({ ...d, netWeightKg: e.target.value })} style={{ width: 80 }} /> : box.net_weight_kg}</td>
+                                    <td style={{ whiteSpace: "nowrap" }}>
+                                      {isEditing ? (
+                                        <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveEditBox(recapOpenFor, box.id)}>Save</button>
+                                      ) : (
+                                        <>
+                                          <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startEditBox(box)}>Edit</button>{" "}
+                                          <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => deleteBox(recapOpenFor, box.id)}>Delete</button>
+                                        </>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              <tr>
+                                <td><input type="text" value={newBoxDraft.boxNo} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, boxNo: e.target.value })} placeholder="Box No." style={{ width: 70 }} /></td>
+                                <td><input type="number" value={newBoxDraft.lengthCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, lengthCm: e.target.value })} style={{ width: 70 }} /></td>
+                                <td><input type="number" value={newBoxDraft.widthCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, widthCm: e.target.value })} style={{ width: 70 }} /></td>
+                                <td><input type="number" value={newBoxDraft.heightCm} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, heightCm: e.target.value })} style={{ width: 70 }} /></td>
+                                <td className="subtle">{m3For(Number(newBoxDraft.lengthCm) || 0, Number(newBoxDraft.widthCm) || 0, Number(newBoxDraft.heightCm) || 0).toFixed(4)}</td>
+                                <td><input type="number" value={newBoxDraft.grossWeightKg} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, grossWeightKg: e.target.value })} style={{ width: 80 }} /></td>
+                                <td><input type="number" value={newBoxDraft.netWeightKg} onChange={(e) => setNewBoxDraft({ ...newBoxDraft, netWeightKg: e.target.value })} style={{ width: 80 }} /></td>
+                                <td>
+                                  <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} disabled={savingBox} onClick={() => addPackingBox(recapOpenFor)}>+ Add</button>
+                                </td>
+                              </tr>
+                            </tbody>
+                            <tfoot>
+                              <tr style={{ fontWeight: 700 }}>
+                                <td colSpan={4} style={{ textAlign: "right" }}>Sum</td>
+                                <td>{packingBoxes.reduce((n, b) => n + m3For(b.length_cm, b.width_cm, b.height_cm), 0).toFixed(4)}</td>
+                                <td>{packingBoxes.reduce((n, b) => n + Number(b.gross_weight_kg || 0), 0).toLocaleString("id-ID")}</td>
+                                <td>{packingBoxes.reduce((n, b) => n + Number(b.net_weight_kg || 0), 0).toLocaleString("id-ID")}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
       </Collapsible>

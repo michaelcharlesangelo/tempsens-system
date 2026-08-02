@@ -40,6 +40,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof body.oc === "string") updates.oc = body.oc.trim();
   if (typeof body.origin === "string") updates.origin = body.origin.trim();
   if (typeof body.shipment === "string") updates.shipment = body.shipment.trim();
+  if (typeof body.via === "string") updates.via = body.via === "AIR" || body.via === "SEA" ? body.via : null;
+  if (typeof body.box === "string") updates.box = body.box.trim();
+  if (typeof body.hsCode === "string") updates.hs_code = body.hsCode.trim().toUpperCase();
   if (typeof body.unitPriceCurrency === "string" && CURRENCIES.includes(body.unitPriceCurrency)) updates.unit_price_currency = body.unitPriceCurrency;
   if (typeof body.unitSellingPriceCurrency === "string" && CURRENCIES.includes(body.unitSellingPriceCurrency)) updates.unit_selling_price_currency = body.unitSellingPriceCurrency;
   if (body.qty !== undefined || body.unitPrice !== undefined) {
@@ -58,6 +61,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const { data, error } = await admin.from("po_out").update(updates).eq("id", params.id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // A newly-typed HS Code auto-registers a bare entry (blank description,
+  // 0% BM) so the registry page has something to fill in - never overwrites
+  // an existing entry's description/BM.
+  if (typeof body.hsCode === "string" && body.hsCode.trim()) {
+    await admin.from("hs_codes").upsert(
+      { code: body.hsCode.trim().toUpperCase(), description: "", bm: 0 },
+      { onConflict: "code", ignoreDuplicates: true }
+    );
+  }
+
   return NextResponse.json({ po: data });
 }
 

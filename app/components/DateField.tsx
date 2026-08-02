@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH_LABELS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -58,25 +59,49 @@ export default function DateField({
   const minDate = min ? parseIso(min) : null;
   const [viewDate, setViewDate] = useState<Date>(selected || (minDate && minDate > new Date() ? minDate : new Date()));
   const containerRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  // Popup renders through a portal into document.body with fixed
+  // positioning computed here, instead of being position:absolute inside
+  // this field's own DOM position - a field inside a horizontally-scrolling
+  // table wrapper (overflow-x: auto) implicitly clips overflow-y too per the
+  // CSS overflow spec, which was hiding the calendar whenever the table was
+  // short (e.g. only one row).
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     function handlePointerDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (popupRef.current?.contains(target)) return;
+      setOpen(false);
     }
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
+    function reposition() {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      setPopupPos({ top: rect.bottom + 4, left: rect.left });
+    }
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleKey);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       document.removeEventListener("keydown", handleKey);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
     };
   }, [open]);
 
   function openPicker() {
     setViewDate(selected || (minDate && minDate > new Date() ? minDate : new Date()));
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setPopupPos({ top: rect.bottom + 4, left: rect.left });
+    }
     setOpen(true);
   }
 
@@ -117,10 +142,11 @@ export default function DateField({
         </svg>
       </div>
 
-      {open && (
+      {open && popupPos && createPortal(
         <div
+          ref={popupRef}
           style={{
-            position: "absolute", top: "100%", left: 0, zIndex: 20, marginTop: 4,
+            position: "fixed", top: popupPos.top, left: popupPos.left, zIndex: 1000,
             background: "var(--panel, #fff)", border: "1px solid var(--border)", borderRadius: 8,
             boxShadow: "0 4px 16px rgba(0,0,0,0.15)", padding: 10, width: 240,
           }}
@@ -177,7 +203,8 @@ export default function DateField({
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

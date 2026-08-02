@@ -469,9 +469,51 @@ export interface PoOut {
   oc: string;
   origin: string;
   shipment: string;
+  via: "AIR" | "SEA" | null;
+  box: string;
+  hs_code: string;
   submitted_by: string;
   created_at: string;
   history: PoOutHistoryEntry[];
+}
+
+export interface HsCode {
+  id: string;
+  code: string;
+  description: string;
+  bm: number;
+  created_at: string;
+}
+
+export interface ShipmentPackingBox {
+  id: string;
+  shipment_id: string;
+  box_no: string;
+  length_cm: number;
+  width_cm: number;
+  height_cm: number;
+  gross_weight_kg: number;
+  net_weight_kg: number;
+  created_at: string;
+}
+
+export type FabricationStatus = "production" | "finish";
+
+export interface FabricationItem {
+  id: string;
+  job_order_id: string | null;
+  jo_date: string;
+  so_no: string;
+  description: string;
+  qty: number;
+  unit: string;
+  status: FabricationStatus;
+  comment: string;
+  photo_paths: string[];
+  created_at: string;
+  // Only present when job_order_id is set - joined in for the print
+  // layout's Deadline/Drawing Number fields, which aren't on this table.
+  job_order?: { deadline: string | null; drawing_number: string | null } | null;
 }
 
 export interface Shipment {
@@ -490,6 +532,7 @@ export interface Shipment {
   awb_bl_file_name: string | null;
   photo_paths: string[];
   submitted_by: string;
+  arrived: boolean;
   created_at: string;
 }
 
