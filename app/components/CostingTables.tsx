@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
+import TruncatedText from "@/app/components/TruncatedText";
 import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
 // Shared between Sales Support (finish-costing-only) and Sales Support
@@ -123,7 +124,7 @@ export default function CostingTables({
                           <td>{jo.so_no}</td>
                           <td>{jo.item_no}</td>
                           <td>{jo.customer_name}</td>
-                          <td>{jo.item_description}</td>
+                          <td><TruncatedText text={jo.item_description} /></td>
                           <td>{jo.quantity}</td>
                           <FileCells jo={jo} />
                           <CommentsCell jo={jo} />
@@ -158,7 +159,7 @@ export default function CostingTables({
                         <td>{jo.so_no}</td>
                         <td>{jo.item_no}</td>
                         <td>{jo.customer_name}</td>
-                        <td>{jo.item_description}</td>
+                        <td><TruncatedText text={jo.item_description} /></td>
                         <td>{jo.quantity}</td>
                         <FileCells jo={jo} />
                         <CommentsCell jo={jo} />

@@ -6,6 +6,7 @@ import ToggleSwitch from "@/app/components/ToggleSwitch";
 import DateField from "@/app/components/DateField";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
+import TruncatedText from "@/app/components/TruncatedText";
 import { JobOrder, JobOrderHistoryEntry, FabricationItem, joMatchesSearch, fmtDate, fmtDateTime, formatSerialRange } from "@/lib/jobOrders";
 import { printFileUrl } from "@/lib/printFile";
 
@@ -43,7 +44,7 @@ function FabricationJoSection({ items, onToggleStatus, togglingId }: {
                   <tr key={f.id}>
                     <td style={{ whiteSpace: "nowrap" }}>{fmtDate(f.jo_date)}</td>
                     <td>{f.so_no || <span className="subtle">-</span>}</td>
-                    <td>{f.description}</td>
+                    <td><TruncatedText text={f.description} /></td>
                     <td>{f.qty}</td>
                     <td>{f.unit}</td>
                     <td>
@@ -177,6 +178,7 @@ function AllJobOrdersSection({ jobOrders }: { jobOrders: JobOrder[] }) {
       const serialLabel = formatSerialRange(jo.serial_numbers ?? []);
       return serialLabel === "-" ? <span className="subtle">-</span> : serialLabel;
     }
+    if (key === "item_description") return <TruncatedText text={jo.item_description} />;
     return allJoCellText(jo, key);
   }
 
@@ -326,7 +328,7 @@ function JoTable({
                   <td>{jo.item_no}</td>
                   <td>{jo.sales_person_name}</td>
                   <td>{jo.customer_name}</td>
-                  <td>{jo.item_description}</td>
+                  <td><TruncatedText text={jo.item_description} /></td>
                   <td>{jo.quantity}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{fmtDate(jo.deadline)}</td>
                   <td>
@@ -601,6 +603,7 @@ export default function ProductionManagerPage() {
       <Collapsible
         title="Fabrication Job Order"
         count={fabricationItems.length}
+        defaultOpen
         actions={
           !showNewFabForm && <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => setShowNewFabForm(true)}>+ New Fabrication JO</button>
         }

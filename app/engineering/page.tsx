@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import ComplaintStatusSlider from "@/app/components/ComplaintStatusSlider";
+import TruncatedText from "@/app/components/TruncatedText";
 import { Complaint, ComplaintStatus, COMPLAINT_STATUSES, complaintMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
 
@@ -41,7 +42,7 @@ function EngineeringTable({
           <td>{fmtDate(c.created_at)}</td>
           <td>{c.customer_name}</td>
           <td>{c.so_no}</td>
-          <td>{c.item_description}</td>
+          <td><TruncatedText text={c.item_description} /></td>
           <td>{c.quantity}</td>
           <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
           <td>

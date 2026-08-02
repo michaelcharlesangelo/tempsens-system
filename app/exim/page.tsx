@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
@@ -8,6 +8,7 @@ import Collapsible from "@/app/components/Collapsible";
 import DateField from "@/app/components/DateField";
 import PoStatusSlider from "@/app/components/PoStatusSlider";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
+import TruncatedText from "@/app/components/TruncatedText";
 import {
   PoOut, Shipment, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PoOutStatus, PO_OUT_STATUSES,
   HsCode, ShipmentPackingBox, CURRENCY_SYMBOLS,
@@ -88,6 +89,30 @@ function poMatches(p: PoOut, term: string): boolean {
 
 type SortKey = "po_date" | "po_number" | "item_code" | "sales" | "customer_name" | "supplier" | "shipment";
 
+const RECAP_COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
+  { key: "poDate", label: "PO Date", sortKey: "po_date" },
+  { key: "days", label: "Days" },
+  { key: "deadline", label: "Deadline" },
+  { key: "poNumber", label: "PO Number", sortKey: "po_number" },
+  { key: "itemCode", label: "Item Code", sortKey: "item_code" },
+  { key: "sales", label: "Sales", sortKey: "sales" },
+  { key: "customerName", label: "Customer Name", sortKey: "customer_name" },
+  { key: "itemDescription", label: "Item Description" },
+  { key: "qty", label: "Qty" },
+  { key: "unit", label: "Unit" },
+  { key: "totalPrice", label: "Total Price" },
+  { key: "supplier", label: "Supplier", sortKey: "supplier" },
+  { key: "status", label: "Status" },
+  { key: "oc", label: "OC" },
+  { key: "origin", label: "Origin" },
+  { key: "via", label: "Via" },
+  { key: "shipment", label: "Shipment", sortKey: "shipment" },
+];
+// Hide the lower-traffic columns by default so the wide table actually
+// fits without scrolling for the fields people check daily - the rest
+// are one click away via Columns.
+const RECAP_DEFAULT_HIDDEN = new Set(["days", "oc", "origin"]);
+
 interface FieldsDraft { oc: string; origin: string; }
 
 interface ShipmentDraft {
@@ -139,6 +164,9 @@ export default function EximPage() {
   const [fieldsDraft, setFieldsDraft] = useState<FieldsDraft | null>(null);
   const [boxDraft, setBoxDraft] = useState<Record<string, string>>({});
   const [hsCodeDraft, setHsCodeDraft] = useState<Record<string, string>>({});
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(RECAP_DEFAULT_HIDDEN);
+  const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
+  const columnsMenuRef = useRef<HTMLDivElement>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   // ---------------- Shipment recap ----------------
@@ -244,7 +272,11 @@ export default function EximPage() {
     if (!res.ok) { setMessage(data.error || "Failed to save shipment."); return; }
     setEditingShipmentId(null);
     setEditShipmentDraft(null);
+    // Renaming the shipment number cascades to every PO Out row that had
+    // it selected (see the API route) - reload both so the recap table
+    // reflects the new name immediately instead of on next page load.
     loadShipments();
+    loadPos();
   }
 
   async function deleteShipment(id: string) {
@@ -420,6 +452,87 @@ export default function EximPage() {
     if (sortKey === key) { setSortDir((d) => (d === "asc" ? "desc" : "asc")); return; }
     setSortKey(key);
     setSortDir("asc");
+  }
+
+  useEffect(() => {
+    if (!columnsMenuOpen) return;
+    function handlePointerDown(e: MouseEvent) {
+      if (columnsMenuRef.current && !columnsMenuRef.current.contains(e.target as Node)) setColumnsMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [columnsMenuOpen]);
+
+  function toggleColumn(key: string) {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function buildRecapCells(p: PoOut, isEditingFields: boolean, fd: FieldsDraft | null): { key: string; node: ReactNode }[] {
+    return [
+      { key: "poDate", node: fmtDate(p.po_date) },
+      { key: "days", node: daysSince(p.po_date) },
+      {
+        key: "deadline",
+        node: (
+          <span style={{ whiteSpace: "nowrap" }}>
+            {fmtDate(p.deadline)}
+            {p.urgent && <span className="pill pill-rejected" style={{ marginLeft: 4, fontSize: "0.6rem" }}>URGENT</span>}
+          </span>
+        ),
+      },
+      { key: "poNumber", node: p.po_number },
+      { key: "itemCode", node: p.item_code },
+      { key: "sales", node: p.sales },
+      { key: "customerName", node: p.customer_name },
+      { key: "itemDescription", node: <TruncatedText text={p.item_description} /> },
+      { key: "qty", node: p.qty },
+      { key: "unit", node: p.unit },
+      { key: "totalPrice", node: `${CURRENCY_SYMBOLS[p.unit_price_currency]} ${Number(p.total_price).toLocaleString("id-ID")}` },
+      { key: "supplier", node: p.supplier },
+      {
+        key: "status",
+        node: (() => {
+          const meta = { production: { label: "Production", color: "#eab308" }, shipment: { label: "Shipment", color: "#3b82f6" }, arrived: { label: "Arrived", color: "#22c55e" } }[p.status];
+          return (
+            <span className="pill" style={{ background: meta.color, color: "white", cursor: "pointer" }} onClick={() => openUpdates(p)}>
+              {meta.label}
+            </span>
+          );
+        })(),
+      },
+      { key: "oc", node: isEditingFields && fd ? <input type="text" value={fd.oc} onChange={(e) => setFieldsDraft({ ...fd, oc: e.target.value })} style={{ fontSize: "0.8rem", width: 90 }} /> : (p.oc || <span className="subtle">-</span>) },
+      { key: "origin", node: isEditingFields && fd ? <input type="text" value={fd.origin} onChange={(e) => setFieldsDraft({ ...fd, origin: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : (p.origin || <span className="subtle">-</span>) },
+      {
+        key: "via",
+        node: (
+          <select value={p.via ?? ""} onChange={(e) => updatePoField(p.id, { via: e.target.value })} style={{ fontSize: "0.8rem" }}>
+            <option value="">Select...</option>
+            <option value="AIR">AIR</option>
+            <option value="SEA">SEA</option>
+          </select>
+        ),
+      },
+      {
+        key: "shipment",
+        node: (
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <select value={p.shipment} onChange={(e) => updatePoField(p.id, { shipment: e.target.value })} style={{ fontSize: "0.8rem" }}>
+              <option value="">Select...</option>
+              {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
+            </select>
+            {p.shipment && (
+              <button className="btn secondary" style={{ fontSize: "0.68rem", padding: "3px 6px" }} onClick={() => openRecap(p.shipment)}>
+                {recapOpenFor === p.shipment ? "Hide" : "View"}
+              </button>
+            )}
+          </div>
+        ),
+      },
+    ];
   }
 
   const supplierCategory = new Map(suppliers.map((s) => [s.name, s.tab_category]));
@@ -618,24 +731,42 @@ export default function EximPage() {
               ))}
             </div>
 
-            <SearchBox value={search} onChange={setSearch} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <SearchBox value={search} onChange={setSearch} />
+              <div ref={columnsMenuRef} style={{ position: "relative" }}>
+                <button className="btn secondary" style={{ fontSize: "0.75rem" }} onClick={() => setColumnsMenuOpen((o) => !o)}>Columns ▾</button>
+                {columnsMenuOpen && (
+                  <div
+                    style={{
+                      position: "absolute", top: "100%", right: 0, zIndex: 15, marginTop: 4,
+                      background: "var(--panel, #fff)", border: "1px solid var(--border)", borderRadius: 8,
+                      boxShadow: "0 4px 16px rgba(0,0,0,0.15)", padding: 10, width: 200,
+                    }}
+                  >
+                    {RECAP_COLUMNS.map((c) => (
+                      <label key={c.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", padding: "3px 0", cursor: "pointer" }}>
+                        <input type="checkbox" checked={!hiddenCols.has(c.key)} onChange={() => toggleColumn(c.key)} /> {c.label}
+                      </label>
+                    ))}
+                    <button className="btn secondary" style={{ fontSize: "0.72rem", marginTop: 6, width: "100%" }} onClick={() => setHiddenCols(new Set())}>
+                      Unhide all
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div style={{ overflowX: "auto", marginTop: 8 }}>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("po_date")}>PO Date {sortKey === "po_date" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
-                    <th>Days</th><th>Deadline</th>
-                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("po_number")}>PO Number {sortKey === "po_number" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
-                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("item_code")}>Item Code {sortKey === "item_code" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
-                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("sales")}>Sales {sortKey === "sales" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
-                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("customer_name")}>Customer Name {sortKey === "customer_name" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
-                    <th>Item Description</th><th>Qty</th><th>Unit</th>
-                    <th>Total Price</th>
-                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("supplier")}>Supplier {sortKey === "supplier" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
-                    <th>Status</th><th>OC</th><th>Origin</th>
-                    <th>Via</th>
-                    <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => sortBy("shipment")}>Shipment {sortKey === "shipment" ? (sortDir === "asc" ? "▲" : "▼") : ""}</th>
+                    {RECAP_COLUMNS.filter((c) => !hiddenCols.has(c.key)).map((c) =>
+                      c.sortKey ? (
+                        <th key={c.key} style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }} onClick={() => sortBy(c.sortKey!)}>
+                          {c.label} {sortKey === c.sortKey ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                        </th>
+                      ) : <th key={c.key}>{c.label}</th>
+                    )}
                     <th></th>
                   </tr>
                 </thead>
@@ -643,56 +774,11 @@ export default function EximPage() {
                   {pageItems.map((p) => {
                     const isEditingFields = editingFieldsId === p.id;
                     const fd = fieldsDraft;
+                    const cells = buildRecapCells(p, isEditingFields, fd).filter((c) => !hiddenCols.has(c.key));
                     return (
                       <Fragment key={p.id}>
                         <tr>
-                          <td>{fmtDate(p.po_date)}</td>
-                          <td>{daysSince(p.po_date)}</td>
-                          <td style={{ whiteSpace: "nowrap" }}>
-                            {fmtDate(p.deadline)}
-                            {p.urgent && <span className="pill pill-rejected" style={{ marginLeft: 4, fontSize: "0.6rem" }}>URGENT</span>}
-                          </td>
-                          <td>{p.po_number}</td>
-                          <td>{p.item_code}</td>
-                          <td>{p.sales}</td>
-                          <td>{p.customer_name}</td>
-                          <td>{p.item_description}</td>
-                          <td>{p.qty}</td>
-                          <td>{p.unit}</td>
-                          <td>{CURRENCY_SYMBOLS[p.unit_price_currency]} {Number(p.total_price).toLocaleString("id-ID")}</td>
-                          <td>{p.supplier}</td>
-                          <td>
-                            {(() => {
-                              const meta = { production: { label: "Production", color: "#eab308" }, shipment: { label: "Shipment", color: "#3b82f6" }, arrived: { label: "Arrived", color: "#22c55e" } }[p.status];
-                              return (
-                                <span className="pill" style={{ background: meta.color, color: "white", cursor: "pointer" }} onClick={() => openUpdates(p)}>
-                                  {meta.label}
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td>{isEditingFields && fd ? <input type="text" value={fd.oc} onChange={(e) => setFieldsDraft({ ...fd, oc: e.target.value })} style={{ fontSize: "0.8rem", width: 90 }} /> : (p.oc || <span className="subtle">-</span>)}</td>
-                          <td>{isEditingFields && fd ? <input type="text" value={fd.origin} onChange={(e) => setFieldsDraft({ ...fd, origin: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : (p.origin || <span className="subtle">-</span>)}</td>
-                          <td>
-                            <select value={p.via ?? ""} onChange={(e) => updatePoField(p.id, { via: e.target.value })} style={{ fontSize: "0.8rem" }}>
-                              <option value="">Select...</option>
-                              <option value="AIR">AIR</option>
-                              <option value="SEA">SEA</option>
-                            </select>
-                          </td>
-                          <td>
-                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                              <select value={p.shipment} onChange={(e) => updatePoField(p.id, { shipment: e.target.value })} style={{ fontSize: "0.8rem" }}>
-                                <option value="">Select...</option>
-                                {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
-                              </select>
-                              {p.shipment && (
-                                <button className="btn secondary" style={{ fontSize: "0.68rem", padding: "3px 6px" }} onClick={() => openRecap(p.shipment)}>
-                                  {recapOpenFor === p.shipment ? "Hide" : "View"}
-                                </button>
-                              )}
-                            </div>
-                          </td>
+                          {cells.map((c) => <td key={c.key}>{c.node}</td>)}
                           <td style={{ whiteSpace: "nowrap" }}>
                             {isEditingFields ? (
                               <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveFieldsEdit(p.id)}>Save</button>
@@ -703,7 +789,7 @@ export default function EximPage() {
                         </tr>
                         {updatesOpenId === p.id && (
                           <tr>
-                            <td colSpan={18} style={{ background: "var(--panel-muted)" }}>
+                            <td colSpan={cells.length + 1} style={{ background: "var(--panel-muted)" }}>
                               <div style={{ padding: "8px 2px" }}>
                                 <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>Update progress</div>
                                 <PoStatusSlider status={statusDraft[p.id] ?? p.status} onChange={(s) => setStatusDraft((cur) => ({ ...cur, [p.id]: s }))} />
@@ -760,7 +846,7 @@ export default function EximPage() {
                               <td>{p.po_number}</td>
                               <td>{p.item_code}</td>
                               <td>{p.customer_name}</td>
-                              <td>{p.item_description}</td>
+                              <td><TruncatedText text={p.item_description} /></td>
                               <td>{p.qty}</td>
                               <td>{CURRENCY_SYMBOLS[p.unit_price_currency]} {Number(p.total_price).toLocaleString("id-ID")}</td>
                               <td>

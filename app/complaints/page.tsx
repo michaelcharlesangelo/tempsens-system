@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
+import TruncatedText from "@/app/components/TruncatedText";
 import { Complaint, JobOrder, COMPLAINT_STATUSES, complaintMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
 interface SalesAccount { id: string; full_name: string; }
@@ -48,7 +49,7 @@ function ComplaintTable({
           <td>{fmtDate(c.created_at)}</td>
           <td>{isEditing && d ? <input type="text" value={d.customerName} onChange={(e) => setEditDraft({ ...d, customerName: e.target.value })} style={{ fontSize: "0.82rem" }} /> : c.customer_name}</td>
           <td>{isEditing && d ? <input type="text" value={d.soNo} onChange={(e) => setEditDraft({ ...d, soNo: e.target.value.toUpperCase() })} style={{ fontSize: "0.82rem" }} /> : c.so_no}</td>
-          <td>{isEditing && d ? <input type="text" value={d.itemDescription} onChange={(e) => setEditDraft({ ...d, itemDescription: e.target.value })} style={{ fontSize: "0.82rem" }} /> : c.item_description}</td>
+          <td>{isEditing && d ? <input type="text" value={d.itemDescription} onChange={(e) => setEditDraft({ ...d, itemDescription: e.target.value })} style={{ fontSize: "0.82rem" }} /> : <TruncatedText text={c.item_description} />}</td>
           <td>{isEditing && d ? <input type="number" value={d.quantity} onChange={(e) => setEditDraft({ ...d, quantity: e.target.value })} style={{ fontSize: "0.82rem", width: 60 }} /> : c.quantity}</td>
           <td style={{ maxWidth: 180 }}>{isEditing && d ? <input type="text" value={d.problemDescription} onChange={(e) => setEditDraft({ ...d, problemDescription: e.target.value })} style={{ fontSize: "0.82rem" }} /> : c.problem_description}</td>
           <td>

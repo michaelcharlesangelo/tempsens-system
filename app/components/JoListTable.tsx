@@ -2,6 +2,7 @@
 
 import { Fragment, ReactNode, useState } from "react";
 import { JobOrder, JobOrderHistoryEntry, fmtDate, fmtDateTime } from "@/lib/jobOrders";
+import TruncatedText from "@/app/components/TruncatedText";
 
 // Shared list table used by Sales Support, Sales Manager, Operational
 // Manager and General Manager - same column layout everywhere, only the
@@ -52,7 +53,7 @@ export default function JoListTable({
                   <td>{jo.item_no}</td>
                   <td>{jo.sales_person_name}</td>
                   <td>{jo.customer_name}</td>
-                  <td>{jo.item_description}</td>
+                  <td><TruncatedText text={jo.item_description} /></td>
                   <td>{jo.quantity}</td>
                   <td><button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => onView(jo.id, "drawing")}>View</button></td>
                   <td><button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => onView(jo.id, "po")}>View</button></td>

@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
+import TruncatedText from "@/app/components/TruncatedText";
 import { JobOrder, JobOrderStatus, joMatchesSearch, fmtDate, formatSerialRange } from "@/lib/jobOrders";
 
 // Work History is the finished record, not a work-in-progress tracker -
@@ -86,7 +87,7 @@ export default function WorkHistoryPage() {
                       <td>{jo.so_no}</td>
                       <td>{jo.customer_name}</td>
                       <td>{jo.item_no}</td>
-                      <td>{jo.item_description}</td>
+                      <td><TruncatedText text={jo.item_description} /></td>
                       <td>{jo.quantity}</td>
                       <td>{serialLabel === "-" ? <span className="subtle">-</span> : serialLabel}</td>
                       <td style={{ whiteSpace: "nowrap" }}>

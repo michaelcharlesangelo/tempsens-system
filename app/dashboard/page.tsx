@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
+import TruncatedText from "@/app/components/TruncatedText";
 import {
   Complaint, JobOrder, PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PO_OUT_STATUSES, COMPLAINT_STATUSES,
   complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate, fmtDateTime,
@@ -249,7 +250,7 @@ export default function DashboardPage() {
             <td>{fmtDate(c.created_at)}</td>
             <td>{c.customer_name}</td>
             <td>{c.so_no}</td>
-            <td>{c.item_description}</td>
+            <td><TruncatedText text={c.item_description} /></td>
             <td>{c.quantity}</td>
             <td style={{ maxWidth: 180 }}>{c.problem_description}</td>
             <td>
@@ -362,7 +363,7 @@ export default function DashboardPage() {
                     <td>{jo.item_no}</td>
                     <td>{jo.sales_person_name}</td>
                     <td>{jo.customer_name}</td>
-                    <td>{jo.item_description}</td>
+                    <td><TruncatedText text={jo.item_description} /></td>
                     <td>{jo.quantity}</td>
                     <td>{daysCount(jo)}</td>
                     <td>{fmtDate(jo.finish_date || jo.finish_estimation)}</td>

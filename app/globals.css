@@ -39,7 +39,7 @@ body {
      actual content area was silently double-capped and looked narrow. */
 }
 
-/* ---------- Shell: topbar + main, sidebar is a click-to-open overlay ---------- */
+/* ---------- Shell: topbar + persistent sidebar rail (Gmail-style) ---------- */
 .shell { min-height: 100vh; }
 
 .shell-topbar {
@@ -55,30 +55,35 @@ body {
 }
 .shell-menu-btn:hover { background: var(--panel-muted); }
 
-/* Overlay panel, not part of layout flow - opening it never shifts or
-   resizes the page underneath. Closes on any click outside itself. */
-.shell-sidebar-overlay {
-  position: fixed; top: 0; left: 0; bottom: 0; width: 250px; z-index: 30;
+.shell-body { display: flex; align-items: flex-start; }
+
+/* Real layout, not an overlay - collapsed to icon-only by default and
+   widens on click, same button/position either way (no separate close
+   button, no click-outside-to-close). Width transitions smoothly; labels
+   crossfade in/out rather than popping so the widen doesn't look abrupt. */
+.shell-sidebar {
+  position: sticky; top: 56px; align-self: stretch;
+  width: 64px; flex: none; overflow: hidden;
   background: var(--panel); border-right: 1px solid var(--border);
-  box-shadow: 4px 0 24px rgba(0,0,0,0.12);
-  display: flex; flex-direction: column;
+  transition: width 0.2s ease;
 }
-.shell-sidebar-head {
-  height: 56px; flex: none; display: flex; align-items: center; gap: 12px;
-  padding: 0 16px; border-bottom: 1px solid var(--border);
-}
-.shell-sidebar-list { padding: 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.shell-sidebar.expanded { width: 220px; }
+.shell-sidebar-list { padding: 10px; display: flex; flex-direction: column; gap: 2px; }
 .shell-nav-item {
   display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
   text-decoration: none; color: var(--text-muted); font-size: 0.88rem; font-weight: 600;
+  white-space: nowrap;
 }
 .shell-nav-item:hover { background: var(--panel-muted); color: var(--text); }
 .shell-nav-item.active { background: var(--accent); color: white; }
+.shell-nav-icon { flex: none; display: flex; }
+.shell-nav-label { opacity: 0; transition: opacity 0.15s ease; }
+.shell-sidebar.expanded .shell-nav-label { opacity: 1; }
 
-.shell-main { padding: 20px 32px 60px; max-width: 96vw; margin: 0 auto; }
+.shell-main { flex: 1; min-width: 0; padding: 20px 32px 60px; max-width: 96vw; margin: 0 auto; }
 
 @media (max-width: 640px) {
-  .shell-sidebar-overlay { width: 82vw; }
+  .shell-sidebar.expanded { width: 200px; }
 }
 
 /* ---------- Bell + account dropdowns ---------- */

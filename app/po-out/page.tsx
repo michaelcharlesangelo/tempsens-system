@@ -6,6 +6,7 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
 import DateField from "@/app/components/DateField";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
+import TruncatedText from "@/app/components/TruncatedText";
 import {
   PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, CURRENCY_SYMBOLS, PoOutStatus, PO_OUT_STATUSES,
   fmtDate, fmtDateTime, exportPoOutRecapToExcel,
@@ -355,7 +356,7 @@ export default function PoOutPage() {
         ) : p.sales,
       },
       { key: "customerName", node: isEditing && d ? <input type="text" value={d.customerName} onChange={(e) => setEditDraft({ ...d, customerName: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 120 }} /> : p.customer_name },
-      { key: "itemDescription", node: isEditing && d ? <input type="text" value={d.itemDescription} onChange={(e) => setEditDraft({ ...d, itemDescription: e.target.value })} style={{ fontSize: "0.8rem", width: 160 }} /> : p.item_description },
+      { key: "itemDescription", node: isEditing && d ? <input type="text" value={d.itemDescription} onChange={(e) => setEditDraft({ ...d, itemDescription: e.target.value })} style={{ fontSize: "0.8rem", width: 160 }} /> : <TruncatedText text={p.item_description} /> },
       { key: "qty", node: isEditing && d ? <input type="number" value={d.qty} onChange={(e) => setEditDraft({ ...d, qty: e.target.value })} style={{ fontSize: "0.8rem", width: 60 }} /> : p.qty },
       { key: "unit", node: isEditing && d ? <input type="text" value={d.unit} onChange={(e) => setEditDraft({ ...d, unit: e.target.value })} style={{ fontSize: "0.8rem", width: 60 }} /> : p.unit },
       {

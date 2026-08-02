@@ -43,12 +43,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
+  // Gmail-style rail: always visible, icon-only when collapsed, icon+label
+  // when expanded - not an overlay, so it never covers the page and the
+  // hamburger button never moves or disappears either way.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [role, setRole] = useState(DEFAULT_ROLE);
   const accountRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const menuBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(ROLE_STORAGE_KEY) : null;
@@ -60,16 +61,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     function onClick(e: MouseEvent) {
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) { setAccountOpen(false); setSwitchOpen(false); }
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
-      // The toggle button itself sits outside the overlay panel - skip it
-      // here so its own onClick is the only thing that opens/closes it.
-      // Without this, mousedown closes the sidebar first and the click's
-      // toggle then immediately reopens it, so the button looked "stuck".
-      if (
-        sidebarRef.current && !sidebarRef.current.contains(e.target as Node) &&
-        menuBtnRef.current && !menuBtnRef.current.contains(e.target as Node)
-      ) {
-        setSidebarOpen(false);
-      }
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -93,7 +84,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="shell">
       <div className="shell-topbar">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button ref={menuBtnRef} className="shell-menu-btn" onClick={() => setSidebarOpen((v) => !v)} aria-label="Menu">
+          <button className="shell-menu-btn" onClick={() => setSidebarOpen((v) => !v)} aria-label="Menu" aria-pressed={sidebarOpen}>
             <Icon name="menu" />
           </button>
           <a href="/dashboard" className="shell-brand">
@@ -149,25 +140,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {sidebarOpen && (
-        <div className="shell-sidebar-overlay" ref={sidebarRef}>
-          <div className="shell-sidebar-head">
-            <button className="shell-menu-btn" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
-              <Icon name="menu" />
-            </button>
-            <img src="/logo.png" alt="Tempsens" style={{ height: 22, width: "auto" }} />
-          </div>
+      <div className="shell-body">
+        <div className={sidebarOpen ? "shell-sidebar expanded" : "shell-sidebar"}>
           <div className="shell-sidebar-list">
             {sidebarLinks.map((l) => (
-              <a key={l.label} href={l.href} className={pathname === l.href ? "shell-nav-item active" : "shell-nav-item"}>
-                <Icon name={l.icon} /> {l.label}
+              <a
+                key={l.label} href={l.href} title={l.label}
+                className={pathname === l.href ? "shell-nav-item active" : "shell-nav-item"}
+              >
+                <span className="shell-nav-icon"><Icon name={l.icon} /></span>
+                <span className="shell-nav-label">{l.label}</span>
               </a>
             ))}
           </div>
         </div>
-      )}
 
-      <div className="shell-main">{children}</div>
+        <div className="shell-main">{children}</div>
+      </div>
     </div>
   );
 }

@@ -10,8 +10,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const formData = await req.formData();
   const admin = getSupabaseAdminClient();
 
+  const { data: before } = await admin.from("shipments").select("shipment_number").eq("id", params.id).maybeSingle();
+
+  const newShipmentNumber = ((formData.get("shipmentNumber") as string) || "").trim();
   const updates: Record<string, unknown> = {
-    shipment_number: ((formData.get("shipmentNumber") as string) || "").trim(),
+    shipment_number: newShipmentNumber,
     supplier: ((formData.get("supplier") as string) || "").trim(),
     shipment_via: ((formData.get("shipmentVia") as string) || "").trim(),
     incoterms: ((formData.get("incoterms") as string) || "").trim(),
@@ -52,6 +55,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const { data, error } = await admin.from("shipments").update(updates).eq("id", params.id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Renaming a shipment number would otherwise silently orphan every PO Out
+  // row that had the old name selected (the two are linked only by that
+  // text match) - carry the rename over instead of resetting the link.
+  if (before?.shipment_number && newShipmentNumber && before.shipment_number !== newShipmentNumber) {
+    await admin.from("po_out").update({ shipment: newShipmentNumber }).eq("shipment", before.shipment_number);
+  }
+
   return NextResponse.json({ shipment: data });
 }
 
