@@ -7,7 +7,6 @@ import { ItemCategory, splitMatch } from "@/lib/jobOrders";
 
 interface CatalogItem { item_no: string; description: string; }
 interface SalesAccount { id: string; full_name: string; }
-interface AccountWithPosition { id: string; full_name: string; position?: { name: string } | { name: string }[] | null; }
 
 // Bolds the portion of an item code that matches the current search term
 // so the matched prefix stands out in suggestion lists.
@@ -67,8 +66,6 @@ function JoInputInner() {
 
   const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [salesAccounts, setSalesAccounts] = useState<SalesAccount[]>([]);
-  const [salesSupportAccounts, setSalesSupportAccounts] = useState<SalesAccount[]>([]);
-  const [salesSupportAccountId, setSalesSupportAccountId] = useState("");
   const [catalogSuggestions, setCatalogSuggestions] = useState<CatalogItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -81,20 +78,6 @@ function JoInputInner() {
     // Only Accounts with a Sales/Sales Manager/General Manager position
     // are selectable here - see SALES_QUALIFYING_POSITIONS.
     fetch("/api/production-accounts?forSales=true", { cache: "no-store" }).then((r) => r.json()).then((d) => setSalesAccounts(d.accounts ?? []));
-    // Which specific Sales Support person is submitting - drives team-based
-    // routing to their Sales Manager, see sales_teams.
-    fetch("/api/production-accounts", { cache: "no-store" }).then((r) => r.json()).then((d) => {
-      const accounts = (d.accounts ?? []) as AccountWithPosition[];
-      setSalesSupportAccounts(
-        accounts
-          .filter((a) => {
-            const pos = a.position;
-            const name = Array.isArray(pos) ? pos[0]?.name : pos?.name;
-            return name === "Sales Support";
-          })
-          .map((a) => ({ id: a.id, full_name: a.full_name }))
-      );
-    });
   }, []);
 
   useEffect(() => {
@@ -158,7 +141,6 @@ function JoInputInner() {
     setCustomerName(""); setSoNo(""); setItemDescription(""); setItemCategory("");
     setQuantity("1"); setItemNo(""); setDeadline(""); setUrgent(false); setDrawingNumber("");
     setSalesPersonName("");
-    setSalesSupportAccountId("");
     onDrawingChange(null);
     onPoChange(null);
     setFileInputKey((k) => k + 1);
@@ -180,7 +162,6 @@ function JoInputInner() {
       // Only tag on creation - editing shouldn't reassign whose "Submitted" list this shows under.
       if (!isEditing) {
         formData.append("salesSupportName", createdByTab);
-        if (salesSupportAccountId) formData.append("salesSupportAccountId", salesSupportAccountId);
       }
       formData.append("deadline", deadline);
       formData.append("urgent", String(urgent));
@@ -224,15 +205,6 @@ function JoInputInner() {
               </select>
             </div>
             <div className="form-row"><label>Quantity</label><span>:</span><input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} /></div>
-            {!isEditing && createdByTab === "Sales Support" && (
-              <div className="form-row">
-                <label>Submitted By</label><span>:</span>
-                <select value={salesSupportAccountId} onChange={(e) => setSalesSupportAccountId(e.target.value)}>
-                  <option value="">Select...</option>
-                  {salesSupportAccounts.map((a) => <option key={a.id} value={a.id}>{a.full_name}</option>)}
-                </select>
-              </div>
-            )}
           </div>
 
           <div className="form-sheet-col">
