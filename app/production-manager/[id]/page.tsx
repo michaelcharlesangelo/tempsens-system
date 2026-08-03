@@ -94,7 +94,12 @@ export default function ProductionJobOrderDetailPage() {
     // Encode a real link (not the bare code) so scanning the printed sheet
     // with an ordinary phone camera - not just this app's own /production
     // scanner - opens the scan flow directly instead of showing inert text.
-    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(`${window.location.origin}/production?jo=${jobOrder.barcode}`, { width: 165, margin: 1 }) : "";
+    // Encoding a full link instead of the old bare 10-char code makes for a
+    // visually denser QR (more modules) - rendered/printed too small, a
+    // phone camera can't resolve it and the scan never completes. Bumped
+    // resolution and print size to compensate (see the on-screen QrImage
+    // below for the matching size bump).
+    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(`${window.location.origin}/production?jo=${jobOrder.barcode}`, { width: 300, margin: 1 }) : "";
 
     const bomRows = bom.map((b) => `
       <tr>
@@ -127,7 +132,7 @@ export default function ProductionJobOrderDetailPage() {
         body { font-family: Arial, sans-serif; font-size: 9.5px; color: #111; line-height: 1.4; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .header h1 { font-size: 16px; margin: 0; flex: 1; text-align: center; }
-        .qr { display: flex; align-items: center; gap: 8px; width: 100px; justify-content: flex-end; }
+        .qr { display: flex; align-items: center; gap: 8px; width: 160px; justify-content: flex-end; }
         .qr img { display: block; }
         table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; font-size: 9.5px; }
         table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
@@ -142,10 +147,10 @@ export default function ProductionJobOrderDetailPage() {
       </style>
       </head><body onload="window.focus();window.print();">
         <div class="header">
-          <div style="width:100px"></div>
+          <div style="width:160px"></div>
           <h1>JOB ORDER</h1>
           <div class="qr">
-            ${qrDataUrl ? `<img src="${qrDataUrl}" width="90" height="90" />` : ""}
+            ${qrDataUrl ? `<img src="${qrDataUrl}" width="150" height="150" />` : ""}
           </div>
         </div>
         <table class="info">
@@ -466,11 +471,11 @@ export default function ProductionJobOrderDetailPage() {
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 60 }} />
+          <div style={{ width: 90 }} />
           <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>JOB ORDER</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px", whiteSpace: "nowrap" }} onClick={printJobOrder}>Print JO</button>
-            {jobOrder.barcode && typeof window !== "undefined" && <QrImage value={`${window.location.origin}/production?jo=${jobOrder.barcode}`} size={90} />}
+            {jobOrder.barcode && typeof window !== "undefined" && <QrImage value={`${window.location.origin}/production?jo=${jobOrder.barcode}`} size={180} />}
           </div>
         </div>
 
