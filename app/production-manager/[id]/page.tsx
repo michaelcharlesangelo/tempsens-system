@@ -91,7 +91,10 @@ export default function ProductionJobOrderDetailPage() {
     const esc = (value: unknown): string =>
       String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 
-    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(jobOrder.barcode, { width: 165, margin: 1 }) : "";
+    // Encode a real link (not the bare code) so scanning the printed sheet
+    // with an ordinary phone camera - not just this app's own /production
+    // scanner - opens the scan flow directly instead of showing inert text.
+    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(`${window.location.origin}/production?jo=${jobOrder.barcode}`, { width: 165, margin: 1 }) : "";
 
     const bomRows = bom.map((b) => `
       <tr>
@@ -467,7 +470,7 @@ export default function ProductionJobOrderDetailPage() {
           <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>JOB ORDER</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px", whiteSpace: "nowrap" }} onClick={printJobOrder}>Print JO</button>
-            {jobOrder.barcode && <QrImage value={jobOrder.barcode} size={90} />}
+            {jobOrder.barcode && typeof window !== "undefined" && <QrImage value={`${window.location.origin}/production?jo=${jobOrder.barcode}`} size={90} />}
           </div>
         </div>
 

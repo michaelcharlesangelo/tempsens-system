@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import QrScanner from "@/app/components/QrScanner";
 import { JobOrder, StationCode } from "@/lib/jobOrders";
 
@@ -11,6 +12,20 @@ type Step = "scan-jo" | "scan-station" | "form";
 const SCANNED_BY_LABEL = "Production";
 
 export default function ProductionScanPage() {
+  return (
+    <Suspense fallback={<p className="subtle">Loading...</p>}>
+      <ProductionScanInner />
+    </Suspense>
+  );
+}
+
+function ProductionScanInner() {
+  // The JO's printed QR now encodes a link to /production?jo=<code> so an
+  // ordinary phone camera (not just this page's own in-app scanner) can
+  // open it directly - land here with ?jo= set, skip straight to the
+  // lookup instead of making them scan again inside the app.
+  const searchParams = useSearchParams();
+  const joParam = searchParams.get("jo");
   const [step, setStep] = useState<Step>("scan-jo");
   const [scanning, setScanning] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -63,6 +78,11 @@ export default function ProductionScanPage() {
       setLookingUp(false);
     }
   }
+
+  useEffect(() => {
+    if (joParam) handleJoScan(joParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joParam]);
 
   async function handleStationScan(code: string) {
     setScanning(false);
