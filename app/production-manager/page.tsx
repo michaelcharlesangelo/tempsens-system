@@ -497,7 +497,7 @@ function JoTable({
                   <td><TruncatedText text={jo.item_no} maxWidth={90} /></td>
                   <td><TruncatedText text={jo.sales_person_name} maxWidth={100} /></td>
                   <td><TruncatedText text={jo.customer_name} maxWidth={140} /></td>
-                  <td><TruncatedText text={jo.item_description} /></td>
+                  <td><TruncatedText text={jo.item_description} maxWidth={150} /></td>
                   <td>{jo.quantity}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{fmtDate(jo.deadline)}</td>
                   <td>
