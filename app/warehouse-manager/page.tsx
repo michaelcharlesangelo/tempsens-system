@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Collapsible from "@/app/components/Collapsible";
+import ToggleSwitch from "@/app/components/ToggleSwitch";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import { fmtDate } from "@/lib/jobOrders";
@@ -46,6 +47,10 @@ function notAvailableMatches(item: NotAvailableItem, term: string): boolean {
 export default function WarehouseManagerPage() {
   const [items, setItems] = useState<PrepareItem[] | null>(null);
   const [notAvailable, setNotAvailable] = useState<NotAvailableItem[] | null>(null);
+  // A procurement method already chosen (Import/Local Purchase) reads as
+  // "Approved" in the table below - hide those by default so this list
+  // stays focused on rows that still need a decision.
+  const [hideApproved, setHideApproved] = useState(true);
   const [showRecap, setShowRecap] = useState(false);
   // SOs unticked here are left out of the recap - default is everything
   // ticked (nothing in this set) so the recap doesn't start out empty.
@@ -99,7 +104,8 @@ export default function WarehouseManagerPage() {
 
   const toPreparePaged = usePagedSearch(toPrepareAll, soBlockMatches);
   const preparedPaged = usePagedSearch(preparedAll, soBlockMatches);
-  const notAvailablePaged = usePagedSearch(notAvailable ?? [], notAvailableMatches);
+  const notAvailableVisible = (notAvailable ?? []).filter((i) => !hideApproved || !i.procurement_method);
+  const notAvailablePaged = usePagedSearch(notAvailableVisible, notAvailableMatches);
   const toPrepare = toPreparePaged.pageItems;
   const prepared = preparedPaged.pageItems;
 
@@ -310,16 +316,22 @@ export default function WarehouseManagerPage() {
         )}
       </Collapsible>
 
-      <Collapsible title="Not Available — Needs Purchase" count={notAvailable?.length} defaultOpen>
+      <Collapsible
+        title="Not Available — Needs Purchase"
+        count={notAvailable?.length}
+        defaultOpen
+        actions={<ToggleSwitch checked={hideApproved} onChange={setHideApproved} label="Hide Approved" color="var(--good)" />}
+      >
         {!notAvailable ? <p className="subtle">Loading...</p> : notAvailable.length === 0 ? <p className="subtle">Nothing flagged right now.</p> : (
           <>
           <SearchBox value={notAvailablePaged.search} onChange={notAvailablePaged.setSearch} />
           <div style={{ overflowX: "auto" }}>
             <table className="data-table">
-              <thead><tr><th>JO Number</th><th>Customer</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Procurement</th></tr></thead>
+              <thead><tr><th>Date</th><th>JO Number</th><th>Customer</th><th>Item Code</th><th>Description</th><th>Qty</th><th>Procurement</th></tr></thead>
               <tbody>
                 {notAvailablePaged.pageItems.map((i) => (
                   <tr key={i.id}>
+                    <td style={{ whiteSpace: "nowrap" }}>{fmtDate(i.req_date)}</td>
                     <td>{i.jo_number}</td>
                     <td>{i.customer_name}</td>
                     <td>{i.item_no}</td>

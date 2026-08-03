@@ -39,7 +39,7 @@ body {
      actual content area was silently double-capped and looked narrow. */
 }
 
-/* ---------- Shell: topbar + persistent sidebar rail (Gmail-style) ---------- */
+/* ---------- Shell: topbar + sidebar (persistent rail on desktop, click-to-open overlay on phone) ---------- */
 .shell { min-height: 100vh; }
 
 .shell-topbar {
@@ -57,10 +57,10 @@ body {
 
 .shell-body { display: flex; align-items: flex-start; }
 
-/* Real layout, not an overlay - collapsed to icon-only by default and
-   widens on click, same button/position either way (no separate close
-   button, no click-outside-to-close). Width transitions smoothly; labels
-   crossfade in/out rather than popping so the widen doesn't look abrupt. */
+/* Desktop default: a real layout element (not an overlay), collapsed to
+   icon-only and widening on click, same as it's always been - plenty of
+   screen width to spare for a persistent rail. Width transitions smoothly;
+   labels crossfade in/out rather than popping. */
 .shell-sidebar {
   position: sticky; top: 56px; align-self: stretch;
   width: 64px; flex: none; overflow: hidden;
@@ -82,8 +82,21 @@ body {
 
 .shell-main { flex: 1; min-width: 0; padding: 20px 32px 60px; max-width: 96vw; margin: 0 auto; }
 
-@media (max-width: 640px) {
-  .shell-sidebar.expanded { width: 200px; }
+/* Phone: no permanently-reserved rail at all (there's no width to spare) -
+   the sidebar takes up zero space until the hamburger opens it, then
+   floats on top of the page instead of shifting it. Closes on any click
+   outside itself (see AppShell's click-outside handler) or on picking a
+   link. */
+@media (max-width: 768px) {
+  .shell-sidebar {
+    position: fixed; top: 56px; left: 0; bottom: 0; width: 0; z-index: 30;
+    border-right: none; box-shadow: none; transition: none;
+  }
+  .shell-sidebar.expanded {
+    width: 82vw; border-right: 1px solid var(--border);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.12);
+  }
+  .shell-sidebar .shell-nav-label { opacity: 1; }
 }
 
 /* ---------- Bell + account dropdowns ---------- */

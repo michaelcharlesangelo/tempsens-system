@@ -6,6 +6,7 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
 import { PurchaseForm, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
+import { printForm } from "@/lib/printPurchaseForm";
 
 function formMatches(f: PurchaseForm, term: string): boolean {
   return (
@@ -102,14 +103,15 @@ export default function WarehouseFormsToRegister() {
                             <span className="subtle" title="This form wasn't raised from the Not Available flow, so there's no BOM row to register it against.">Not linked to a BOM row</span>
                           )}
                         </td>
-                        <td>
+                        <td style={{ whiteSpace: "nowrap" }}>
                           <button
                             className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }}
                             disabled={!canSave || !(itemCodeDraft[f.id] ?? "").trim() || savingId === f.id}
                             onClick={() => saveItemCode(f)}
                           >
                             {savingId === f.id ? "Saving..." : "Save"}
-                          </button>
+                          </button>{" "}
+                          <button className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.75rem" }} onClick={() => printForm(f)}>Print</button>
                         </td>
                       </tr>
                       {commentsOpenId === f.id && commented.length > 0 && (

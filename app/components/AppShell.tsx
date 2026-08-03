@@ -43,9 +43,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
-  // Gmail-style rail: always visible, icon-only when collapsed, icon+label
-  // when expanded - not an overlay, so it never covers the page and the
-  // hamburger button never moves or disappears either way.
+  // Desktop: persistent rail, icon-only when collapsed, exactly as before.
+  // Phone (see globals.css breakpoint): the same toggle instead switches a
+  // zero-width, non-reserved element to a fixed overlay that floats on top
+  // of the page rather than shifting it - there's no spare width on a
+  // phone screen for a permanently-reserved rail.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [role, setRole] = useState(DEFAULT_ROLE);
   const accountRef = useRef<HTMLDivElement>(null);
@@ -155,6 +157,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <a
                 key={l.label} href={l.href} title={l.label}
                 className={pathname === l.href ? "shell-nav-item active" : "shell-nav-item"}
+                onClick={() => setSidebarOpen(false)}
               >
                 <span className="shell-nav-icon"><Icon name={l.icon} /></span>
                 <span className="shell-nav-label">{l.label}</span>
