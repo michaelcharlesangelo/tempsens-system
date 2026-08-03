@@ -24,10 +24,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const photoFiles = (formData.getAll("photos") as File[]).filter((f) => f && f.size > 0);
-  if (photoFiles.length > 0) {
+  const removePhotoPath = formData.get("removePhoto");
+  if (photoFiles.length > 0 || removePhotoPath) {
     const { data: current } = await admin.from("fabrication_items").select("photo_paths").eq("id", params.id).maybeSingle();
-    const existing: string[] = current?.photo_paths ?? [];
-    const newPaths: string[] = [];
+    let paths: string[] = current?.photo_paths ?? [];
+    if (typeof removePhotoPath === "string" && removePhotoPath) paths = paths.filter((p) => p !== removePhotoPath);
     for (let i = 0; i < photoFiles.length; i++) {
       const file = photoFiles[i];
       const ext = file.name.split(".").pop() || "bin";
@@ -35,9 +36,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       const { error: upErr } = await admin.storage.from(BUCKET).upload(path, file, {
         contentType: file.type || "application/octet-stream", upsert: true,
       });
-      if (!upErr) newPaths.push(path);
+      if (!upErr) paths.push(path);
     }
-    updates.photo_paths = [...existing, ...newPaths];
+    updates.photo_paths = paths;
   }
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update." }, { status: 400 });

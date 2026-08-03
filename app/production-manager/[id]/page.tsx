@@ -357,6 +357,14 @@ export default function ProductionJobOrderDetailPage() {
     load();
   }
 
+  async function deleteFabPhoto(row: FabricationItem, path: string) {
+    if (!confirm("Remove this photo? In case it was the wrong attachment.")) return;
+    const fd = new FormData();
+    fd.append("removePhoto", path);
+    await fetch(`/api/fabrication/${row.id}`, { method: "PATCH", body: fd });
+    load();
+  }
+
   async function viewFabPhoto(path: string) {
     const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
     const data = await res.json();
@@ -370,10 +378,13 @@ export default function ProductionJobOrderDetailPage() {
 
     // Signed URLs can't be fetched inline inside the template string below
     // (it has to stay synchronous once we start building it), so resolve
-    // every attached photo's URL up front.
+    // every attached photo's URL up front. Capped to a handful, laid out
+    // in one fixed-size non-wrapping row - unbounded photos (or a fixed
+    // container relying on CSS overflow to clip them) is what was pushing
+    // this onto a second physical page in some browsers' print engines.
     const photoUrls = (
       await Promise.all(
-        row.photo_paths.map(async (p) => {
+        row.photo_paths.slice(0, 6).map(async (p) => {
           try {
             const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(p)}`, { cache: "no-store" });
             const data = await res.json();
@@ -389,35 +400,25 @@ export default function ProductionJobOrderDetailPage() {
       <html><head><meta charset="utf-8"><title>Fabrication JO - ${esc(jobOrder.so_no)}</title>
       <style>
         @page { size: A4 portrait; margin: 15mm; }
-        html, body { height: 100%; }
-        body { font-family: Arial, sans-serif; font-size: 10px; color: #111; line-height: 1.4; }
-        /* Fixed-height sheet (~half an A4 page) so the printout never spills
-           onto a second physical page, however many photos are attached. */
-        .sheet { max-height: 135mm; overflow: hidden; }
-        h1 { font-size: 14px; text-align: center; margin: 0 0 10px; }
-        table.info { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; }
+        body { font-family: Arial, sans-serif; font-size: 9px; color: #111; line-height: 1.4; }
+        h1 { font-size: 13px; text-align: center; margin: 0 0 8px; }
+        table.info { width: 100%; border-collapse: collapse; table-layout: fixed; }
         table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
         table.info td.label { font-weight: bold; white-space: nowrap; width: 22%; }
-        .note-title { font-weight: bold; text-transform: uppercase; font-size: 9px; margin: 6px 0 3px; border-top: 1px solid #999; padding-top: 5px; }
-        .note-box { border: 1px solid #999; height: 60mm; padding: 5px; overflow: hidden; font-size: 9.5px; }
-        .note-photos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; height: 45mm; overflow: hidden; }
-        .note-photos img { height: 100%; width: auto; max-width: 45mm; object-fit: contain; border: 1px solid #ccc; }
+        .photos-title { font-weight: bold; text-transform: uppercase; font-size: 8px; margin: 8px 0 4px; border-top: 1px solid #999; padding-top: 5px; }
+        .photos-row { display: flex; gap: 4px; flex-wrap: nowrap; }
+        .photos-row img { height: 30mm; width: 30mm; object-fit: cover; border: 1px solid #ccc; }
       </style>
       </head><body onload="window.focus();window.print();">
-        <div class="sheet">
-          <h1>FABRICATION JO</h1>
-          <table class="info">
-            <colgroup><col style="width:12%"><col style="width:38%"><col style="width:12%"><col style="width:38%"></colgroup>
-            <tr><td class="label">SO Number</td><td>${esc(jobOrder.so_no)}</td><td class="label">JO Date</td><td>${esc(fmtDate(jobOrder.created_at))}</td></tr>
-            <tr><td class="label">Item Description</td><td>${esc(row.description)}</td><td class="label">Deadline</td><td>${esc(fmtDate(jobOrder.deadline))}</td></tr>
-            <tr><td class="label">Qty</td><td>${esc(row.qty)} ${esc(row.unit)}</td><td class="label">Drawing Number</td><td>${esc(jobOrder.drawing_number || "-")}</td></tr>
-          </table>
-          <div class="note-title">Note (Production Manager)</div>
-          <div class="note-box">
-            ${row.comment ? esc(row.comment) : '<span style="color:#999;">No comment.</span>'}
-            ${photoUrls.length > 0 ? `<div class="note-photos">${photoUrls.map((u) => `<img src="${esc(u)}" />`).join("")}</div>` : ""}
-          </div>
-        </div>
+        <h1>FABRICATION JO</h1>
+        <table class="info">
+          <colgroup><col style="width:12%"><col style="width:38%"><col style="width:12%"><col style="width:38%"></colgroup>
+          <tr><td class="label">SO Number</td><td>${esc(jobOrder.so_no)}</td><td class="label">JO Date</td><td>${esc(fmtDate(jobOrder.created_at))}</td></tr>
+          <tr><td class="label">Item Description</td><td>${esc(row.description)}</td><td class="label">Deadline</td><td>${esc(fmtDate(jobOrder.deadline))}</td></tr>
+          <tr><td class="label">Qty</td><td>${esc(row.qty)} ${esc(row.unit)}</td><td class="label">Drawing Number</td><td>${esc(jobOrder.drawing_number || "-")}</td></tr>
+          <tr><td class="label">Note</td><td colspan="3">${row.comment ? esc(row.comment) : '<span style="color:#999;">No comment.</span>'}</td></tr>
+        </table>
+        ${photoUrls.length > 0 ? `<div class="photos-title">Photos</div><div class="photos-row">${photoUrls.map((u) => `<img src="${esc(u)}" />`).join("")}</div>` : ""}
       </body></html>
     `;
     const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
@@ -671,7 +672,7 @@ export default function ProductionJobOrderDetailPage() {
                 <col style={{ width: "14%" }} />
                 <col style={{ width: "24%" }} />
               </colgroup>
-              <thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Finish</th><th>Comment (to Machine Shop)</th><th>Photos</th>{!readOnly && <th></th>}</tr></thead>
+              <thead><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Finish</th><th>Comments</th><th>Photos</th>{!readOnly && <th></th>}</tr></thead>
               <tbody>
                 {fabricationItems.map((row) => (
                   <tr key={row.id}>
@@ -717,10 +718,20 @@ export default function ProductionJobOrderDetailPage() {
                         <td>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
                             {row.photo_paths.map((p, i) => (
-                              <button key={i} className="btn secondary" style={{ fontSize: "0.68rem", padding: "2px 6px" }} onClick={() => viewFabPhoto(p)}>Photo{row.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+                              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+                                <button className="btn secondary" style={{ fontSize: "0.68rem", padding: "2px 6px" }} onClick={() => viewFabPhoto(p)}>Photo{row.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+                                {!readOnly && (
+                                  <button
+                                    className="btn danger" style={{ fontSize: "0.68rem", padding: "2px 5px" }}
+                                    title="Remove this photo" onClick={() => deleteFabPhoto(row, p)}
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </span>
                             ))}
                             {!readOnly && (
-                              <input type="file" accept="image/*,application/pdf" multiple style={{ fontSize: "0.68rem", maxWidth: 120 }} onChange={(e) => uploadFabPhotos(row, e.target.files)} />
+                              <input type="file" accept="image/*,application/pdf" multiple style={{ fontSize: "0.7rem" }} onChange={(e) => uploadFabPhotos(row, e.target.files)} />
                             )}
                           </div>
                         </td>
@@ -728,7 +739,7 @@ export default function ProductionJobOrderDetailPage() {
                           <td style={{ whiteSpace: "nowrap" }}>
                             <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => startEditFabRow(row)}>Edit</button>{" "}
                             <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => deleteFabRow(row.id)}>Remove</button>{" "}
-                            <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => printFabricationJo(row)}>Print Fabrication JO</button>
+                            <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => printFabricationJo(row)}>Print</button>
                           </td>
                         )}
                       </>

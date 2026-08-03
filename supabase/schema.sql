@@ -470,12 +470,15 @@ create table if not exists shipments (
   awb_bl_file_name text,
   photo_paths text[] not null default '{}',
   submitted_by text not null default '',
-  -- Two-step progression, each cascading every PO Out row on this shipment
-  -- at once (see /api/shipments/[id]/shipped and /arrived): Shipped moves
-  -- rows still at 'production' to 'shipment', Arrived moves everything to
-  -- 'arrived' - no separate per-PO confirmation needed either step.
-  shipped boolean not null default false,
-  arrived boolean not null default false,
+  -- Plan -> Shipment -> Arrived, mirroring PO Out's own 3-stage status but
+  -- one level up (per shipment, not per PO Out row) - see
+  -- /api/shipments/[id]/status. Moving to Shipment cascades every PO Out
+  -- row still at 'production' on this shipment to 'shipment'; moving to
+  -- Arrived cascades every PO Out row on this shipment to 'arrived'. Any
+  -- comment entered alongside a status change (or on its own, without
+  -- changing status) is written to every PO Out row's history on this
+  -- shipment, e.g. a "Shipment delayed" note.
+  status text not null default 'plan' check (status in ('plan','shipment','arrived')),
   created_at timestamptz not null default now()
 );
 

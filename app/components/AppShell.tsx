@@ -50,6 +50,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState(DEFAULT_ROLE);
   const accountRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const stored = typeof window !== "undefined" ? window.localStorage.getItem(ROLE_STORAGE_KEY) : null;
@@ -61,6 +63,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     function onClick(e: MouseEvent) {
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) { setAccountOpen(false); setSwitchOpen(false); }
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
+      if (
+        sidebarRef.current && !sidebarRef.current.contains(e.target as Node) &&
+        menuBtnRef.current && !menuBtnRef.current.contains(e.target as Node)
+      ) {
+        setSidebarOpen(false);
+      }
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -84,7 +92,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="shell">
       <div className="shell-topbar">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button className="shell-menu-btn" onClick={() => setSidebarOpen((v) => !v)} aria-label="Menu" aria-pressed={sidebarOpen}>
+          <button ref={menuBtnRef} className="shell-menu-btn" onClick={() => setSidebarOpen((v) => !v)} aria-label="Menu" aria-pressed={sidebarOpen}>
             <Icon name="menu" />
           </button>
           <a href="/dashboard" className="shell-brand">
@@ -141,7 +149,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <div className="shell-body">
-        <div className={sidebarOpen ? "shell-sidebar expanded" : "shell-sidebar"}>
+        <div ref={sidebarRef} className={sidebarOpen ? "shell-sidebar expanded" : "shell-sidebar"}>
           <div className="shell-sidebar-list">
             {sidebarLinks.map((l) => (
               <a

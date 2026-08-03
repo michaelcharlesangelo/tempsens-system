@@ -6,8 +6,61 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import TruncatedText from "@/app/components/TruncatedText";
 import {
   Complaint, JobOrder, PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PO_OUT_STATUSES, COMPLAINT_STATUSES,
+  FabricationItem,
   complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate, fmtDateTime,
 } from "@/lib/jobOrders";
+
+function fabricationRecapMatches(f: FabricationItem, term: string): boolean {
+  return f.so_no.toLowerCase().includes(term) || f.description.toLowerCase().includes(term) || fmtDate(f.jo_date).includes(term);
+}
+
+async function viewFabricationRecapPhoto(path: string) {
+  const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+  const data = await res.json();
+  if (data.url) window.open(data.url, "_blank");
+}
+
+// Read-only copy of the Production Manager Fabrication JO table - no edit,
+// comment, photo upload, remove, or print, just a look at what's on-going.
+function FabricationRecapSection({ items }: { items: FabricationItem[] }) {
+  const ongoing = items.filter((f) => f.status === "production");
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(ongoing, fabricationRecapMatches);
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
+      <h3 style={{ margin: "0 0 8px" }}>Fabrication JO — On-going ({ongoing.length})</h3>
+      {totalCount === 0 ? <p className="subtle">Nothing on-going.</p> : (
+        <>
+          <SearchBox value={search} onChange={setSearch} />
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table">
+              <thead><tr><th>JO Date</th><th>SO Number</th><th>Description</th><th>Qty</th><th>Unit</th><th>Comments</th><th>Photos</th></tr></thead>
+              <tbody>
+                {pageItems.map((f) => (
+                  <tr key={f.id}>
+                    <td style={{ whiteSpace: "nowrap" }}>{fmtDate(f.jo_date)}</td>
+                    <td>{f.so_no || <span className="subtle">-</span>}</td>
+                    <td><TruncatedText text={f.description} /></td>
+                    <td>{f.qty}</td>
+                    <td>{f.unit}</td>
+                    <td>{f.comment || <span className="subtle">-</span>}</td>
+                    <td>
+                      {f.photo_paths.length === 0 ? <span className="subtle">-</span> : f.photo_paths.map((p, i) => (
+                        <button key={i} className="btn secondary" style={{ fontSize: "0.68rem", padding: "2px 6px", marginRight: 4 }} onClick={() => viewFabricationRecapPhoto(p)}>
+                          Photo{f.photo_paths.length > 1 ? ` ${i + 1}` : ""}
+                        </button>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
+        </>
+      )}
+    </div>
+  );
+}
 
 interface CategoryTotal { category: string; qty: number; }
 
@@ -72,6 +125,7 @@ function PoOutRecapSection() {
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const columnsMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -133,8 +187,13 @@ function PoOutRecapSection() {
 
   return (
     <div className="card">
-      <h2 style={{ margin: 0 }}>PO OUT RECAP ({pos?.length ?? "..."})</h2>
-      {!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ margin: 0 }}>PO OUT RECAP ({pos?.length ?? "..."})</h2>
+        <button className="btn secondary" onClick={() => setOpen((v) => !v)}>
+          {open ? "Hide" : "Show"}
+        </button>
+      </div>
+      {open && (!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
         <>
           <div style={{ display: "flex", gap: 2, margin: "10px 0 0", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
             <button
@@ -215,7 +274,7 @@ function PoOutRecapSection() {
           </div>
           <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
         </>
-      )}
+      ))}
     </div>
   );
 }
@@ -225,6 +284,8 @@ export default function DashboardPage() {
   const [yearlyByCategory, setYearlyByCategory] = useState<CategoryTotal[]>([]);
   const [year, setYear] = useState<number | null>(null);
   const [complaints, setComplaints] = useState<Complaint[] | null>(null);
+  const [fabricationItems, setFabricationItems] = useState<FabricationItem[]>([]);
+  const [fabricationOpen, setFabricationOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/dashboard", { cache: "no-store" }).then((r) => r.json()).then((d) => {
@@ -233,6 +294,7 @@ export default function DashboardPage() {
       setYear(d.year ?? null);
     });
     fetch("/api/complaints", { cache: "no-store" }).then((r) => r.json()).then((d) => setComplaints(d.complaints ?? []));
+    fetch("/api/fabrication", { cache: "no-store" }).then((r) => r.json()).then((d) => setFabricationItems(d.items ?? []));
   }, []);
 
   async function viewPhoto(path: string) {
@@ -420,10 +482,16 @@ export default function DashboardPage() {
     <>
 
       <div className="card">
-        <h2 style={{ margin: 0 }}>Current Job Orders ({activeJobOrders?.length ?? "..."})</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <h2 style={{ margin: 0 }}>Current Job Orders ({activeJobOrders?.length ?? "..."})</h2>
+          <button className="btn secondary" onClick={() => setFabricationOpen((v) => !v)}>
+            {fabricationOpen ? "Hide Fabrication JO" : "Fabrication JO"}
+          </button>
+        </div>
         {!activeJobOrders ? <p className="subtle">Loading...</p> : activeJobOrders.length === 0 ? <p className="subtle">Nothing active right now.</p> : (
           <CurrentJobOrders items={activeJobOrders} />
         )}
+        {fabricationOpen && <FabricationRecapSection items={fabricationItems} />}
       </div>
 
       <PoOutRecapSection />

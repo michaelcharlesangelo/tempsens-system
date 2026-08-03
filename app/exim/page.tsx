@@ -7,10 +7,12 @@ import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
 import DateField from "@/app/components/DateField";
 import PoStatusSlider from "@/app/components/PoStatusSlider";
+import ShipmentStatusSlider from "@/app/components/ShipmentStatusSlider";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
 import TruncatedText from "@/app/components/TruncatedText";
 import {
   PoOut, Shipment, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PoOutStatus, PO_OUT_STATUSES,
+  ShipmentStatus, SHIPMENT_STATUSES,
   HsCode, ShipmentPackingBox, CURRENCY_SYMBOLS,
   fmtDate, fmtDateTime, exportPoOutRecapToExcel,
 } from "@/lib/jobOrders";
@@ -87,7 +89,7 @@ function poMatches(p: PoOut, term: string): boolean {
   );
 }
 
-type SortKey = "po_date" | "po_number" | "item_code" | "sales" | "customer_name" | "supplier" | "shipment";
+type SortKey = "po_date" | "po_number" | "item_code" | "sales" | "customer_name" | "supplier" | "shipment" | "status" | "via";
 
 const RECAP_COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
   { key: "poDate", label: "PO Date", sortKey: "po_date" },
@@ -102,10 +104,10 @@ const RECAP_COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
   { key: "unit", label: "Unit" },
   { key: "totalPrice", label: "Total Price" },
   { key: "supplier", label: "Supplier", sortKey: "supplier" },
-  { key: "status", label: "Status" },
+  { key: "status", label: "Status", sortKey: "status" },
   { key: "oc", label: "OC" },
   { key: "origin", label: "Origin" },
-  { key: "via", label: "Via" },
+  { key: "via", label: "Via", sortKey: "via" },
   { key: "shipment", label: "Shipment", sortKey: "shipment" },
 ];
 // Hide the lower-traffic columns by default so the wide table actually
@@ -144,8 +146,10 @@ export default function EximPage() {
   const [editAwbBlFile, setEditAwbBlFile] = useState<File | null>(null);
   const [editPhotoFiles, setEditPhotoFiles] = useState<File[]>([]);
   const [hideArrived, setHideArrived] = useState(true);
-  const [togglingArrivedId, setTogglingArrivedId] = useState<string | null>(null);
-  const [togglingShippedId, setTogglingShippedId] = useState<string | null>(null);
+  const [statusUpdateOpenFor, setStatusUpdateOpenFor] = useState<string | null>(null);
+  const [shipmentStatusDraft, setShipmentStatusDraft] = useState<Record<string, ShipmentStatus>>({});
+  const [shipmentCommentDraft, setShipmentCommentDraft] = useState<Record<string, string>>({});
+  const [savingShipmentStatusId, setSavingShipmentStatusId] = useState<string | null>(null);
 
   // ---------------- PO table ----------------
   const [pos, setPos] = useState<PoOut[] | null>(null);
@@ -298,7 +302,7 @@ export default function EximPage() {
     if (data.url) window.open(data.url, "_blank");
   }
 
-  const shipmentsVisible = (shipments ?? []).filter((s) => !hideArrived || !s.arrived);
+  const shipmentsVisible = (shipments ?? []).filter((s) => !hideArrived || s.status !== "arrived");
   const shipmentsPaged = usePagedSearch(shipmentsVisible, shipmentMatches);
 
   // ---------------- PO table actions ----------------
@@ -369,35 +373,33 @@ export default function EximPage() {
     updatePoField(p.id, { box: boxDraft[p.id] ?? p.box, hsCode: code.code, bm: code.bm });
   }
 
-  async function toggleShipped(shipment: Shipment) {
-    if (!shipment.shipped) {
-      if (!confirm(`Mark shipment ${shipment.shipment_number} as Shipped? This moves every PO Out row still at Production on this shipment to Shipment status, and can't be undone.`)) return;
-    }
-    setTogglingShippedId(shipment.id);
-    try {
-      await fetch(`/api/shipments/${shipment.id}/shipped`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shipped: !shipment.shipped, changedBy: currentRole.label }),
-      });
-      await Promise.all([loadShipments(), loadPos()]);
-    } finally {
-      setTogglingShippedId(null);
-    }
+  function openShipmentStatus(s: Shipment) {
+    if (statusUpdateOpenFor === s.id) { setStatusUpdateOpenFor(null); return; }
+    setStatusUpdateOpenFor(s.id);
+    setShipmentStatusDraft((cur) => ({ ...cur, [s.id]: s.status }));
+    setShipmentCommentDraft((cur) => ({ ...cur, [s.id]: cur[s.id] ?? "" }));
   }
 
-  async function toggleArrived(shipment: Shipment) {
-    if (!shipment.arrived) {
-      if (!confirm(`Mark shipment ${shipment.shipment_number} as Arrived? This moves every PO Out row on this shipment to Arrived status, and can't be undone.`)) return;
+  async function saveShipmentStatus(s: Shipment) {
+    const status = shipmentStatusDraft[s.id] ?? s.status;
+    const comment = (shipmentCommentDraft[s.id] ?? "").trim();
+    // Moving forward cascades every PO Out row on this shipment and can't
+    // be undone from here - moving back to Plan, or just posting a
+    // comment without changing status, doesn't touch PO Out rows at all.
+    if ((status === "shipment" || status === "arrived") && status !== s.status) {
+      const label = SHIPMENT_STATUSES.find((st) => st.value === status)?.label ?? status;
+      if (!confirm(`Mark shipment ${s.shipment_number} as ${label}? This moves every affected PO Out row on this shipment to ${label} status, and can't be undone.`)) return;
     }
-    setTogglingArrivedId(shipment.id);
+    setSavingShipmentStatusId(s.id);
     try {
-      await fetch(`/api/shipments/${shipment.id}/arrived`, {
+      await fetch(`/api/shipments/${s.id}/status`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ arrived: !shipment.arrived, changedBy: currentRole.label }),
+        body: JSON.stringify({ status, comment, changedBy: currentRole.label }),
       });
+      setShipmentCommentDraft((cur) => ({ ...cur, [s.id]: "" }));
       await Promise.all([loadShipments(), loadPos()]);
     } finally {
-      setTogglingArrivedId(null);
+      setSavingShipmentStatusId(null);
     }
   }
 
@@ -645,7 +647,7 @@ export default function EximPage() {
                 <thead>
                   <tr>
                     <th>Shipment No.</th><th>Supplier</th><th>Via</th><th>Incoterms</th><th>Invoice</th>
-                    <th>AWB/BL</th><th>ATD</th><th>ETA JKT</th><th>SPPB</th><th>Delivery</th><th>Files</th><th>Shipped</th><th>Arrived</th><th></th>
+                    <th>AWB/BL</th><th>ATD</th><th>ETA JKT</th><th>SPPB</th><th>Delivery</th><th>Files</th><th>Status</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -653,7 +655,8 @@ export default function EximPage() {
                     const isEditing = editingShipmentId === s.id;
                     const d = editShipmentDraft;
                     return (
-                      <tr key={s.id}>
+                      <Fragment key={s.id}>
+                      <tr>
                         <td>{isEditing && d ? <input type="text" value={d.shipmentNumber} onChange={(e) => setEditShipmentDraft({ ...d, shipmentNumber: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : s.shipment_number}</td>
                         <td>
                           {isEditing && d ? (
@@ -688,18 +691,14 @@ export default function EximPage() {
                           )}
                         </td>
                         <td style={{ textAlign: "center" }}>
-                          <input
-                            type="checkbox" checked={s.shipped} disabled={togglingShippedId === s.id}
-                            onChange={() => toggleShipped(s)} style={{ width: "auto" }}
-                            title="Ticking this marks every PO Out row still at Production on this shipment as Shipment"
-                          />
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <input
-                            type="checkbox" checked={s.arrived} disabled={togglingArrivedId === s.id}
-                            onChange={() => toggleArrived(s)} style={{ width: "auto" }}
-                            title="Ticking this marks every PO Out row on this shipment as Arrived"
-                          />
+                          {(() => {
+                            const meta = SHIPMENT_STATUSES.find((st) => st.value === s.status) ?? SHIPMENT_STATUSES[0];
+                            return (
+                              <span className="pill" style={{ background: meta.color, color: "white", cursor: "pointer" }} onClick={() => openShipmentStatus(s)}>
+                                {meta.label}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           {isEditing ? (
@@ -721,6 +720,27 @@ export default function EximPage() {
                           )}
                         </td>
                       </tr>
+                      {statusUpdateOpenFor === s.id && (
+                        <tr>
+                          <td colSpan={13} style={{ background: "var(--panel-muted)" }}>
+                            <div style={{ padding: "8px 2px" }}>
+                              <div className="subtle" style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>Update shipment status</div>
+                              <ShipmentStatusSlider status={shipmentStatusDraft[s.id] ?? s.status} onChange={(st) => setShipmentStatusDraft((cur) => ({ ...cur, [s.id]: st }))} />
+                              <div style={{ display: "flex", gap: 8, marginTop: 10, maxWidth: 520 }}>
+                                <input
+                                  type="text" placeholder="Comment (e.g. Shipment delayed) - posted to every PO Out row on this shipment"
+                                  value={shipmentCommentDraft[s.id] ?? ""} onChange={(e) => setShipmentCommentDraft((cur) => ({ ...cur, [s.id]: e.target.value }))}
+                                  style={{ flex: 1 }}
+                                />
+                                <button className="btn secondary" disabled={savingShipmentStatusId === s.id} onClick={() => saveShipmentStatus(s)}>
+                                  {savingShipmentStatusId === s.id ? "Saving..." : "Save"}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -730,7 +750,10 @@ export default function EximPage() {
 
             {recapOpenFor && (() => {
               const items = (pos ?? []).filter((p) => p.shipment === recapOpenFor);
-              const totalSum = items.reduce((n, p) => n + Number(p.total_price || 0), 0);
+              // Items are usually all in one currency, but sum per-currency
+              // rather than assuming IDR, since a shipment can mix suppliers.
+              const totalsByCurrency = new Map<string, number>();
+              items.forEach((p) => totalsByCurrency.set(p.unit_price_currency, (totalsByCurrency.get(p.unit_price_currency) ?? 0) + Number(p.total_price || 0)));
               return (
                 <div className="card" style={{ marginTop: 14, background: "var(--panel-muted)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -806,7 +829,11 @@ export default function EximPage() {
                       <tfoot>
                         <tr style={{ fontWeight: 700 }}>
                           <td colSpan={5} style={{ textAlign: "right" }}>Total</td>
-                          <td>Rp {totalSum.toLocaleString("id-ID")}</td>
+                          <td>
+                            {Array.from(totalsByCurrency.entries()).map(([currency, sum]) => (
+                              <div key={currency}>{CURRENCY_SYMBOLS[currency as keyof typeof CURRENCY_SYMBOLS] ?? currency} {sum.toLocaleString("id-ID")}</div>
+                            ))}
+                          </td>
                           <td colSpan={3}></td>
                         </tr>
                       </tfoot>
@@ -869,7 +896,7 @@ export default function EximPage() {
                             </tbody>
                             <tfoot>
                               <tr style={{ fontWeight: 700 }}>
-                                <td colSpan={4} style={{ textAlign: "right" }}>Sum</td>
+                                <td colSpan={4} style={{ textAlign: "right" }}>Total</td>
                                 <td>{packingBoxes.reduce((n, b) => n + m3For(b.length_cm, b.width_cm, b.height_cm), 0).toFixed(4)}</td>
                                 <td>{packingBoxes.reduce((n, b) => n + Number(b.gross_weight_kg || 0), 0).toLocaleString("id-ID")}</td>
                                 <td>{packingBoxes.reduce((n, b) => n + Number(b.net_weight_kg || 0), 0).toLocaleString("id-ID")}</td>

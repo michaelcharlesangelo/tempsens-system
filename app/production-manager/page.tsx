@@ -31,8 +31,14 @@ function FabricationJoSection({ items, showProduction, showFinish, onToggleStatu
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [savedRowId, setSavedRowId] = useState<string | null>(null);
 
-  const filtered = items.filter((f) => (f.status === "production" && showProduction) || (f.status === "finish" && showFinish));
-  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(filtered, fabricationMatches);
+  // Two independent tables (paging separately, like Pending/Approved/
+  // Rejected elsewhere) rather than one combined list, so a row visibly
+  // moves out of Production and into Finished underneath once confirmed -
+  // same shape as Warehouse Manager's Prepared split.
+  const productionItems = items.filter((f) => f.status === "production");
+  const finishItems = items.filter((f) => f.status === "finish");
+  const productionPaged = usePagedSearch(productionItems, fabricationMatches);
+  const finishPaged = usePagedSearch(finishItems, fabricationMatches);
 
   function startEdit(row: FabricationItem) {
     setEditingId(row.id);
@@ -78,10 +84,21 @@ function FabricationJoSection({ items, showProduction, showFinish, onToggleStatu
     if (data.url) window.open(data.url, "_blank");
   }
 
+  async function deletePhoto(row: FabricationItem, path: string) {
+    if (!confirm("Remove this photo? In case it was the wrong attachment.")) return;
+    const fd = new FormData();
+    fd.append("removePhoto", path);
+    await fetch(`/api/fabrication/${row.id}`, { method: "PATCH", body: fd });
+    onReload();
+  }
+
   async function printRow(row: FabricationItem) {
+    // Capped to a handful, laid out in one fixed-size non-wrapping row -
+    // unbounded photos is what was pushing this onto a second physical
+    // page in some browsers' print engines.
     const photoUrls = (
       await Promise.all(
-        row.photo_paths.map(async (p) => {
+        row.photo_paths.slice(0, 6).map(async (p) => {
           try {
             const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(p)}`, { cache: "no-store" });
             const data = await res.json();
@@ -97,118 +114,129 @@ function FabricationJoSection({ items, showProduction, showFinish, onToggleStatu
       <html><head><meta charset="utf-8"><title>Fabrication JO - ${escHtml(row.so_no || "Standalone")}</title>
       <style>
         @page { size: A4 portrait; margin: 15mm; }
-        html, body { height: 100%; }
-        body { font-family: Arial, sans-serif; font-size: 10px; color: #111; line-height: 1.4; }
-        .sheet { max-height: 135mm; overflow: hidden; }
-        h1 { font-size: 14px; text-align: center; margin: 0 0 10px; }
-        table.info { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; }
+        body { font-family: Arial, sans-serif; font-size: 9px; color: #111; line-height: 1.4; }
+        h1 { font-size: 13px; text-align: center; margin: 0 0 8px; }
+        table.info { width: 100%; border-collapse: collapse; table-layout: fixed; }
         table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
         table.info td.label { font-weight: bold; white-space: nowrap; width: 22%; }
-        .note-title { font-weight: bold; text-transform: uppercase; font-size: 9px; margin: 6px 0 3px; border-top: 1px solid #999; padding-top: 5px; }
-        .note-box { border: 1px solid #999; height: 60mm; padding: 5px; overflow: hidden; font-size: 9.5px; }
-        .note-photos { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; height: 45mm; overflow: hidden; }
-        .note-photos img { height: 100%; width: auto; max-width: 45mm; object-fit: contain; border: 1px solid #ccc; }
+        .photos-title { font-weight: bold; text-transform: uppercase; font-size: 8px; margin: 8px 0 4px; border-top: 1px solid #999; padding-top: 5px; }
+        .photos-row { display: flex; gap: 4px; flex-wrap: nowrap; }
+        .photos-row img { height: 30mm; width: 30mm; object-fit: cover; border: 1px solid #ccc; }
       </style>
       </head><body onload="window.focus();window.print();">
-        <div class="sheet">
-          <h1>FABRICATION JO</h1>
-          <table class="info">
-            <colgroup><col style="width:12%"><col style="width:38%"><col style="width:12%"><col style="width:38%"></colgroup>
-            <tr><td class="label">SO Number</td><td>${escHtml(row.so_no || "-")}</td><td class="label">JO Date</td><td>${escHtml(fmtDate(row.jo_date))}</td></tr>
-            <tr><td class="label">Item Description</td><td>${escHtml(row.description)}</td><td class="label">Deadline</td><td>${escHtml(row.job_order?.deadline ? fmtDate(row.job_order.deadline) : "-")}</td></tr>
-            <tr><td class="label">Qty</td><td>${escHtml(row.qty)} ${escHtml(row.unit)}</td><td class="label">Drawing Number</td><td>${escHtml(row.job_order?.drawing_number || "-")}</td></tr>
-          </table>
-          <div class="note-title">Note (Production Manager)</div>
-          <div class="note-box">
-            ${row.comment ? escHtml(row.comment) : '<span style="color:#999;">No comment.</span>'}
-            ${photoUrls.length > 0 ? `<div class="note-photos">${photoUrls.map((u) => `<img src="${escHtml(u)}" />`).join("")}</div>` : ""}
-          </div>
-        </div>
+        <h1>FABRICATION JO</h1>
+        <table class="info">
+          <colgroup><col style="width:12%"><col style="width:38%"><col style="width:12%"><col style="width:38%"></colgroup>
+          <tr><td class="label">SO Number</td><td>${escHtml(row.so_no || "-")}</td><td class="label">JO Date</td><td>${escHtml(fmtDate(row.jo_date))}</td></tr>
+          <tr><td class="label">Item Description</td><td>${escHtml(row.description)}</td><td class="label">Deadline</td><td>${escHtml(row.job_order?.deadline ? fmtDate(row.job_order.deadline) : "-")}</td></tr>
+          <tr><td class="label">Qty</td><td>${escHtml(row.qty)} ${escHtml(row.unit)}</td><td class="label">Drawing Number</td><td>${escHtml(row.job_order?.drawing_number || "-")}</td></tr>
+          <tr><td class="label">Note</td><td colspan="3">${row.comment ? escHtml(row.comment) : '<span style="color:#999;">No comment.</span>'}</td></tr>
+        </table>
+        ${photoUrls.length > 0 ? `<div class="photos-title">Photos</div><div class="photos-row">${photoUrls.map((u) => `<img src="${escHtml(u)}" />`).join("")}</div>` : ""}
       </body></html>
     `;
     const blobUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
     window.open(blobUrl, "_blank", "width=850,height=650");
   }
 
+  function renderRow(f: FabricationItem) {
+    return (
+      <tr key={f.id}>
+        <td style={{ whiteSpace: "nowrap" }}>{fmtDate(f.jo_date)}</td>
+        <td>{f.so_no || <span className="subtle">-</span>}</td>
+        {editingId === f.id ? (
+          <>
+            <td><input type="text" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
+            <td><input type="number" value={editDraft.qty} onChange={(e) => setEditDraft({ ...editDraft, qty: e.target.value })} style={{ width: 60 }} /></td>
+            <td><input type="text" value={editDraft.unit} onChange={(e) => setEditDraft({ ...editDraft, unit: e.target.value })} style={{ width: 55 }} /></td>
+            <td style={{ textAlign: "center" }}>
+              <input type="checkbox" checked={f.status === "finish"} onChange={() => togglingId !== f.id && onToggleStatus(f)} style={{ width: "auto" }} />
+            </td>
+            <td className="subtle">{f.comment || "-"}</td>
+            <td className="subtle">{f.photo_paths.length} photo(s)</td>
+            <td><button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => saveEdit(f.id)}>Save</button></td>
+          </>
+        ) : (
+          <>
+            <td><TruncatedText text={f.description} maxWidth={160} /></td>
+            <td>{f.qty}</td>
+            <td>{f.unit}</td>
+            <td style={{ textAlign: "center" }}>
+              <input type="checkbox" checked={f.status === "finish"} onChange={() => togglingId !== f.id && onToggleStatus(f)} style={{ width: "auto" }} />
+            </td>
+            <td>
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                <input
+                  type="text"
+                  placeholder="Note for Machine Shop..."
+                  value={commentDraft[f.id] ?? f.comment ?? ""}
+                  onChange={(e) => setCommentDraft((d) => ({ ...d, [f.id]: e.target.value }))}
+                  style={{ fontSize: "0.78rem", padding: "4px 6px" }}
+                />
+                <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "4px 6px" }} onClick={() => saveComment(f)}>Save</button>
+                {savedRowId === f.id && <span style={{ color: "var(--good)", fontSize: "0.72rem", whiteSpace: "nowrap" }}>✓ Saved</span>}
+              </div>
+            </td>
+            <td>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                {f.photo_paths.map((p, i) => (
+                  <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+                    <button className="btn secondary" style={{ fontSize: "0.68rem", padding: "2px 6px" }} onClick={() => viewPhoto(p)}>Photo{f.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
+                    <button className="btn danger" style={{ fontSize: "0.68rem", padding: "2px 5px" }} title="Remove this photo" onClick={() => deletePhoto(f, p)}>✕</button>
+                  </span>
+                ))}
+                <input type="file" accept="image/*,application/pdf" multiple style={{ fontSize: "0.7rem" }} onChange={(e) => uploadPhotos(f, e.target.files)} />
+              </div>
+            </td>
+            <td style={{ whiteSpace: "nowrap" }}>
+              <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => startEdit(f)}>Edit</button>{" "}
+              <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => deleteRow(f.id)}>Remove</button>{" "}
+              <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => printRow(f)}>Print</button>
+            </td>
+          </>
+        )}
+      </tr>
+    );
+  }
+
+  function renderTable(paged: ReturnType<typeof usePagedSearch<FabricationItem>>) {
+    return (
+      <>
+        <SearchBox value={paged.search} onChange={paged.setSearch} />
+        <div style={{ overflowX: "auto" }}>
+          <table className="data-table fixed">
+            <colgroup>
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "18%" }} />
+            </colgroup>
+            <thead><tr><th>JO Date</th><th>SO Number</th><th>Description</th><th>Qty</th><th>Unit</th><th>Finish</th><th>Comments</th><th>Photos</th><th></th></tr></thead>
+            <tbody>{paged.pageItems.map(renderRow)}</tbody>
+          </table>
+        </div>
+        <Pager page={paged.page} totalPages={paged.totalPages} totalCount={paged.totalCount} onChange={paged.setPage} />
+      </>
+    );
+  }
+
+  if (!showProduction && !showFinish) return <p className="subtle">Nothing to show for the selected filters.</p>;
+
   return (
     <>
-      {totalCount === 0 ? <p className="subtle">Nothing to show for the selected filters.</p> : (
-        <>
-          <SearchBox value={search} onChange={setSearch} />
-          <div style={{ overflowX: "auto" }}>
-            <table className="data-table fixed">
-              <colgroup>
-                <col style={{ width: "9%" }} />
-                <col style={{ width: "9%" }} />
-                <col style={{ width: "18%" }} />
-                <col style={{ width: "6%" }} />
-                <col style={{ width: "6%" }} />
-                <col style={{ width: "6%" }} />
-                <col style={{ width: "16%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "18%" }} />
-              </colgroup>
-              <thead><tr><th>JO Date</th><th>SO Number</th><th>Description</th><th>Qty</th><th>Unit</th><th>Finish</th><th>Comment (to Machine Shop)</th><th>Photos</th><th></th></tr></thead>
-              <tbody>
-                {pageItems.map((f) => (
-                  <tr key={f.id}>
-                    <td style={{ whiteSpace: "nowrap" }}>{fmtDate(f.jo_date)}</td>
-                    <td>{f.so_no || <span className="subtle">-</span>}</td>
-                    {editingId === f.id ? (
-                      <>
-                        <td><input type="text" value={editDraft.description} onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })} /></td>
-                        <td><input type="number" value={editDraft.qty} onChange={(e) => setEditDraft({ ...editDraft, qty: e.target.value })} style={{ width: 60 }} /></td>
-                        <td><input type="text" value={editDraft.unit} onChange={(e) => setEditDraft({ ...editDraft, unit: e.target.value })} style={{ width: 55 }} /></td>
-                        <td style={{ textAlign: "center" }}>
-                          <input type="checkbox" checked={f.status === "finish"} onChange={() => togglingId !== f.id && onToggleStatus(f)} style={{ width: "auto" }} />
-                        </td>
-                        <td className="subtle">{f.comment || "-"}</td>
-                        <td className="subtle">{f.photo_paths.length} photo(s)</td>
-                        <td><button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => saveEdit(f.id)}>Save</button></td>
-                      </>
-                    ) : (
-                      <>
-                        <td><TruncatedText text={f.description} maxWidth={160} /></td>
-                        <td>{f.qty}</td>
-                        <td>{f.unit}</td>
-                        <td style={{ textAlign: "center" }}>
-                          <input type="checkbox" checked={f.status === "finish"} onChange={() => togglingId !== f.id && onToggleStatus(f)} style={{ width: "auto" }} />
-                        </td>
-                        <td>
-                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                            <input
-                              type="text"
-                              placeholder="Note for Machine Shop..."
-                              value={commentDraft[f.id] ?? f.comment ?? ""}
-                              onChange={(e) => setCommentDraft((d) => ({ ...d, [f.id]: e.target.value }))}
-                              style={{ fontSize: "0.78rem", padding: "4px 6px" }}
-                            />
-                            <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "4px 6px" }} onClick={() => saveComment(f)}>Save</button>
-                            {savedRowId === f.id && <span style={{ color: "var(--good)", fontSize: "0.72rem", whiteSpace: "nowrap" }}>✓ Saved</span>}
-                          </div>
-                        </td>
-                        <td>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
-                            {f.photo_paths.map((p, i) => (
-                              <button key={i} className="btn secondary" style={{ fontSize: "0.68rem", padding: "2px 6px" }} onClick={() => viewPhoto(p)}>Photo{f.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
-                            ))}
-                            <input type="file" accept="image/*,application/pdf" multiple style={{ fontSize: "0.68rem", maxWidth: 110 }} onChange={(e) => uploadPhotos(f, e.target.files)} />
-                          </div>
-                        </td>
-                        <td style={{ whiteSpace: "nowrap" }}>
-                          <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => startEdit(f)}>Edit</button>{" "}
-                          <button className="btn danger" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => deleteRow(f.id)}>Remove</button>{" "}
-                          <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px" }} onClick={() => printRow(f)}>Print Fabrication JO</button>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
-        </>
+      {showProduction && (
+        productionItems.length === 0 ? <p className="subtle">Nothing in Production.</p> : renderTable(productionPaged)
+      )}
+      {showFinish && (
+        <div style={{ marginTop: showProduction ? 22 : 0, paddingTop: showProduction ? 18 : 0, borderTop: showProduction ? "1px solid var(--border)" : "none" }}>
+          <div className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem", textTransform: "uppercase", marginBottom: 8 }}>Finished</div>
+          {finishItems.length === 0 ? <p className="subtle">Nothing finished yet.</p> : renderTable(finishPaged)}
+        </div>
       )}
     </>
   );
@@ -448,7 +476,7 @@ function JoTable({
           <col style={{ width: "10%" }} />
         </colgroup>
         <thead>
-          <tr>
+          <tr style={{ whiteSpace: "nowrap" }}>
             <th>JO Date</th><th>SO Number</th><th>Item Code</th><th>Sales</th><th>Customer</th>
             <th>Item Description</th><th>Qty</th><th>Deadline</th><th>Drawing</th><th>Status</th><th>Comments</th>
             <th>JO</th>
@@ -466,9 +494,9 @@ function JoTable({
                     {jo.so_no}
                     {jo.urgent && <span className="pill pill-rejected" style={{ display: "block", width: "fit-content", marginTop: 2 }}>URGENT</span>}
                   </td>
-                  <td>{jo.item_no}</td>
-                  <td>{jo.sales_person_name}</td>
-                  <td>{jo.customer_name}</td>
+                  <td><TruncatedText text={jo.item_no} maxWidth={90} /></td>
+                  <td><TruncatedText text={jo.sales_person_name} maxWidth={100} /></td>
+                  <td><TruncatedText text={jo.customer_name} maxWidth={140} /></td>
                   <td><TruncatedText text={jo.item_description} /></td>
                   <td>{jo.quantity}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{fmtDate(jo.deadline)}</td>
@@ -691,10 +719,12 @@ export default function ProductionManagerPage() {
   }
 
   async function toggleFabricationStatus(item: FabricationItem) {
+    const movingToFinish = item.status !== "finish";
+    if (movingToFinish && !confirm(`Mark "${item.description}" as Finished? It will move to the Finished table below.`)) return;
     setTogglingFabId(item.id);
     try {
       const fd = new FormData();
-      fd.append("status", item.status === "finish" ? "production" : "finish");
+      fd.append("status", movingToFinish ? "finish" : "production");
       await fetch(`/api/fabrication/${item.id}`, { method: "PATCH", body: fd });
       load();
     } finally {

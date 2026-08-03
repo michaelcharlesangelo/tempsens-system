@@ -438,6 +438,13 @@ export const PO_OUT_STATUSES: { value: PoOutStatus; label: string; color: string
 
 export type PoOutStatus = "production" | "shipment" | "arrived";
 
+export type ShipmentStatus = "plan" | "shipment" | "arrived";
+export const SHIPMENT_STATUSES: { value: ShipmentStatus; label: string; color: string }[] = [
+  { value: "plan", label: "Plan", color: "#94a3b8" },
+  { value: "shipment", label: "Shipment", color: "#3b82f6" },
+  { value: "arrived", label: "Arrived", color: "#22c55e" },
+];
+
 export interface PoOutHistoryEntry {
   id: string;
   po_out_id: string;
@@ -532,8 +539,7 @@ export interface Shipment {
   awb_bl_file_name: string | null;
   photo_paths: string[];
   submitted_by: string;
-  shipped: boolean;
-  arrived: boolean;
+  status: ShipmentStatus;
   created_at: string;
 }
 
