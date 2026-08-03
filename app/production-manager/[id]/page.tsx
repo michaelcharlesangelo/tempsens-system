@@ -91,13 +91,15 @@ export default function ProductionJobOrderDetailPage() {
     const esc = (value: unknown): string =>
       String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 
-    // Controlled test confirmed the scanner and camera permission are both
-    // fine (a 500px test QR scanned instantly), while this JO's own QR
-    // fails at 90px whether printed or on-screen - the one differentiator
-    // left is size. Going much larger this time (a prior bump to 150px
-    // wasn't tested in isolation from the camera/permission issues that
-    // got fixed afterward, so it wasn't a clean test).
-    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(jobOrder.barcode, { width: 500, margin: 2 }) : "";
+    // A phone's native camera app decodes this fine even at the original
+    // small size - the bare barcode was never actually unreadable. What
+    // was missing is that decoding bare text has nothing to open, so
+    // nothing happens after the scan. Encoding a link instead means any
+    // camera app - not just this page's own in-app scanner - opens
+    // /production?jo=<code> directly and proceeds straight into the scan
+    // flow. Back to the original small size/position; see /production for
+    // the ?jo= handling.
+    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(`${window.location.origin}/production?jo=${jobOrder.barcode}`, { width: 165, margin: 1 }) : "";
 
     const bomRows = bom.map((b) => `
       <tr>
@@ -128,11 +130,10 @@ export default function ProductionJobOrderDetailPage() {
       <style>
         @page { size: A4 portrait; margin: 14mm; }
         body { font-family: Arial, sans-serif; font-size: 9.5px; color: #111; line-height: 1.4; }
-        .header { text-align: center; margin-bottom: 6px; }
-        .header h1 { font-size: 16px; margin: 0; }
-        .qr { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 auto 12px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .header h1 { font-size: 16px; margin: 0; flex: 1; text-align: center; }
+        .qr { display: flex; align-items: center; gap: 8px; width: 100px; justify-content: flex-end; }
         .qr img { display: block; }
-        .qr-label { font-size: 8px; text-transform: uppercase; letter-spacing: 0.03em; color: #666; }
         table.info { width: 100%; border-collapse: collapse; margin-bottom: 10px; table-layout: fixed; font-size: 9.5px; }
         table.info td { padding: 3px 6px; vertical-align: top; word-wrap: break-word; }
         table.info td.label { font-weight: bold; white-space: nowrap; }
@@ -146,9 +147,12 @@ export default function ProductionJobOrderDetailPage() {
       </style>
       </head><body onload="window.focus();window.print();">
         <div class="header">
+          <div style="width:100px"></div>
           <h1>JOB ORDER</h1>
+          <div class="qr">
+            ${qrDataUrl ? `<img src="${qrDataUrl}" width="90" height="90" />` : ""}
+          </div>
         </div>
-        ${qrDataUrl ? `<div class="qr"><img src="${qrDataUrl}" width="220" height="220" /><div class="qr-label">Scan for Production</div></div>` : ""}
         <table class="info">
           <colgroup><col style="width:17%"><col style="width:33%"><col style="width:17%"><col style="width:33%"></colgroup>
           <tr><td class="label">Customer Name</td><td>${esc(jobOrder.customer_name)}</td><td class="label">Item Code</td><td>${esc(jobOrder.item_no)}</td></tr>
@@ -467,20 +471,13 @@ export default function ProductionJobOrderDetailPage() {
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-          <h2 style={{ margin: 0 }}>JOB ORDER</h2>
-          <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px", whiteSpace: "nowrap" }} onClick={printJobOrder}>Print JO</button>
-        </div>
-
-        {/* Sized generously (a small QR here was confirmed unscannable
-            even with the camera/permissions otherwise working fine) and
-            given its own row rather than squeezed next to the header, so
-            it stays easy to scan directly off the screen if needed. */}
-        {jobOrder.barcode && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, margin: "10px 0" }}>
-            <QrImage value={jobOrder.barcode} size={220} />
-            <span className="subtle" style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.03em" }}>Scan for Production</span>
+          <div style={{ width: 60 }} />
+          <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>JOB ORDER</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px", whiteSpace: "nowrap" }} onClick={printJobOrder}>Print JO</button>
+            {jobOrder.barcode && typeof window !== "undefined" && <QrImage value={`${window.location.origin}/production?jo=${jobOrder.barcode}`} size={90} />}
           </div>
-        )}
+        </div>
 
         <div className="form-sheet" style={{ marginTop: 6 }}>
           <div className="form-sheet-col">

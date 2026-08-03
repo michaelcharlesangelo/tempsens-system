@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import QrScanner from "@/app/components/QrScanner";
 import { JobOrder, StationCode } from "@/lib/jobOrders";
 
@@ -11,6 +12,21 @@ type Step = "scan-jo" | "scan-station" | "form";
 const SCANNED_BY_LABEL = "Production";
 
 export default function ProductionScanPage() {
+  return (
+    <Suspense fallback={<p className="subtle">Loading...</p>}>
+      <ProductionScanInner />
+    </Suspense>
+  );
+}
+
+function ProductionScanInner() {
+  // The JO's printed/on-screen QR encodes a link to /production?jo=<code>
+  // so any camera app - not just this page's own in-app scanner, which
+  // has proven unreliable at actually decoding frames - can open it
+  // directly and land here ready to look the JO up, no in-app scan step
+  // needed for this leg at all.
+  const searchParams = useSearchParams();
+  const joParam = searchParams.get("jo");
   const [step, setStep] = useState<Step>("scan-jo");
   const [scanning, setScanning] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -47,7 +63,22 @@ export default function ProductionScanPage() {
     setScanning(true);
   }
 
-  async function handleJoScan(code: string) {
+  // The in-app scanner hands back whatever the QR actually contains - if
+  // it decoded the /production?jo=<code> link itself (rather than the
+  // browser having already navigated there), pull the code back out of
+  // it. Falls through unchanged for a bare code (the station QR was never
+  // a link).
+  function extractJoCode(scanned: string): string {
+    try {
+      const url = new URL(scanned);
+      return url.searchParams.get("jo") || scanned;
+    } catch {
+      return scanned;
+    }
+  }
+
+  async function handleJoScan(scanned: string) {
+    const code = extractJoCode(scanned);
     setScanning(false);
     setLookupError(null);
     setLookingUp(true);
@@ -63,6 +94,11 @@ export default function ProductionScanPage() {
       setLookingUp(false);
     }
   }
+
+  useEffect(() => {
+    if (joParam) handleJoScan(joParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joParam]);
 
   async function handleStationScan(code: string) {
     setScanning(false);
