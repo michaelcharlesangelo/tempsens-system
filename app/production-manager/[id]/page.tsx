@@ -91,15 +91,12 @@ export default function ProductionJobOrderDetailPage() {
     const esc = (value: unknown): string =>
       String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 
-    // Encode a real link (not the bare code) so scanning the printed sheet
-    // with an ordinary phone camera - not just this app's own /production
-    // scanner - opens the scan flow directly instead of showing inert text.
-    // Encoding a full link instead of the old bare 10-char code makes for a
-    // visually denser QR (more modules) - rendered/printed too small, a
-    // phone camera can't resolve it and the scan never completes. Bumped
-    // resolution and print size to compensate (see the on-screen QrImage
-    // below for the matching size bump).
-    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(`${window.location.origin}/production?jo=${jobOrder.barcode}`, { width: 300, margin: 1 }) : "";
+    // Reverted to encoding the bare barcode, not a full link - a link made
+    // for a visually denser QR (more modules for the same physical size)
+    // that stopped scanning reliably even at a larger print size, whereas
+    // the plain short code was confirmed working before. This app's own
+    // /production scanner is what actually reads this - see QrScanner.
+    const qrDataUrl = jobOrder.barcode ? await QRCode.toDataURL(jobOrder.barcode, { width: 300, margin: 1 }) : "";
 
     const bomRows = bom.map((b) => `
       <tr>
@@ -475,7 +472,7 @@ export default function ProductionJobOrderDetailPage() {
           <h2 style={{ margin: 0, textAlign: "center", flex: 1 }}>JOB ORDER</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button className="btn secondary" style={{ fontSize: "0.75rem", padding: "4px 8px", whiteSpace: "nowrap" }} onClick={printJobOrder}>Print JO</button>
-            {jobOrder.barcode && typeof window !== "undefined" && <QrImage value={`${window.location.origin}/production?jo=${jobOrder.barcode}`} size={180} />}
+            {jobOrder.barcode && <QrImage value={jobOrder.barcode} size={180} />}
           </div>
         </div>
 
