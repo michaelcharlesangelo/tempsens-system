@@ -76,12 +76,23 @@ function ProductionScanInner() {
   // The in-app scanner hands back whatever the QR actually contains - if
   // it decoded the /production?jo=<code> link itself (rather than the
   // browser having already navigated there), pull the code back out of
-  // it. Falls through unchanged for a bare code (the station QR was never
-  // a link).
+  // it. Falls through unchanged for a bare code.
   function extractJoCode(scanned: string): string {
     try {
       const url = new URL(scanned);
       return url.searchParams.get("jo") || scanned;
+    } catch {
+      return scanned;
+    }
+  }
+
+  // Same as extractJoCode, but for the station QR - it's a link too (see
+  // Settings > Production), so the in-app scanner hands back the full URL
+  // here as well, not just the bare code.
+  function extractStationCode(scanned: string): string {
+    try {
+      const url = new URL(scanned);
+      return url.searchParams.get("station") || scanned;
     } catch {
       return scanned;
     }
@@ -132,7 +143,8 @@ function ProductionScanInner() {
     return true;
   }
 
-  async function handleStationScan(code: string) {
+  async function handleStationScan(scanned: string) {
+    const code = extractStationCode(scanned);
     setScanning(false);
     setLookupError(null);
     setLookingUp(true);
