@@ -301,7 +301,11 @@ export default function SettingsPage() {
                 {stations.map((s, i) => (
                   <div key={s.id} style={{ textAlign: "center", border: "1px solid var(--border)", borderRadius: 8, padding: 12, opacity: s.active ? 1 : 0.4 }}>
                     <div style={{ fontWeight: 700, fontSize: "0.72rem", color: "var(--accent-dark)" }}>STEP {s.sequence}</div>
-                    <QrImage value={s.code} size={110} />
+                    {/* A link (like the JO's own QR) so any camera app can
+                        open it directly into /production, rather than
+                        depending on the in-app scanner - see
+                        /production/page.tsx's ?station= handling. */}
+                    {typeof window !== "undefined" && <QrImage value={`${window.location.origin}/production?station=${s.code}`} size={110} />}
                     <div style={{ fontWeight: 700, fontSize: "0.85rem", marginTop: 4 }}>{s.station_name}</div>
 
                     <div style={{ textAlign: "left", marginTop: 8 }}>

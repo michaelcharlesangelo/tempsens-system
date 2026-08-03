@@ -11,6 +11,14 @@ type Step = "scan-jo" | "scan-station" | "form";
 // until then every scan is just attributed to "Production" as a group.
 const SCANNED_BY_LABEL = "Production";
 
+// Persists which JO is currently being worked across a full page
+// navigation (scanning the station's own link lands here fresh, with no
+// React state left over from the JO scan) - localStorage rather than
+// sessionStorage since tapping a camera app's "open link" notification
+// can land in a new tab, which wouldn't share sessionStorage with
+// whichever tab the JO was scanned in.
+const CURRENT_JO_KEY = "productionScan.jobOrderId";
+
 export default function ProductionScanPage() {
   return (
     <Suspense fallback={<p className="subtle">Loading...</p>}>
@@ -27,6 +35,7 @@ function ProductionScanInner() {
   // needed for this leg at all.
   const searchParams = useSearchParams();
   const joParam = searchParams.get("jo");
+  const stationParam = searchParams.get("station");
   const [step, setStep] = useState<Step>("scan-jo");
   const [scanning, setScanning] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -55,6 +64,7 @@ function ProductionScanInner() {
     setActualValues([]);
     setShowAllUnits(false);
     setSuccessMsg(null);
+    if (typeof window !== "undefined") window.localStorage.removeItem(CURRENT_JO_KEY);
   }
 
   function startScanStation() {
@@ -88,6 +98,7 @@ function ProductionScanInner() {
       const found: JobOrder[] = data.jobOrders ?? [];
       if (found.length === 0) { setLookupError(`No job order found for that QR code.`); return; }
       setJobOrder(found[0]);
+      if (typeof window !== "undefined") window.localStorage.setItem(CURRENT_JO_KEY, found[0].id);
       // Chain straight into station scanning - no extra click needed.
       startScanStation();
     } finally {
@@ -100,25 +111,69 @@ function ProductionScanInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joParam]);
 
+  // Shared by the in-app scanner, the ?station= link handler below, and
+  // resuming from a persisted JO - looks up the station and jumps
+  // straight to the fill-in form. Takes the JO explicitly rather than
+  // reading the jobOrder state, since a caller that just called
+  // setJobOrder() won't see that update yet (state updates aren't
+  // synchronous) - reading state here would silently use a stale/null JO
+  // and miscalculate the unit count for a JO restored via the station link.
+  async function applyStation(code: string, forJobOrder: JobOrder | null): Promise<boolean> {
+    const res = await fetch("/api/station-codes", { cache: "no-store" });
+    const data = await res.json();
+    const stations: StationCode[] = data.stations ?? [];
+    const found = stations.find((s) => s.code.toLowerCase() === code.trim().toLowerCase());
+    if (!found) { setLookupError(`No station found for that QR code.`); return false; }
+    setStation(found);
+    const qty = Math.max(1, forJobOrder?.quantity ?? 1);
+    setActualValues(Array.from({ length: qty }, () => found.parameters.map(() => "")));
+    setShowAllUnits(false);
+    setStep("form");
+    return true;
+  }
+
   async function handleStationScan(code: string) {
     setScanning(false);
     setLookupError(null);
     setLookingUp(true);
     try {
-      const res = await fetch("/api/station-codes", { cache: "no-store" });
-      const data = await res.json();
-      const stations: StationCode[] = data.stations ?? [];
-      const found = stations.find((s) => s.code.toLowerCase() === code.trim().toLowerCase());
-      if (!found) { setLookupError(`No station found for that QR code.`); return; }
-      setStation(found);
-      const qty = Math.max(1, jobOrder?.quantity ?? 1);
-      setActualValues(Array.from({ length: qty }, () => found.parameters.map(() => "")));
-      setShowAllUnits(false);
-      setStep("form");
+      await applyStation(code, jobOrder);
     } finally {
       setLookingUp(false);
     }
   }
+
+  // The station's own QR is a link to /production?station=<code> too (see
+  // Settings > Production), so it works the same way as the JO's - but a
+  // station is fixed/reusable and has no way to know in advance which JO
+  // it'll be scanned for, so it can't carry a ?jo= of its own. Falls back
+  // to whichever JO was last scanned (persisted in localStorage, since
+  // this is a fresh page load with no React state carried over) rather
+  // than requiring the in-app scanner to re-establish that context.
+  async function handleStationParam(code: string) {
+    setLookupError(null);
+    setLookingUp(true);
+    try {
+      let jo = jobOrder;
+      if (!jo) {
+        const joId = typeof window !== "undefined" ? window.localStorage.getItem(CURRENT_JO_KEY) : null;
+        if (!joId) { setLookupError("Scan a Job Order first, then scan the station."); return; }
+        const res = await fetch(`/api/job-orders/${joId}`, { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || !data.jobOrder) { setLookupError("Couldn't find the job order you last scanned - scan it again."); return; }
+        jo = data.jobOrder as JobOrder;
+        setJobOrder(jo);
+      }
+      await applyStation(code, jo);
+    } finally {
+      setLookingUp(false);
+    }
+  }
+
+  useEffect(() => {
+    if (stationParam) handleStationParam(stationParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stationParam]);
 
   async function submitScan() {
     if (!jobOrder || !station) return;
