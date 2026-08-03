@@ -89,12 +89,12 @@ function poMatches(p: PoOut, term: string): boolean {
   );
 }
 
-type SortKey = "po_date" | "po_number" | "item_code" | "sales" | "customer_name" | "supplier" | "shipment" | "status" | "via";
+type SortKey = "po_date" | "po_number" | "item_code" | "sales" | "customer_name" | "supplier" | "shipment" | "status" | "via" | "deadline" | "days";
 
 const RECAP_COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
   { key: "poDate", label: "PO Date", sortKey: "po_date" },
-  { key: "days", label: "Days" },
-  { key: "deadline", label: "Deadline" },
+  { key: "days", label: "Days", sortKey: "days" },
+  { key: "deadline", label: "Deadline", sortKey: "deadline" },
   { key: "poNumber", label: "PO Number", sortKey: "po_number" },
   { key: "itemCode", label: "Item Code", sortKey: "item_code" },
   { key: "sales", label: "Sales", sortKey: "sales" },
@@ -113,7 +113,7 @@ const RECAP_COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
 // Hide the lower-traffic columns by default so the wide table actually
 // fits without scrolling for the fields people check daily - the rest
 // are one click away via Columns.
-const RECAP_DEFAULT_HIDDEN = new Set(["days", "oc", "origin"]);
+const RECAP_DEFAULT_HIDDEN = new Set(["oc", "origin"]);
 
 interface FieldsDraft { oc: string; origin: string; }
 
@@ -566,7 +566,11 @@ export default function EximPage() {
   const filtered = (pos ?? []).filter((p) => (activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab) && statusVisible[p.status]);
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
-        const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""));
+        // Days isn't a raw field (it's computed from po_date) and needs a
+        // numeric compare - a string compare would sort "10" before "9".
+        const cmp = sortKey === "days"
+          ? daysSince(a.po_date) - daysSince(b.po_date)
+          : String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""));
         return sortDir === "asc" ? cmp : -cmp;
       })
     : filtered;
@@ -580,7 +584,7 @@ export default function EximPage() {
         title="Shipment Plan"
         count={shipments?.length}
         defaultOpen
-        actions={<ToggleSwitch checked={hideArrived} onChange={setHideArrived} label="Hide Arrived" />}
+        actions={<ToggleSwitch checked={hideArrived} onChange={setHideArrived} label="Hide Arrived" color="var(--good)" />}
       >
         {!showShipmentForm && (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>

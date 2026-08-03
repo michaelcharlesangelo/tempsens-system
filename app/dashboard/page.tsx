@@ -125,7 +125,6 @@ function PoOutRecapSection() {
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
   const columnsMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -169,7 +168,7 @@ function PoOutRecapSection() {
       case "itemCode": return p.item_code;
       case "sales": return p.sales;
       case "customerName": return p.customer_name;
-      case "itemDescription": return p.item_description;
+      case "itemDescription": return <TruncatedText text={p.item_description} />;
       case "qty": return p.qty;
       case "unit": return p.unit;
       case "supplier": return p.supplier;
@@ -187,13 +186,8 @@ function PoOutRecapSection() {
 
   return (
     <div className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-        <h2 style={{ margin: 0 }}>PO OUT RECAP ({pos?.length ?? "..."})</h2>
-        <button className="btn secondary" onClick={() => setOpen((v) => !v)}>
-          {open ? "Hide" : "Show"}
-        </button>
-      </div>
-      {open && (!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
+      <h2 style={{ margin: 0 }}>PO OUT RECAP ({pos?.length ?? "..."})</h2>
+      {!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
         <>
           <div style={{ display: "flex", gap: 2, margin: "10px 0 0", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
             <button
@@ -274,7 +268,7 @@ function PoOutRecapSection() {
           </div>
           <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
         </>
-      ))}
+      )}
     </div>
   );
 }
