@@ -62,7 +62,22 @@ function ProductionScanInner() {
     setScanning(true);
   }
 
-  async function handleJoScan(code: string) {
+  // The in-app scanner hands back whatever the QR actually contains -
+  // since the printed JO's QR now encodes a full /production?jo=<code>
+  // link (so a plain phone camera can open it), extract the code back out
+  // when that's what got scanned. Falls through unchanged for a bare code
+  // (older printed sheets, or the station QR which was never a link).
+  function extractJoCode(scanned: string): string {
+    try {
+      const url = new URL(scanned);
+      return url.searchParams.get("jo") || scanned;
+    } catch {
+      return scanned;
+    }
+  }
+
+  async function handleJoScan(scanned: string) {
+    const code = extractJoCode(scanned);
     setScanning(false);
     setLookupError(null);
     setLookingUp(true);
