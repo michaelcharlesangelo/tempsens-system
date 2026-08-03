@@ -15,19 +15,12 @@ export default function QrScanner({ onScan, onClose }: { onScan: (value: string)
     // Html5QrcodeScanner (vs. the lower-level Html5Qrcode) owns its own
     // camera enumeration/permission UI, which is far more robust across
     // desktop webcams and phones than hand-rolling facingMode fallbacks.
-    // videoConstraints still nudges it toward the rear camera on phones
-    // (without it, phones can default to the front/selfie camera - the
-    // video feed opens fine, but there's nothing scannable in frame, so
-    // it just never resolves). "ideal" (not a hard constraint) so a
-    // single-camera desktop webcam - which never reports "environment" -
-    // doesn't fail to start at all.
     const scanner = new Html5QrcodeScanner(
       regionIdRef.current,
       {
         fps: 10,
         qrbox: 250,
         supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA, Html5QrcodeScanType.SCAN_TYPE_FILE],
-        videoConstraints: { facingMode: { ideal: "environment" } },
       },
       false
     );
