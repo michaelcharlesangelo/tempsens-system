@@ -16,7 +16,7 @@ interface Draft {
 function blank(): Draft {
   return {
     projectNumber: "", customerName: "", projectDescription: "",
-    hasPo: true, poDate: new Date().toISOString().slice(0, 10), poNumber: "", poValue: "", poValueCurrency: "IDR", sales: "",
+    hasPo: true, poDate: "", poNumber: "", poValue: "", poValueCurrency: "IDR", sales: "",
   };
 }
 
@@ -89,38 +89,30 @@ export default function ProjectManagerPage() {
                 </div>
               </div>
               <div className="form-sheet-col">
+                <div className="form-row"><label>PO Date</label><span>:</span><DateField value={draft.poDate} onChange={(v) => setDraft({ ...draft, poDate: v })} /></div>
+                <div className="form-row"><label>PO Number</label><span>:</span><input type="text" value={draft.poNumber} onChange={(e) => setDraft({ ...draft, poNumber: e.target.value.toUpperCase() })} /></div>
                 <div className="form-row">
-                  <label>Not PO</label><span>:</span>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <label>PO Value</label><span>:</span>
+                  <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                    <select
+                      value={draft.poValueCurrency}
+                      onChange={(e) => setDraft({ ...draft, poValueCurrency: e.target.value as Currency })}
+                      style={{ border: "none", borderRight: "1px solid var(--border)", background: "var(--panel-muted)", fontSize: "0.74rem", padding: "0 2px", borderRadius: 0, flex: "none", width: 50 }}
+                    >
+                      {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_SYMBOLS[c]}</option>)}
+                    </select>
                     <input
-                      type="checkbox" checked={!draft.hasPo} style={{ width: "auto" }}
-                      onChange={(e) => setDraft({ ...draft, hasPo: !e.target.checked })}
+                      type="text" inputMode="numeric" value={draft.poValue}
+                      onChange={(e) => setDraft({ ...draft, poValue: formatPrice(e.target.value) })}
+                      style={{ border: "none", flex: 1, minWidth: 0, width: "100%" }}
                     />
-                    <span className="subtle" style={{ fontSize: "0.8rem" }}>This project has no PO of its own</span>
-                  </label>
+                  </div>
                 </div>
-                {draft.hasPo && (
-                  <>
-                    <div className="form-row"><label>PO Date</label><span>:</span><DateField value={draft.poDate} onChange={(v) => setDraft({ ...draft, poDate: v })} /></div>
-                    <div className="form-row"><label>PO Number</label><span>:</span><input type="text" value={draft.poNumber} onChange={(e) => setDraft({ ...draft, poNumber: e.target.value.toUpperCase() })} /></div>
-                    <div className="form-row">
-                      <label>PO Value</label><span>:</span>
-                      <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                        <select
-                          value={draft.poValueCurrency}
-                          onChange={(e) => setDraft({ ...draft, poValueCurrency: e.target.value as Currency })}
-                          style={{ border: "none", borderRight: "1px solid var(--border)", background: "var(--panel-muted)", fontSize: "0.74rem", padding: "0 2px", borderRadius: 0, flex: "none", width: 50 }}
-                        >
-                          {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_SYMBOLS[c]}</option>)}
-                        </select>
-                        <input
-                          type="text" inputMode="numeric" value={draft.poValue}
-                          onChange={(e) => setDraft({ ...draft, poValue: formatPrice(e.target.value) })}
-                          style={{ border: "none", flex: 1, minWidth: 0, width: "100%" }}
-                        />
-                      </div>
-                    </div>
-                  </>
+                {!draft.hasPo && (
+                  <div className="form-row">
+                    <label>Not PO</label><span>:</span>
+                    <span className="pill pill-rejected" style={{ width: "fit-content" }}>NOT PO</span>
+                  </div>
                 )}
                 <div className="form-row">
                   <label>Sales</label><span>:</span>
@@ -132,9 +124,12 @@ export default function ProjectManagerPage() {
               </div>
             </div>
             {error && <p className="error-text">{error}</p>}
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 10, flexWrap: "wrap" }}>
               <button className="btn" onClick={submit} disabled={saving}>{saving ? "Saving..." : "Submit"}</button>
               <button className="btn secondary" onClick={resetForm}>Cancel</button>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.78rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                <input type="checkbox" checked={!draft.hasPo} onChange={(e) => setDraft({ ...draft, hasPo: !e.target.checked })} style={{ width: 15, height: 15 }} /> Not PO
+              </label>
             </div>
           </div>
         )}

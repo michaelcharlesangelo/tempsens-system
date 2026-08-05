@@ -10,8 +10,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const formData = await req.formData();
   const admin = getSupabaseAdminClient();
 
+  const progressId = (formData.get("progressId") as string) || null;
   const row: Record<string, unknown> = {
     project_id: params.id,
+    progress_id: progressId,
     report: ((formData.get("report") as string) || "").trim(),
     next_step: ((formData.get("nextStep") as string) || "").trim(),
     submitted_by: ((formData.get("submittedBy") as string) || "").trim(),

@@ -14,20 +14,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof body.customerName === "string") updates.customer_name = body.customerName.trim();
   if (typeof body.projectDescription === "string") updates.project_description = body.projectDescription.trim();
   if (typeof body.sales === "string") updates.sales = body.sales.trim();
-  if (typeof body.hasPo === "boolean") {
-    updates.has_po = body.hasPo;
-    if (!body.hasPo) {
-      updates.po_date = null;
-      updates.po_number = "";
-      updates.po_value = 0;
-    }
-  }
-  if (body.hasPo !== false) {
-    if (body.poDate !== undefined) updates.po_date = body.poDate || null;
-    if (typeof body.poNumber === "string") updates.po_number = body.poNumber.trim().toUpperCase();
-    if (body.poValue !== undefined) updates.po_value = Number(body.poValue) || 0;
-    if (typeof body.poValueCurrency === "string" && CURRENCIES.includes(body.poValueCurrency)) updates.po_value_currency = body.poValueCurrency;
-  }
+  // has_po is purely a "Not PO" marker, not a data toggle - PO Date/
+  // Number/Value stay fillable and saved either way.
+  if (typeof body.hasPo === "boolean") updates.has_po = body.hasPo;
+  if (body.poDate !== undefined) updates.po_date = body.poDate || null;
+  if (typeof body.poNumber === "string") updates.po_number = body.poNumber.trim().toUpperCase();
+  if (body.poValue !== undefined) updates.po_value = Number(body.poValue) || 0;
+  if (typeof body.poValueCurrency === "string" && CURRENCIES.includes(body.poValueCurrency)) updates.po_value_currency = body.poValueCurrency;
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
 

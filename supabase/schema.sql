@@ -646,6 +646,11 @@ create table if not exists project_progress (
 create table if not exists project_reports (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
+  -- Ties a report to the specific progress update it was filed alongside,
+  -- so the Status panel's Progress History can show a "Report" button on
+  -- that exact entry instead of a separate project-wide list. Nullable -
+  -- older rows (or a report saved outside a progress save) may not have one.
+  progress_id uuid references project_progress(id) on delete set null,
   report text not null default '',
   next_step text not null default '',
   photo_paths text[] not null default '{}',

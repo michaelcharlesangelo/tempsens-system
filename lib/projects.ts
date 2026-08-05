@@ -38,6 +38,7 @@ export interface ProjectProgressEntry {
 export interface ProjectReport {
   id: string;
   project_id: string;
+  progress_id: string | null;
   report: string;
   next_step: string;
   photo_paths: string[];

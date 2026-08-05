@@ -56,21 +56,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Project Number and Customer Name are required." }, { status: 400 });
   }
 
+  // has_po is purely a "Not PO" marker now, not a data toggle - PO Date/
+  // Number/Value stay fillable and get saved either way.
   const row: Record<string, unknown> = {
     project_number: projectNumber,
     customer_name: customerName,
     project_description: projectDescription,
     has_po: hasPo,
+    po_date: body.poDate || null,
+    po_number: typeof body.poNumber === "string" ? body.poNumber.trim().toUpperCase() : "",
+    po_value: Number(body.poValue) || 0,
+    po_value_currency: CURRENCIES.includes(body.poValueCurrency) ? body.poValueCurrency : "IDR",
     sales: typeof body.sales === "string" ? body.sales.trim() : "",
     submitted_by: submittedBy,
   };
-
-  if (hasPo) {
-    row.po_date = body.poDate || null;
-    row.po_number = typeof body.poNumber === "string" ? body.poNumber.trim().toUpperCase() : "";
-    row.po_value = Number(body.poValue) || 0;
-    row.po_value_currency = CURRENCIES.includes(body.poValueCurrency) ? body.poValueCurrency : "IDR";
-  }
 
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin.from("projects").insert(row).select().single();
