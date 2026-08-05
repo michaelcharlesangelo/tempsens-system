@@ -10,6 +10,7 @@ export const ROLE_LINKS = [
   { href: "/operational-manager", label: "Operational Manager", initials: "OM" },
   { href: "/general-manager", label: "General Manager", initials: "GM" },
   { href: "/production-manager", label: "Production Manager", initials: "PM" },
+  { href: "/project-manager", label: "Project Manager", initials: "PJM" },
   { href: "/warehouse-manager", label: "Warehouse Manager", initials: "WM" },
   { href: "/production", label: "Production", initials: "PR" },
   { href: "/exim", label: "Export Import", initials: "EXIM" },

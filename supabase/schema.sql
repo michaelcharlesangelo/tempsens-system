@@ -570,6 +570,101 @@ alter table qc_checks enable row level security;
 alter table complaints enable row level security;
 
 -- ---------------------------------------------------------------------------
+-- Projects (app/project-manager, app/project) - Project Manager's own
+-- tracked work items, each optionally tied to a PO. Two-stage status
+-- (ongoing/finished, not the approval-chain kind) with its own audit trail,
+-- plus separate budgeted-vs-actual costing broken into line items.
+-- ---------------------------------------------------------------------------
+create table if not exists projects (
+  id uuid primary key default gen_random_uuid(),
+  project_number text not null default '',
+  customer_name text not null default '',
+  project_description text not null default '',
+  -- False for a project with no PO of its own ("Not PO" on the form) -
+  -- po_date/po_number/po_value stay blank in that case.
+  has_po boolean not null default true,
+  po_date date,
+  po_number text not null default '',
+  po_value numeric not null default 0,
+  po_value_currency text not null default 'IDR' check (po_value_currency in ('IDR','USD','SGD','EUR','CNY','JPY')),
+  sales text not null default '',
+  status text not null default 'ongoing' check (status in ('ongoing','finished')),
+  submitted_by text not null default '',
+  created_at timestamptz not null default now()
+);
+
+-- Budgeted line items (planned) - shown behind the recap's "Budgeting"
+-- total, same shape as costing below but without a PO Code (a budget line
+-- isn't tied to any specific purchase yet).
+create table if not exists project_budget_items (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  item_description text not null default '',
+  supplier text not null default '',
+  qty numeric not null default 0,
+  unit text not null default 'pcs',
+  unit_price numeric not null default 0,
+  unit_price_currency text not null default 'IDR' check (unit_price_currency in ('IDR','USD','SGD','EUR','CNY','JPY')),
+  total_price numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- Actual cost/payment line items (real spend) - shown behind the recap's
+-- "Cost" total. Addable from the Project Manager page or from anyone's
+-- read-only Project tab via the same Status -> Cost flow.
+create table if not exists project_cost_items (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  po_code text not null default '',
+  item_description text not null default '',
+  supplier text not null default '',
+  qty numeric not null default 0,
+  unit text not null default 'pcs',
+  unit_price numeric not null default 0,
+  unit_price_currency text not null default 'IDR' check (unit_price_currency in ('IDR','USD','SGD','EUR','CNY','JPY')),
+  total_price numeric not null default 0,
+  submitted_by text not null default '',
+  created_at timestamptz not null default now()
+);
+
+-- Audit trail for the Status panel's Ongoing/Finished slider + short
+-- "Progress" recap comment - mirrors job_order_history/po_out_history.
+-- Anyone can add an entry from the Project tab; only Project Manager can
+-- edit/delete one (from their own page).
+create table if not exists project_progress (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  status text not null check (status in ('ongoing','finished')),
+  comment text not null default '',
+  changed_by text not null default '',
+  changed_at timestamptz not null default now()
+);
+
+-- The Status panel's "Report" floating form - free-text report + next
+-- step, plus attached photos. Separate from project_progress since a
+-- report is a bigger, occasional write-up rather than a quick status note.
+create table if not exists project_reports (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  report text not null default '',
+  next_step text not null default '',
+  photo_paths text[] not null default '{}',
+  submitted_by text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_project_budget_items_project on project_budget_items(project_id);
+create index if not exists idx_project_cost_items_project on project_cost_items(project_id);
+create index if not exists idx_project_progress_project on project_progress(project_id);
+create index if not exists idx_project_reports_project on project_reports(project_id);
+
+alter table projects enable row level security;
+alter table project_budget_items enable row level security;
+alter table project_cost_items enable row level security;
+alter table project_progress enable row level security;
+alter table project_reports enable row level security;
+
+-- ---------------------------------------------------------------------------
 -- Private storage bucket for drawings, PO attachments, and complaint
 -- photos. Served only through app API routes that check visibility rules,
 -- never via a public Supabase Storage URL.
