@@ -20,10 +20,14 @@ export interface ProjectLineItem {
 }
 
 // Cost items are the same shape as budget items plus po_code (a cost line
-// is tied to an actual purchase; a budget line is only a plan).
+// is tied to an actual purchase; a budget line is only a plan) and
+// progress_id (set when logged via a Status update, so it can be shown
+// against just that Progress History entry rather than the accumulated
+// project-wide total).
 export interface ProjectCostItem extends ProjectLineItem {
   po_code: string;
   submitted_by: string;
+  progress_id: string | null;
 }
 
 export interface ProjectProgressEntry {

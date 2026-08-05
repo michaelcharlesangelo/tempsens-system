@@ -13,6 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const row = {
     project_id: params.id,
+    progress_id: typeof body.progressId === "string" && body.progressId ? body.progressId : null,
     po_code: typeof body.poCode === "string" ? body.poCode.trim().toUpperCase() : "",
     item_description: typeof body.itemDescription === "string" ? body.itemDescription.trim() : "",
     supplier: typeof body.supplier === "string" ? body.supplier.trim() : "",

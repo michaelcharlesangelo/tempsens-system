@@ -15,15 +15,27 @@ const VISIBLE_STATUSES: JobOrderStatus[] = ["completed"];
 
 type SortCol = "jo_date" | "so_no" | "customer_name" | "item_no" | "item_description" | "quantity";
 
+interface CategoryTotal { category: string; qty: number; }
+
 export default function WorkHistoryPage() {
   const [jobOrders, setJobOrders] = useState<JobOrder[] | null>(null);
   const [sortCol, setSortCol] = useState<SortCol>("jo_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [yearlyByCategory, setYearlyByCategory] = useState<CategoryTotal[]>([]);
+  const [productionYear, setProductionYear] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/job-orders", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setJobOrders(d.jobOrders ?? []));
+    // Same auto-updating-by-calendar-year totals shown on Dashboard - just
+    // reusing that endpoint rather than recomputing them here too.
+    fetch("/api/dashboard", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        setYearlyByCategory(d.yearlyByCategory ?? []);
+        setProductionYear(d.year ?? null);
+      });
   }, []);
 
   function sortBy(col: SortCol) {
@@ -103,6 +115,29 @@ export default function WorkHistoryPage() {
             </div>
             <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
           </>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>{productionYear ?? ""} Production</h2>
+        {yearlyByCategory.length === 0 ? <p className="subtle">No item categories set up yet.</p> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {(() => {
+              const total = yearlyByCategory.reduce((n, c) => n + c.qty, 0) || 1;
+              return yearlyByCategory.map((c) => {
+                const share = c.qty / total;
+                return (
+                  <div key={c.category} style={{ display: "grid", gridTemplateColumns: "140px 1fr 80px", alignItems: "center", gap: 10 }}>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>{c.category}</div>
+                    <div style={{ background: "var(--panel-muted)", borderRadius: 6, height: 20, overflow: "hidden" }}>
+                      <div style={{ width: `${Math.max(share * 100, c.qty > 0 ? 2 : 0)}%`, height: "100%", background: "var(--accent)", borderRadius: 6 }} />
+                    </div>
+                    <div style={{ fontSize: "0.82rem", textAlign: "right" }}>{c.qty} pcs</div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
         )}
       </div>
     </>

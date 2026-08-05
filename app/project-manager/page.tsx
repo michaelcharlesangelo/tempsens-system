@@ -108,12 +108,6 @@ export default function ProjectManagerPage() {
                     />
                   </div>
                 </div>
-                {!draft.hasPo && (
-                  <div className="form-row">
-                    <label>Not PO</label><span>:</span>
-                    <span className="pill pill-rejected" style={{ width: "fit-content" }}>NOT PO</span>
-                  </div>
-                )}
                 <div className="form-row">
                   <label>Sales</label><span>:</span>
                   <select value={draft.sales} onChange={(e) => setDraft({ ...draft, sales: e.target.value })}>

@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import TruncatedText from "@/app/components/TruncatedText";
+import ProjectRecapSection from "@/app/components/ProjectRecapSection";
 import {
   Complaint, JobOrder, PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PO_OUT_STATUSES, COMPLAINT_STATUSES,
   FabricationItem,
@@ -512,6 +513,8 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      <ProjectRecapSection canManage={false} />
 
       {!complaints ? <p className="subtle">Loading...</p> : (
         <>

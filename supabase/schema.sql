@@ -593,9 +593,23 @@ create table if not exists projects (
   created_at timestamptz not null default now()
 );
 
+-- Audit trail for the Status panel's Ongoing/Finished slider + short
+-- "Progress" recap comment - mirrors job_order_history/po_out_history.
+-- Anyone can add an entry from the Project tab; only Project Manager can
+-- edit/delete one (from their own page). Defined before the line-item
+-- tables below since both reference it.
+create table if not exists project_progress (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  status text not null check (status in ('ongoing','finished')),
+  comment text not null default '',
+  changed_by text not null default '',
+  changed_at timestamptz not null default now()
+);
+
 -- Budgeted line items (planned) - shown behind the recap's "Budgeting"
 -- total, same shape as costing below but without a PO Code (a budget line
--- isn't tied to any specific purchase yet).
+-- isn't tied to any specific purchase yet). Project Manager only.
 create table if not exists project_budget_items (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
@@ -609,12 +623,15 @@ create table if not exists project_budget_items (
   created_at timestamptz not null default now()
 );
 
--- Actual cost/payment line items (real spend) - shown behind the recap's
--- "Cost" total. Addable from the Project Manager page or from anyone's
--- read-only Project tab via the same Status -> Cost flow.
+-- Actual cost/payment line items (real spend). Two ways in: Project
+-- Manager's own "Cost" column shows/adds to the full accumulated list for
+-- the project; the Status panel's Cost checkbox (either page) adds items
+-- tied to progress_id - just that update's spend, shown next to that one
+-- Progress History entry rather than mixed into the accumulated total.
 create table if not exists project_cost_items (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
+  progress_id uuid references project_progress(id) on delete set null,
   po_code text not null default '',
   item_description text not null default '',
   supplier text not null default '',
@@ -625,19 +642,6 @@ create table if not exists project_cost_items (
   total_price numeric not null default 0,
   submitted_by text not null default '',
   created_at timestamptz not null default now()
-);
-
--- Audit trail for the Status panel's Ongoing/Finished slider + short
--- "Progress" recap comment - mirrors job_order_history/po_out_history.
--- Anyone can add an entry from the Project tab; only Project Manager can
--- edit/delete one (from their own page).
-create table if not exists project_progress (
-  id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references projects(id) on delete cascade,
-  status text not null check (status in ('ongoing','finished')),
-  comment text not null default '',
-  changed_by text not null default '',
-  changed_at timestamptz not null default now()
 );
 
 -- The Status panel's "Report" floating form - free-text report + next
