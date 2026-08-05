@@ -399,6 +399,10 @@ create table if not exists po_out (
   unit_selling_price_currency text not null default 'IDR' check (unit_selling_price_currency in ('IDR','USD','SGD','EUR','CNY','JPY')),
   supplier text not null default '',
   status text not null default 'production' check (status in ('production','shipment','arrived')),
+  -- Filled in from the PO Out Recap (any page showing it) - estimated
+  -- arrival/completion date for this line. Shown everywhere alongside the
+  -- day count from po_date, e.g. "05/08/2026 (6)".
+  estimation date,
   -- Export Import's own operational fields (app/exim) - not filled in by
   -- Sales Support, and not touched by the PO Out Recap entry form/edit.
   oc text not null default '', -- Order Confirmation reference

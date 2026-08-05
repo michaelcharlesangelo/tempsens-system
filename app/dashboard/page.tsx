@@ -8,7 +8,7 @@ import ProjectRecapSection from "@/app/components/ProjectRecapSection";
 import {
   Complaint, JobOrder, PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PO_OUT_STATUSES, COMPLAINT_STATUSES,
   FabricationItem,
-  complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate, fmtDateTime,
+  complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate, fmtDateTime, daysBetweenDates,
 } from "@/lib/jobOrders";
 
 function fabricationRecapMatches(f: FabricationItem, term: string): boolean {
@@ -69,6 +69,7 @@ const PO_COLUMNS: { key: string; label: string }[] = [
   { key: "poDate", label: "PO Date" },
   { key: "days", label: "Days" },
   { key: "deadline", label: "Deadline" },
+  { key: "estimation", label: "Estimation" },
   { key: "poNumber", label: "PO Number" },
   { key: "itemCode", label: "Item Code" },
   { key: "sales", label: "Sales" },
@@ -114,6 +115,13 @@ function daysBetween(startStr: string, endStr: string): number {
 function daysCount(jo: JobOrder): number {
   if (jo.status === "completed" && jo.finish_date) return daysBetween(jo.jo_date, jo.finish_date);
   return daysSince(jo.jo_date);
+}
+
+// "05/08/2026 (6)" - the estimation date plus how many days after po_date
+// it falls. Same convention as PO Out's own page.
+function estimationLabel(p: PoOut): string {
+  if (!p.estimation) return "-";
+  return `${fmtDate(p.estimation)} (${daysBetweenDates(p.po_date, p.estimation)})`;
 }
 
 // Read-only view of the PO OUT RECAP table - no Edit, status badge only
@@ -165,6 +173,7 @@ function PoOutRecapSection() {
           {p.urgent && <span className="pill pill-rejected" style={{ marginLeft: 4, fontSize: "0.6rem" }}>URGENT</span>}
         </>
       );
+      case "estimation": return estimationLabel(p);
       case "poNumber": return p.po_number;
       case "itemCode": return p.item_code;
       case "sales": return p.sales;

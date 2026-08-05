@@ -13,29 +13,35 @@ import { JobOrder, JobOrderStatus, joMatchesSearch, fmtDate, formatSerialRange }
 // automatically once status is "completed", so linking there is safe.
 const VISIBLE_STATUSES: JobOrderStatus[] = ["completed"];
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
 type SortCol = "jo_date" | "so_no" | "customer_name" | "item_no" | "item_description" | "quantity";
 
 interface CategoryTotal { category: string; qty: number; }
+interface ItemCategory { name: string; }
 
 export default function WorkHistoryPage() {
   const [jobOrders, setJobOrders] = useState<JobOrder[] | null>(null);
+  const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [sortCol, setSortCol] = useState<SortCol>("jo_date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [yearlyByCategory, setYearlyByCategory] = useState<CategoryTotal[]>([]);
-  const [productionYear, setProductionYear] = useState<number | null>(null);
+  // "" (All) for month - both the table and the production bar graph below
+  // are recapped by this same year/month selection, keyed off finish_date
+  // (when the JO actually completed), matching how the production totals
+  // are already defined on Dashboard.
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number | "">("");
 
   useEffect(() => {
     fetch("/api/job-orders", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setJobOrders(d.jobOrders ?? []));
-    // Same auto-updating-by-calendar-year totals shown on Dashboard - just
-    // reusing that endpoint rather than recomputing them here too.
-    fetch("/api/dashboard", { cache: "no-store" })
+    fetch("/api/item-categories", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d) => {
-        setYearlyByCategory(d.yearlyByCategory ?? []);
-        setProductionYear(d.year ?? null);
-      });
+      .then((d) => setCategories(d.categories ?? []));
   }, []);
 
   function sortBy(col: SortCol) {
@@ -44,15 +50,46 @@ export default function WorkHistoryPage() {
     setSortDir("asc");
   }
 
+  const availableYears = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    (jobOrders ?? []).forEach((jo) => {
+      if (jo.finish_date) years.add(new Date(jo.finish_date).getFullYear());
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [jobOrders]);
+
+  function inSelectedPeriod(jo: JobOrder): boolean {
+    if (!jo.finish_date) return false;
+    const d = new Date(jo.finish_date);
+    if (d.getFullYear() !== selectedYear) return false;
+    if (selectedMonth !== "" && d.getMonth() !== selectedMonth) return false;
+    return true;
+  }
+
   const sorted = useMemo(() => {
-    const visible = (jobOrders ?? []).filter((jo) => VISIBLE_STATUSES.includes(jo.status));
+    const visible = (jobOrders ?? []).filter((jo) => VISIBLE_STATUSES.includes(jo.status) && inSelectedPeriod(jo));
     return [...visible].sort((a, b) => {
       const av = a[sortCol];
       const bv = b[sortCol];
       const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av ?? "").localeCompare(String(bv ?? ""));
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [jobOrders, sortCol, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobOrders, sortCol, sortDir, selectedYear, selectedMonth]);
+
+  const yearlyByCategory: CategoryTotal[] = useMemo(() => {
+    const byCategory = new Map<string, number>();
+    categories.forEach((c) => byCategory.set(c.name, 0));
+    (jobOrders ?? []).forEach((jo) => {
+      if (jo.status !== "completed" || !inSelectedPeriod(jo)) return;
+      const cat = jo.item_category || "Uncategorized";
+      byCategory.set(cat, (byCategory.get(cat) ?? 0) + Number(jo.quantity));
+    });
+    return Array.from(byCategory.entries()).map(([category, qty]) => ({ category, qty }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobOrders, categories, selectedYear, selectedMonth]);
+
+  const periodLabel = `${selectedYear}${selectedMonth !== "" ? ` ${MONTH_NAMES[selectedMonth]}` : ""}`;
 
   const { search, setSearch, page, setPage, totalPages, pageItems: rows, totalCount } = usePagedSearch(sorted, joMatchesSearch);
 
@@ -72,6 +109,17 @@ export default function WorkHistoryPage() {
           Every item code used on a finished job order. Search by date, SO number, or item code, then open a
           row to see that job order's final BOM (read-only, print view).
         </p>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          <span className="subtle" style={{ fontSize: "0.78rem", fontWeight: 600, textTransform: "uppercase" }}>Period</span>
+          <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} style={{ width: "auto", fontSize: "0.85rem" }}>
+            {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value === "" ? "" : Number(e.target.value))} style={{ width: "auto", fontSize: "0.85rem" }}>
+            <option value="">All Months</option>
+            {MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}
+          </select>
+        </div>
 
         <SearchBox value={search} onChange={setSearch} />
 
@@ -119,7 +167,7 @@ export default function WorkHistoryPage() {
       </div>
 
       <div className="card">
-        <h2>{productionYear ?? ""} Production</h2>
+        <h2>{periodLabel} Production</h2>
         {yearlyByCategory.length === 0 ? <p className="subtle">No item categories set up yet.</p> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {(() => {

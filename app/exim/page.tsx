@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
+import { CSSProperties, Fragment, ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
@@ -11,15 +11,35 @@ import ShipmentStatusSlider from "@/app/components/ShipmentStatusSlider";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
 import TruncatedText from "@/app/components/TruncatedText";
 import {
-  PoOut, Shipment, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PoOutStatus, PO_OUT_STATUSES,
+  PoOut, Shipment, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, PoOutStatus, PO_OUT_STATUSES,
   ShipmentStatus, SHIPMENT_STATUSES,
   HsCode, ShipmentPackingBox, CURRENCY_SYMBOLS,
-  fmtDate, fmtDateTime, exportPoOutRecapToExcel,
+  fmtDate, fmtDateTime, daysBetweenDates, exportPoOutRecapToExcel,
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
 
 function m3For(lengthCm: number, widthCm: number, heightCm: number): number {
   return (lengthCm * widthCm * heightCm) / 1_000_000;
+}
+
+// Same convention as PO Out's own page - "." thousand separators as you
+// type, digits-only underneath so it parses back cleanly on submit.
+function formatPrice(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  return Number(digits).toLocaleString("id-ID");
+}
+function parsePrice(display: string): string {
+  return display.replace(/\D/g, "");
+}
+
+interface SalesAccount { id: string; full_name: string; }
+
+// "05/08/2026 (6)" - the estimation date plus how many days after po_date
+// it falls. Same convention as PO Out's own page.
+function estimationLabel(p: PoOut): string {
+  if (!p.estimation) return "-";
+  return `${fmtDate(p.estimation)} (${daysBetweenDates(p.po_date, p.estimation)})`;
 }
 
 interface PackingBoxDraft { boxNo: string; lengthCm: string; widthCm: string; heightCm: string; grossWeightKg: string; netWeightKg: string; }
@@ -31,6 +51,7 @@ const EXIM_COLUMNS: { key: string; label: string }[] = [
   { key: "poDate", label: "PO Date" },
   { key: "days", label: "Days" },
   { key: "deadline", label: "Deadline" },
+  { key: "estimation", label: "Estimation" },
   { key: "poNumber", label: "PO Number" },
   { key: "itemCode", label: "Item Code" },
   { key: "sales", label: "Sales" },
@@ -52,6 +73,7 @@ function eximCellText(p: PoOut, key: string): string {
     case "poDate": return fmtDate(p.po_date);
     case "days": return String(daysSince(p.po_date));
     case "deadline": return fmtDate(p.deadline) + (p.urgent ? " (URGENT)" : "");
+    case "estimation": return estimationLabel(p);
     case "poNumber": return p.po_number;
     case "itemCode": return p.item_code;
     case "sales": return p.sales;
@@ -95,6 +117,7 @@ const RECAP_COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
   { key: "poDate", label: "PO Date", sortKey: "po_date" },
   { key: "days", label: "Days", sortKey: "days" },
   { key: "deadline", label: "Deadline", sortKey: "deadline" },
+  { key: "estimation", label: "Estimation" },
   { key: "poNumber", label: "PO Number", sortKey: "po_number" },
   { key: "itemCode", label: "Item Code", sortKey: "item_code" },
   { key: "sales", label: "Sales", sortKey: "sales" },
@@ -115,7 +138,87 @@ const RECAP_COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
 // are one click away via Columns.
 const RECAP_DEFAULT_HIDDEN = new Set(["oc", "origin"]);
 
-interface FieldsDraft { oc: string; origin: string; }
+// Full-row edit draft - mirrors PO Out's own page so this Edit button has
+// the same reach (every field), not just OC/Origin.
+interface FieldsDraft {
+  poDate: string; deadline: string; estimation: string; urgent: boolean; poNumber: string; itemCode: string;
+  sales: string; customerName: string; itemDescription: string; qty: string; unit: string;
+  unitPrice: string; unitPriceCurrency: Currency; unitSellingPrice: string; unitSellingPriceCurrency: Currency;
+  supplier: string; oc: string; origin: string;
+}
+
+// Kept at module scope so re-renders elsewhere on the page never remount
+// (and lose focus / mid-typed "new supplier" state on) this control.
+function SupplierSelect({
+  value, onChange, suppliers, onSupplierAdded, style,
+}: {
+  value: string; onChange: (v: string) => void; suppliers: Supplier[]; onSupplierAdded: (s: Supplier) => void; style?: CSSProperties;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+
+  if (adding) {
+    return (
+      <div style={{ display: "flex", gap: 4 }}>
+        <input
+          type="text" autoFocus placeholder="New supplier name" value={name}
+          onChange={(e) => setName(e.target.value.toUpperCase())} style={{ fontSize: "0.82rem", ...style }}
+        />
+        <button
+          type="button" className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.72rem", flex: "none" }}
+          onClick={async () => {
+            const trimmed = name.trim();
+            if (!trimmed) { setAdding(false); return; }
+            const res = await fetch("/api/suppliers", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: trimmed, tabCategory: "OTHER_IMPORT" }),
+            });
+            const data = await res.json();
+            if (res.ok) { onSupplierAdded(data.supplier); onChange(data.supplier.name); }
+            setName(""); setAdding(false);
+          }}
+        >
+          Add
+        </button>
+        <button type="button" className="btn secondary" style={{ padding: "4px 8px", fontSize: "0.72rem", flex: "none" }} onClick={() => { setAdding(false); setName(""); }}>×</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 4 }}>
+      <select value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1, minWidth: 0, ...style }}>
+        <option value="">Select...</option>
+        {suppliers.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+      </select>
+      <button type="button" className="btn secondary" style={{ padding: "0 10px", fontSize: "0.9rem", flex: "none" }} title="Add new supplier" onClick={() => setAdding(true)}>+</button>
+    </div>
+  );
+}
+
+function CurrencyInput({
+  value, currency, onValueChange, onCurrencyChange, readOnly, compact,
+}: {
+  value: string; currency: Currency; onValueChange?: (v: string) => void; onCurrencyChange?: (c: Currency) => void; readOnly?: boolean; compact?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden", background: readOnly ? "var(--panel-muted)" : undefined }}>
+      <select
+        value={currency}
+        disabled={readOnly}
+        onChange={(e) => onCurrencyChange?.(e.target.value as Currency)}
+        style={{ border: "none", borderRight: "1px solid var(--border)", background: "var(--panel-muted)", fontSize: compact ? "0.68rem" : "0.74rem", padding: "0 2px", borderRadius: 0, flex: "none", width: compact ? 40 : 50 }}
+      >
+        {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_SYMBOLS[c]}</option>)}
+      </select>
+      <input
+        type="text" inputMode="numeric" readOnly={readOnly} value={value}
+        onChange={(e) => onValueChange?.(formatPrice(e.target.value))}
+        style={{ border: "none", flex: 1, minWidth: 0, width: "100%", fontSize: compact ? "0.8rem" : undefined }}
+      />
+    </div>
+  );
+}
 
 interface ShipmentDraft {
   shipmentNumber: string; supplier: string; shipmentVia: string; incoterms: string; invoice: string;
@@ -154,6 +257,7 @@ export default function EximPage() {
   // ---------------- PO table ----------------
   const [pos, setPos] = useState<PoOut[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [salesAccounts, setSalesAccounts] = useState<SalesAccount[]>([]);
   const [hsCodes, setHsCodes] = useState<HsCode[]>([]);
   const [activeTab, setActiveTab] = useState<SupplierTabCategory | "ALL">("ALL");
   const [showProduction, setShowProduction] = useState(true);
@@ -206,7 +310,14 @@ export default function EximPage() {
     setShipments(data.shipments ?? []);
   }
 
-  useEffect(() => { loadPos(); loadSuppliers(); loadShipments(); loadHsCodes(); }, []);
+  useEffect(() => {
+    loadPos(); loadSuppliers(); loadShipments(); loadHsCodes();
+    fetch("/api/production-accounts?forSales=true", { cache: "no-store" }).then((r) => r.json()).then((d) => setSalesAccounts(d.accounts ?? []));
+  }, []);
+
+  function addSupplierToList(s: Supplier) {
+    setSuppliers((prev) => [...prev, s].sort((a, b) => a.name.localeCompare(b.name)));
+  }
 
   // ---------------- Shipment Plan actions ----------------
   function resetShipmentForm() {
@@ -333,13 +444,22 @@ export default function EximPage() {
 
   function startFieldsEdit(p: PoOut) {
     setEditingFieldsId(p.id);
-    setFieldsDraft({ oc: p.oc, origin: p.origin });
+    setFieldsDraft({
+      poDate: p.po_date.slice(0, 10), deadline: p.deadline ? p.deadline.slice(0, 10) : "",
+      estimation: p.estimation ? p.estimation.slice(0, 10) : "", urgent: p.urgent,
+      poNumber: p.po_number, itemCode: p.item_code, sales: p.sales, customerName: p.customer_name,
+      itemDescription: p.item_description, qty: String(p.qty), unit: p.unit,
+      unitPrice: formatPrice(String(p.unit_price)), unitPriceCurrency: p.unit_price_currency,
+      unitSellingPrice: formatPrice(String(p.unit_selling_price)), unitSellingPriceCurrency: p.unit_selling_price_currency,
+      supplier: p.supplier, oc: p.oc, origin: p.origin,
+    });
   }
 
   async function saveFieldsEdit(id: string) {
     if (!fieldsDraft) return;
     const res = await fetch(`/api/po-out/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fieldsDraft),
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...fieldsDraft, unitPrice: parsePrice(fieldsDraft.unitPrice), unitSellingPrice: parsePrice(fieldsDraft.unitSellingPrice) }),
     });
     const data = await res.json();
     if (!res.ok) { setMessage(data.error || "Failed to save."); return; }
@@ -505,27 +625,61 @@ export default function EximPage() {
   }
 
   function buildRecapCells(p: PoOut, isEditingFields: boolean, fd: FieldsDraft | null): { key: string; node: ReactNode }[] {
+    const editing = isEditingFields && fd;
     return [
-      { key: "poDate", node: fmtDate(p.po_date) },
+      { key: "poDate", node: editing ? <DateField value={fd.poDate} onChange={(v) => setFieldsDraft({ ...fd, poDate: v })} /> : fmtDate(p.po_date) },
       { key: "days", node: daysSince(p.po_date) },
       {
         key: "deadline",
-        node: (
+        node: editing ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <DateField value={fd.deadline} onChange={(v) => setFieldsDraft({ ...fd, deadline: v })} />
+            <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: "0.7rem", whiteSpace: "nowrap", cursor: "pointer" }}>
+              <input type="checkbox" checked={fd.urgent} onChange={(e) => setFieldsDraft({ ...fd, urgent: e.target.checked })} /> Urgent
+            </label>
+          </div>
+        ) : (
           <span style={{ whiteSpace: "nowrap" }}>
             {fmtDate(p.deadline)}
             {p.urgent && <span className="pill pill-rejected" style={{ marginLeft: 4, fontSize: "0.6rem" }}>URGENT</span>}
           </span>
         ),
       },
-      { key: "poNumber", node: p.po_number },
-      { key: "itemCode", node: p.item_code },
-      { key: "sales", node: p.sales },
-      { key: "customerName", node: p.customer_name },
-      { key: "itemDescription", node: <TruncatedText text={p.item_description} /> },
-      { key: "qty", node: p.qty },
-      { key: "unit", node: p.unit },
-      { key: "totalPrice", node: `${CURRENCY_SYMBOLS[p.unit_price_currency]} ${Number(p.total_price).toLocaleString("id-ID")}` },
-      { key: "supplier", node: p.supplier },
+      {
+        key: "estimation",
+        node: editing ? (
+          <DateField value={fd.estimation} onChange={(v) => setFieldsDraft({ ...fd, estimation: v })} />
+        ) : (
+          estimationLabel(p)
+        ),
+      },
+      { key: "poNumber", node: editing ? <input type="text" value={fd.poNumber} onChange={(e) => setFieldsDraft({ ...fd, poNumber: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : p.po_number },
+      { key: "itemCode", node: editing ? <input type="text" value={fd.itemCode} onChange={(e) => setFieldsDraft({ ...fd, itemCode: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : p.item_code },
+      {
+        key: "sales",
+        node: editing ? (
+          <select value={fd.sales} onChange={(e) => setFieldsDraft({ ...fd, sales: e.target.value })} style={{ fontSize: "0.8rem" }}>
+            <option value="">Select...</option>
+            {salesAccounts.map((a) => <option key={a.id} value={a.full_name}>{a.full_name}</option>)}
+          </select>
+        ) : p.sales,
+      },
+      { key: "customerName", node: editing ? <input type="text" value={fd.customerName} onChange={(e) => setFieldsDraft({ ...fd, customerName: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 120 }} /> : p.customer_name },
+      { key: "itemDescription", node: editing ? <input type="text" value={fd.itemDescription} onChange={(e) => setFieldsDraft({ ...fd, itemDescription: e.target.value })} style={{ fontSize: "0.8rem", width: 160 }} /> : <TruncatedText text={p.item_description} /> },
+      { key: "qty", node: editing ? <input type="number" value={fd.qty} onChange={(e) => setFieldsDraft({ ...fd, qty: e.target.value })} style={{ fontSize: "0.8rem", width: 60 }} /> : p.qty },
+      { key: "unit", node: editing ? <input type="text" value={fd.unit} onChange={(e) => setFieldsDraft({ ...fd, unit: e.target.value })} style={{ fontSize: "0.8rem", width: 60 }} /> : p.unit },
+      {
+        key: "totalPrice",
+        node: editing ? (
+          <CurrencyInput value={((Number(fd.qty) || 0) * (Number(parsePrice(fd.unitPrice)) || 0)).toLocaleString("id-ID")} currency={fd.unitPriceCurrency} readOnly compact />
+        ) : `${CURRENCY_SYMBOLS[p.unit_price_currency]} ${Number(p.total_price).toLocaleString("id-ID")}`,
+      },
+      {
+        key: "supplier",
+        node: editing ? (
+          <SupplierSelect value={fd.supplier} onChange={(v) => setFieldsDraft({ ...fd, supplier: v })} suppliers={suppliers} onSupplierAdded={addSupplierToList} style={{ fontSize: "0.8rem" }} />
+        ) : p.supplier,
+      },
       {
         key: "status",
         node: (() => {
@@ -537,8 +691,8 @@ export default function EximPage() {
           );
         })(),
       },
-      { key: "oc", node: isEditingFields && fd ? <input type="text" value={fd.oc} onChange={(e) => setFieldsDraft({ ...fd, oc: e.target.value })} style={{ fontSize: "0.8rem", width: 90 }} /> : (p.oc || <span className="subtle">-</span>) },
-      { key: "origin", node: isEditingFields && fd ? <input type="text" value={fd.origin} onChange={(e) => setFieldsDraft({ ...fd, origin: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : (p.origin || <span className="subtle">-</span>) },
+      { key: "oc", node: editing ? <input type="text" value={fd.oc} onChange={(e) => setFieldsDraft({ ...fd, oc: e.target.value })} style={{ fontSize: "0.8rem", width: 90 }} /> : (p.oc || <span className="subtle">-</span>) },
+      { key: "origin", node: editing ? <input type="text" value={fd.origin} onChange={(e) => setFieldsDraft({ ...fd, origin: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : (p.origin || <span className="subtle">-</span>) },
       {
         key: "via",
         node: (

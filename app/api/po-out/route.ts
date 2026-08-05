@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
   const row = {
     po_date: body.poDate || new Date().toISOString().slice(0, 10),
     deadline: body.deadline || null,
+    estimation: body.estimation || null,
     urgent: Boolean(body.urgent),
     po_number: String(body.poNumber ?? "").trim(),
     item_code: String(body.itemCode ?? "").trim().toUpperCase(),

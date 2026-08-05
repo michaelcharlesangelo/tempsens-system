@@ -50,7 +50,8 @@ function compressImage(file: File, maxBytes = 1024 * 1024): Promise<File> {
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      let { width, height } = img;
+      let width = img.width;
+      let height = img.height;
       const maxDim = 1920;
       if (width > maxDim || height > maxDim) {
         const scale = maxDim / Math.max(width, height);
@@ -58,21 +59,37 @@ function compressImage(file: File, maxBytes = 1024 * 1024): Promise<File> {
         height = Math.round(height * scale);
       }
       const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
       const ctx = canvas.getContext("2d");
       if (!ctx) { resolve(file); return; }
-      ctx.drawImage(img, 0, 0, width, height);
+
       let quality = 0.85;
       const tryExport = () => {
+        canvas.width = width;
+        canvas.height = height;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
         canvas.toBlob((blob) => {
           if (!blob) { resolve(file); return; }
-          if (blob.size <= maxBytes || quality <= 0.3) {
+          if (blob.size <= maxBytes) {
             resolve(new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }));
-          } else {
+            return;
+          }
+          if (quality > 0.3) {
             quality -= 0.15;
             tryExport();
+            return;
           }
+          // Quality alone wasn't enough - shrink the dimensions further and
+          // retry from a higher quality. Floored at 480px wide so this
+          // always terminates (and stays legible) even for huge originals.
+          if (width > 480) {
+            width = Math.round(width * 0.75);
+            height = Math.round(height * 0.75);
+            quality = 0.7;
+            tryExport();
+            return;
+          }
+          resolve(new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }));
         }, "image/jpeg", quality);
       };
       tryExport();
@@ -145,6 +162,7 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
   // entry (via the buttons next to that entry) - both floating, same as
   // the compose modals, easier to use on a phone.
   const [reportViewFor, setReportViewFor] = useState<{ entryId: string; report: ProjectReport } | null>(null);
+  const [reportViewPhotoUrls, setReportViewPhotoUrls] = useState<Record<string, string>>({});
   const [costViewFor, setCostViewFor] = useState<{ entryId: string; items: ProjectCostItem[] } | null>(null);
 
   const [editingProgressId, setEditingProgressId] = useState<string | null>(null);
@@ -157,11 +175,24 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
   }
   useEffect(() => { load(); }, []);
 
-  async function viewPhoto(path: string) {
-    const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
-    const data = await res.json();
-    if (data.url) window.open(data.url, "_blank");
-  }
+  // Resolve signed URLs for the report's photos up front so they render
+  // inline as <img> in the view modal instead of needing a click-through.
+  useEffect(() => {
+    if (!reportViewFor) { setReportViewPhotoUrls({}); return; }
+    let cancelled = false;
+    Promise.all(
+      reportViewFor.report.photo_paths.map(async (path) => {
+        const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+        const data = await res.json();
+        return [path, data.url as string] as const;
+      })
+    ).then((pairs) => {
+      if (cancelled) return;
+      setReportViewPhotoUrls(Object.fromEntries(pairs));
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportViewFor?.report.id, reportViewFor?.report.photo_paths.join(",")]);
 
   function toggleBudget(projectId: string) {
     setBudgetOpenFor((cur) => (cur === projectId ? null : projectId));
@@ -524,16 +555,18 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
                                               </div>
                                             )}
                                             <div style={{ display: "flex", gap: 6, whiteSpace: "nowrap" }}>
+                                              {linkedReport && (
+                                                <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "2px 6px" }} onClick={() => setReportViewFor({ entryId: h.id, report: linkedReport })}>Report</button>
+                                              )}
+                                              {linkedCostItems.length > 0 && (
+                                                <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "2px 6px" }} onClick={() => setCostViewFor({ entryId: h.id, items: linkedCostItems })}>Cost</button>
+                                              )}
                                               {canManage && editingProgressId !== h.id && (
                                                 <>
                                                   <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "2px 6px" }} onClick={() => startEditProgress(h.id, h.comment)}>Edit</button>
                                                   <button className="btn danger" style={{ fontSize: "0.7rem", padding: "2px 6px" }} onClick={() => deleteProgress(p.id, h.id)}>Delete</button>
                                                 </>
                                               )}
-                                              {linkedReport && (
-                                                <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "2px 6px" }} onClick={() => setReportViewFor({ entryId: h.id, report: linkedReport })}>Report</button>
-                                              )}
-                                              <button className="btn secondary" style={{ fontSize: "0.7rem", padding: "2px 6px" }} onClick={() => setCostViewFor({ entryId: h.id, items: linkedCostItems })}>Cost</button>
                                             </div>
                                           </div>
                                         </div>
@@ -600,23 +633,44 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div className="card" style={{ maxWidth: 480, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
             <h2 style={{ marginTop: 0 }}>Report</h2>
-            <div style={{ fontSize: "0.85rem" }}>
-              <div><b>Report:</b> {reportViewFor.report.report || <span className="subtle">-</span>}</div>
-              <div style={{ marginTop: 6 }}><b>Next Step:</b> {reportViewFor.report.next_step || <span className="subtle">-</span>}</div>
-              {reportViewFor.report.photo_paths.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+            <div className="field">
+              <label>Report</label>
+              <textarea value={reportViewFor.report.report} readOnly placeholder="-" rows={4} />
+            </div>
+            <div className="field">
+              <label>Next Step</label>
+              <textarea value={reportViewFor.report.next_step} readOnly placeholder="-" rows={4} />
+            </div>
+            {reportViewFor.report.photo_paths.length > 0 && (
+              <div className="field">
+                <label>Photos</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {reportViewFor.report.photo_paths.map((path, i) => (
-                    <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                      <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 6px" }} onClick={() => viewPhoto(path)}>Photo{reportViewFor.report.photo_paths.length > 1 ? ` ${i + 1}` : ""}</button>
-                      {canManage && (
-                        <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 5px" }} title="Remove this photo" onClick={() => removeReportPhoto(reportViewFor.report.project_id, reportViewFor.report.id, path)}>✕</button>
+                    <div key={i} style={{ position: "relative" }}>
+                      {reportViewPhotoUrls[path] ? (
+                        <img
+                          src={reportViewPhotoUrls[path]} alt={`Photo ${i + 1}`}
+                          style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", display: "block" }}
+                        />
+                      ) : (
+                        <div className="subtle" style={{ width: 120, height: 120, borderRadius: 8, border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem" }}>
+                          Loading...
+                        </div>
                       )}
-                    </span>
+                      {canManage && (
+                        <button
+                          className="btn danger" style={{ position: "absolute", top: 4, right: 4, fontSize: "0.65rem", padding: "1px 5px" }}
+                          title="Remove this photo" onClick={() => removeReportPhoto(reportViewFor.report.project_id, reportViewFor.report.id, path)}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
-              )}
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
               {canManage && (
                 <button className="btn danger" onClick={() => deleteReport(reportViewFor.report.project_id, reportViewFor.report.id)}>Delete Report</button>
               )}

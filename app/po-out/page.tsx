@@ -9,7 +9,7 @@ import ToggleSwitch from "@/app/components/ToggleSwitch";
 import TruncatedText from "@/app/components/TruncatedText";
 import {
   PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, CURRENCY_SYMBOLS, PoOutStatus, PO_OUT_STATUSES,
-  fmtDate, fmtDateTime, exportPoOutRecapToExcel,
+  fmtDate, fmtDateTime, daysBetweenDates, exportPoOutRecapToExcel,
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
 
@@ -27,7 +27,7 @@ function parsePrice(display: string): string {
 interface SalesAccount { id: string; full_name: string; }
 
 interface Draft {
-  poDate: string; deadline: string; urgent: boolean; poNumber: string; itemCode: string;
+  poDate: string; deadline: string; estimation: string; urgent: boolean; poNumber: string; itemCode: string;
   sales: string; customerName: string; itemDescription: string; qty: string; unit: string;
   unitPrice: string; unitPriceCurrency: Currency; unitSellingPrice: string; unitSellingPriceCurrency: Currency;
   supplier: string;
@@ -35,7 +35,7 @@ interface Draft {
 
 function blank(): Draft {
   return {
-    poDate: new Date().toISOString().slice(0, 10), deadline: "", urgent: false, poNumber: "", itemCode: "",
+    poDate: new Date().toISOString().slice(0, 10), deadline: "", estimation: "", urgent: false, poNumber: "", itemCode: "",
     sales: "", customerName: "", itemDescription: "", qty: "1", unit: "pcs",
     unitPrice: "", unitPriceCurrency: "IDR", unitSellingPrice: "", unitSellingPriceCurrency: "IDR", supplier: "",
   };
@@ -51,11 +51,29 @@ function poMatches(p: PoOut, term: string): boolean {
   );
 }
 
+// Calendar-day difference, same convention as Dashboard/Exim's daysSince.
+function daysSince(dateStr: string): number {
+  const [y, m, d] = dateStr.slice(0, 10).split("-").map(Number);
+  const start = Date.UTC(y, m - 1, d);
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.round((today - start) / (1000 * 60 * 60 * 24)));
+}
+
+// "05/08/2026 (6)" - the estimation date plus how many days after po_date
+// it falls.
+function estimationLabel(p: PoOut): string {
+  if (!p.estimation) return "-";
+  return `${fmtDate(p.estimation)} (${daysBetweenDates(p.po_date, p.estimation)})`;
+}
+
 type SortKey = "po_number" | "item_code" | "sales" | "customer_name" | "supplier";
 
 const COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
   { key: "poDate", label: "PO Date" },
+  { key: "days", label: "Days" },
   { key: "deadline", label: "Deadline" },
+  { key: "estimation", label: "Estimation" },
   { key: "poNumber", label: "PO Number", sortKey: "po_number" },
   { key: "itemCode", label: "Item Code", sortKey: "item_code" },
   { key: "sales", label: "Sales", sortKey: "sales" },
@@ -73,7 +91,9 @@ const COLUMNS: { key: string; label: string; sortKey?: SortKey }[] = [
 function poCellText(p: PoOut, key: string): string {
   switch (key) {
     case "poDate": return fmtDate(p.po_date);
+    case "days": return String(daysSince(p.po_date));
     case "deadline": return fmtDate(p.deadline) + (p.urgent ? " (URGENT)" : "");
+    case "estimation": return estimationLabel(p);
     case "poNumber": return p.po_number;
     case "itemCode": return p.item_code;
     case "sales": return p.sales;
@@ -266,7 +286,8 @@ export default function PoOutPage() {
   function startRowEdit(p: PoOut) {
     setEditingId(p.id);
     setEditDraft({
-      poDate: p.po_date.slice(0, 10), deadline: p.deadline ? p.deadline.slice(0, 10) : "", urgent: p.urgent,
+      poDate: p.po_date.slice(0, 10), deadline: p.deadline ? p.deadline.slice(0, 10) : "",
+      estimation: p.estimation ? p.estimation.slice(0, 10) : "", urgent: p.urgent,
       poNumber: p.po_number, itemCode: p.item_code, sales: p.sales, customerName: p.customer_name,
       itemDescription: p.item_description, qty: String(p.qty), unit: p.unit,
       unitPrice: formatPrice(String(p.unit_price)), unitPriceCurrency: p.unit_price_currency,
@@ -328,6 +349,7 @@ export default function PoOutPage() {
     const d = editDraft;
     return [
       { key: "poDate", node: isEditing && d ? <DateField value={d.poDate} onChange={(v) => setEditDraft({ ...d, poDate: v })} /> : fmtDate(p.po_date) },
+      { key: "days", node: daysSince(p.po_date) },
       {
         key: "deadline",
         node: isEditing && d ? (
@@ -342,6 +364,14 @@ export default function PoOutPage() {
             {fmtDate(p.deadline)}
             {p.urgent && <span className="pill pill-rejected" style={{ marginLeft: 4, fontSize: "0.6rem" }}>URGENT</span>}
           </>
+        ),
+      },
+      {
+        key: "estimation",
+        node: isEditing && d ? (
+          <DateField value={d.estimation} onChange={(v) => setEditDraft({ ...d, estimation: v })} />
+        ) : (
+          estimationLabel(p)
         ),
       },
       { key: "poNumber", node: isEditing && d ? <input type="text" value={d.poNumber} onChange={(e) => setEditDraft({ ...d, poNumber: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 100 }} /> : p.po_number },
@@ -430,6 +460,10 @@ export default function PoOutPage() {
                       <input type="checkbox" checked={draft.urgent} onChange={(e) => setDraft({ ...draft, urgent: e.target.checked })} style={{ width: 15, height: 15 }} /> Urgent
                     </label>
                   </div>
+                </div>
+                <div className="form-row">
+                  <label>Estimation</label><span>:</span>
+                  <DateField value={draft.estimation} onChange={(v) => setDraft({ ...draft, estimation: v })} />
                 </div>
                 <div className="form-row"><label>PO Number</label><span>:</span><input type="text" value={draft.poNumber} onChange={(e) => setDraft({ ...draft, poNumber: e.target.value.toUpperCase() })} /></div>
                 <div className="form-row"><label>Item Code</label><span>:</span><input type="text" value={draft.itemCode} onChange={(e) => setDraft({ ...draft, itemCode: e.target.value.toUpperCase() })} /></div>

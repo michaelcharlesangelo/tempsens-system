@@ -300,4 +300,13 @@ table.data-table a { color: var(--accent-dark); text-decoration: none; font-weig
   .card { padding: 14px; }
   table.data-table { font-size: 0.8rem; }
   .bell-dropdown { width: 280px; right: -60px; }
+  /* iOS Safari auto-zooms the whole page when a focused input/select/
+     textarea has a font-size under 16px, and the zoom doesn't reliably
+     reset on blur - this is what made text elsewhere on the page (e.g.
+     Project Recap's Progress History) look inconsistently bigger after
+     tapping into a smaller field, not a missing font-size on that text
+     itself. Flooring every form control at 16px on mobile stops the
+     zoom from triggering in the first place. !important because many
+     places set a smaller fontSize inline for compact table cells. */
+  input, select, textarea { font-size: 16px !important; }
 }

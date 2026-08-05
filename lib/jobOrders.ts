@@ -458,6 +458,7 @@ export interface PoOut {
   id: string;
   po_date: string;
   deadline: string | null;
+  estimation: string | null;
   urgent: boolean;
   po_number: string;
   item_code: string;
@@ -586,6 +587,18 @@ export function fmtDate(iso: string | null): string {
   const day = String(d.getDate()).padStart(2, "0");
   const month = String(d.getMonth() + 1).padStart(2, "0");
   return `${day}/${month}/${d.getFullYear()}`;
+}
+
+// Calendar-day difference between two ISO dates (UTC-based, so it isn't
+// thrown off by time-of-day) - used to show "(N)" days next to an
+// Estimation date, e.g. "05/08/2026 (6)" meaning estimation is 6 days
+// after po_date. Can be negative if toIso is earlier than fromIso.
+export function daysBetweenDates(fromIso: string, toIso: string): number {
+  const [y1, m1, d1] = fromIso.slice(0, 10).split("-").map(Number);
+  const [y2, m2, d2] = toIso.slice(0, 10).split("-").map(Number);
+  const from = Date.UTC(y1, m1 - 1, d1);
+  const to = Date.UTC(y2, m2 - 1, d2);
+  return Math.round((to - from) / (1000 * 60 * 60 * 24));
 }
 
 // dd-Mmm-yyyy, used specifically on the JO form's date fields.

@@ -29,6 +29,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const updates: Record<string, unknown> = {};
   if (body.poDate) updates.po_date = body.poDate;
   if (body.deadline !== undefined) updates.deadline = body.deadline || null;
+  if (body.estimation !== undefined) updates.estimation = body.estimation || null;
   if (typeof body.urgent === "boolean") updates.urgent = body.urgent;
   if (typeof body.poNumber === "string") updates.po_number = body.poNumber.trim();
   if (typeof body.itemCode === "string") updates.item_code = body.itemCode.trim().toUpperCase();
