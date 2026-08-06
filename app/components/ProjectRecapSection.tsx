@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import Collapsible from "@/app/components/Collapsible";
+import DateField from "@/app/components/DateField";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
 import ProjectStatusSlider from "@/app/components/ProjectStatusSlider";
 import TruncatedText from "@/app/components/TruncatedText";
@@ -113,16 +114,52 @@ function blankReportDraft(): ReportDraft {
   return { report: "", nextStep: "", photos: [] };
 }
 
+// Year tabs - starts at 2026 and grows forward as real years pass, newest
+// first, defaulting to the current year. Only shown when showYearTabs is
+// set (Dashboard's instance); Project Manager's own page and the read-only
+// Project tab don't need a year split.
+function yearsFrom2026(): number[] {
+  const current = new Date().getFullYear();
+  const years: number[] = [];
+  for (let y = current; y >= 2026; y--) years.push(y);
+  return years;
+}
+function YearTabs({ years, selected, onSelect }: { years: number[]; selected: number; onSelect: (y: number) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+      {years.map((y) => (
+        <button
+          key={y}
+          className="btn secondary"
+          style={{ fontSize: "0.75rem", background: selected === y ? "var(--accent)" : undefined, color: selected === y ? "white" : undefined }}
+          onClick={() => onSelect(y)}
+        >
+          {y}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface SalesAccount { id: string; full_name: string; }
+
+interface ProjectEditDraft {
+  projectNumber: string; customerName: string; projectDescription: string; sales: string;
+  hasPo: boolean; poDate: string; poNumber: string; poValue: string; poValueCurrency: Currency;
+}
+
 // canManage: Project Manager's own page - shows PO Value/Budgeting/Cost
-// columns, can add Budgeting lines, can change status to Finished, and
-// can edit/delete progress entries and reports. The read-only Project tab
-// (canManage=false) hides those columns and can't mark Finished, but can
-// still log Progress/Report/Cost via the Status panel - "anyone" per spec.
-export default function ProjectRecapSection({ canManage }: { canManage: boolean }) {
+// columns, can add Budgeting lines, can change status to Finished, can
+// edit/delete progress entries and reports, and can edit every project
+// field. The read-only Project tab (canManage=false) hides those columns
+// and can't mark Finished, but can still log Progress/Report/Cost via the
+// Status panel - "anyone" per spec.
+export default function ProjectRecapSection({ canManage, showYearTabs }: { canManage: boolean; showYearTabs?: boolean }) {
   const currentRole = getCurrentRole();
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [showOngoing, setShowOngoing] = useState(true);
-  const [showFinished, setShowFinished] = useState(false);
+  const [salesAccounts, setSalesAccounts] = useState<SalesAccount[]>([]);
+  const [hideFinished, setHideFinished] = useState(true);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [message, setMessage] = useState<string | null>(null);
   const [expandedDescription, setExpandedDescription] = useState<Record<string, boolean>>({});
 
@@ -168,12 +205,21 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
   const [editingProgressId, setEditingProgressId] = useState<string | null>(null);
   const [editProgressComment, setEditProgressComment] = useState("");
 
+  // Project Manager's own full-detail edit (canManage only) - a floating
+  // modal covering every field the create form itself covers.
+  const [editProjectId, setEditProjectId] = useState<string | null>(null);
+  const [editProjectDraft, setEditProjectDraft] = useState<ProjectEditDraft | null>(null);
+  const [savingProjectEdit, setSavingProjectEdit] = useState(false);
+
   async function load() {
     const res = await fetch("/api/projects", { cache: "no-store" });
     const data = await res.json();
     setProjects(data.projects ?? []);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    fetch("/api/production-accounts?forSales=true", { cache: "no-store" }).then((r) => r.json()).then((d) => setSalesAccounts(d.accounts ?? []));
+  }, []);
 
   // Resolve signed URLs for the report's photos up front so they render
   // inline as <img> in the view modal instead of needing a click-through.
@@ -193,6 +239,31 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportViewFor?.report.id, reportViewFor?.report.photo_paths.join(",")]);
+
+  function startProjectEdit(p: Project) {
+    setEditProjectId(p.id);
+    setEditProjectDraft({
+      projectNumber: p.project_number, customerName: p.customer_name, projectDescription: p.project_description,
+      sales: p.sales, hasPo: p.has_po, poDate: p.po_date ? p.po_date.slice(0, 10) : "",
+      poNumber: p.po_number, poValue: formatPrice(String(p.po_value)), poValueCurrency: p.po_value_currency,
+    });
+  }
+  async function saveProjectEdit() {
+    if (!editProjectId || !editProjectDraft) return;
+    setSavingProjectEdit(true);
+    try {
+      const res = await fetch(`/api/projects/${editProjectId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...editProjectDraft, poValue: parsePrice(editProjectDraft.poValue) }),
+      });
+      if (!res.ok) { setMessage("Failed to save project details."); return; }
+      setEditProjectId(null);
+      setEditProjectDraft(null);
+      load();
+    } finally {
+      setSavingProjectEdit(false);
+    }
+  }
 
   function toggleBudget(projectId: string) {
     setBudgetOpenFor((cur) => (cur === projectId ? null : projectId));
@@ -368,8 +439,11 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
     setReportViewFor((cur) => cur ? { ...cur, report: { ...cur.report, photo_paths: cur.report.photo_paths.filter((p) => p !== path) } } : cur);
   }
 
-  const statusVisible: Record<ProjectStatus, boolean> = { ongoing: showOngoing, finished: showFinished };
-  const filtered = (projects ?? []).filter((p) => statusVisible[p.status]);
+  const filtered = (projects ?? []).filter((p) => {
+    if (hideFinished && p.status === "finished") return false;
+    if (showYearTabs && new Date(p.created_at).getFullYear() !== year) return false;
+    return true;
+  });
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(filtered, projectMatches);
 
   const costModalProject = (projects ?? []).find((p) => p.id === costModalFor) ?? null;
@@ -387,8 +461,8 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
         defaultOpen
         actions={
           <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-            <ToggleSwitch checked={showOngoing} onChange={setShowOngoing} label="On-going" color="#eab308" />
-            <ToggleSwitch checked={showFinished} onChange={setShowFinished} label="Finished" color="var(--good)" />
+            {showYearTabs && <YearTabs years={yearsFrom2026()} selected={year} onSelect={setYear} />}
+            <ToggleSwitch checked={hideFinished} onChange={setHideFinished} label="Hide Finished" color="var(--good)" />
           </div>
         }
       >
@@ -403,6 +477,7 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
                     <th>Project Description</th><th>Status</th><th>Last Update</th>
                     {canManage && <th>Budgeting</th>}
                     {canManage && <th>Cost</th>}
+                    {canManage && <th></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -410,7 +485,7 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
                     const meta = p.status === "finished" ? { label: "Finished", color: "var(--good)" } : { label: "On-going", color: "#eab308" };
                     const budgetTotal = lineItemsTotal(p.budget_items);
                     const costTotal = lineItemsTotal(p.cost_items);
-                    const colSpan = canManage ? 11 : 9;
+                    const colSpan = canManage ? 12 : 9;
                     const descExpanded = !!expandedDescription[p.id];
                     return (
                       <Fragment key={p.id}>
@@ -447,6 +522,11 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
                               <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => openCostModal(p.id)}>
                                 {CURRENCY_SYMBOLS[p.cost_items[0]?.unit_price_currency ?? "IDR"]} {costTotal.toLocaleString("id-ID")}
                               </span>
+                            </td>
+                          )}
+                          {canManage && (
+                            <td>
+                              <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startProjectEdit(p)}>Edit</button>
                             </td>
                           )}
                         </tr>
@@ -650,7 +730,9 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
                       {reportViewPhotoUrls[path] ? (
                         <img
                           src={reportViewPhotoUrls[path]} alt={`Photo ${i + 1}`}
-                          style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", display: "block" }}
+                          onClick={() => window.open(reportViewPhotoUrls[path], "_blank")}
+                          title="Click for a larger view"
+                          style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)", display: "block", cursor: "pointer" }}
                         />
                       ) : (
                         <div className="subtle" style={{ width: 120, height: 120, borderRadius: 8, border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem" }}>
@@ -823,6 +905,57 @@ export default function ProjectRecapSection({ canManage }: { canManage: boolean 
             </div>
             <div style={{ marginTop: 10 }}>
               <button className="btn secondary" onClick={() => setCostModalFor(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editProjectId && editProjectDraft && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div className="card" style={{ maxWidth: 520, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+            <h2 style={{ marginTop: 0 }}>Edit Project</h2>
+            <div className="field">
+              <label>Project Number</label>
+              <input type="text" value={editProjectDraft.projectNumber} onChange={(e) => setEditProjectDraft({ ...editProjectDraft, projectNumber: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="field">
+              <label>Customer Name</label>
+              <input type="text" value={editProjectDraft.customerName} onChange={(e) => setEditProjectDraft({ ...editProjectDraft, customerName: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>Project Description</label>
+              <textarea value={editProjectDraft.projectDescription} onChange={(e) => setEditProjectDraft({ ...editProjectDraft, projectDescription: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>Sales</label>
+              <select value={editProjectDraft.sales} onChange={(e) => setEditProjectDraft({ ...editProjectDraft, sales: e.target.value })}>
+                <option value="">Select...</option>
+                {salesAccounts.map((a) => <option key={a.id} value={a.full_name}>{a.full_name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>PO Date</label>
+              <DateField value={editProjectDraft.poDate} onChange={(v) => setEditProjectDraft({ ...editProjectDraft, poDate: v })} />
+            </div>
+            <div className="field">
+              <label>PO Number</label>
+              <input type="text" value={editProjectDraft.poNumber} onChange={(e) => setEditProjectDraft({ ...editProjectDraft, poNumber: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="field">
+              <label>PO Value</label>
+              <div style={{ display: "flex", gap: 2 }}>
+                <select value={editProjectDraft.poValueCurrency} onChange={(e) => setEditProjectDraft({ ...editProjectDraft, poValueCurrency: e.target.value as Currency })} style={{ width: 70, flex: "none" }}>
+                  {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input type="text" inputMode="numeric" value={editProjectDraft.poValue} onChange={(e) => setEditProjectDraft({ ...editProjectDraft, poValue: formatPrice(e.target.value) })} />
+              </div>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.85rem" }}>
+              <input type="checkbox" checked={!editProjectDraft.hasPo} onChange={(e) => setEditProjectDraft({ ...editProjectDraft, hasPo: !e.target.checked })} /> Not PO
+            </label>
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button className="btn" disabled={savingProjectEdit} onClick={saveProjectEdit}>{savingProjectEdit ? "Saving..." : "Save"}</button>
+              <button className="btn secondary" onClick={() => { setEditProjectId(null); setEditProjectDraft(null); }}>Cancel</button>
             </div>
           </div>
         </div>

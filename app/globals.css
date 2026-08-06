@@ -179,7 +179,7 @@ textarea { resize: vertical; min-height: 70px; }
 .btn {
   background: var(--accent); color: white; border: none; padding: 9px 16px;
   border-radius: 8px; font-size: 0.85rem; cursor: pointer; font-weight: 600;
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
 }
 .btn:hover { background: var(--accent-dark); }
 .btn.secondary { background: white; color: var(--text); border: 1px solid var(--border); }
@@ -307,6 +307,10 @@ table.data-table a { color: var(--accent-dark); text-decoration: none; font-weig
      tapping into a smaller field, not a missing font-size on that text
      itself. Flooring every form control at 16px on mobile stops the
      zoom from triggering in the first place. !important because many
-     places set a smaller fontSize inline for compact table cells. */
-  input, select, textarea { font-size: 16px !important; }
+     places set a smaller fontSize inline for compact table cells.
+     [readonly] fields are excluded - they can't be typed into so there's
+     no zoom to prevent, and flooring them anyway made read-only views
+     (e.g. Report view modal) render noticeably bigger than the rest of
+     the page's text instead of matching it. */
+  input:not([readonly]), select, textarea:not([readonly]) { font-size: 16px !important; }
 }

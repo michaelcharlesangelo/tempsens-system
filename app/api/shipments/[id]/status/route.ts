@@ -22,8 +22,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const changedBy = typeof body.changedBy === "string" && body.changedBy.trim() ? body.changedBy.trim() : "Exim";
 
   const admin = getSupabaseAdminClient();
+  const { data: before } = await admin.from("shipments").select("status").eq("id", params.id).maybeSingle();
   const { data: shipment, error } = await admin.from("shipments").update({ status }).eq("id", params.id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // The shipment's own log - written unconditionally (unlike the po_out_history
+  // cascade below, which only fires once a shipment_number is tied to PO Out
+  // rows), so a comment posted before that link exists is never lost. Only
+  // logged when there's actually something to show: a status change or a
+  // typed comment, same gating as the po_out_history cascade below.
+  const statusChanged = before?.status !== status;
+  if (statusChanged || comment) {
+    await admin.from("shipment_history").insert({
+      shipment_id: params.id, changed_by: changedBy, comment,
+      status: statusChanged ? status : null,
+    });
+  }
 
   if (shipment.shipment_number) {
     if (status === "shipment" || status === "arrived") {

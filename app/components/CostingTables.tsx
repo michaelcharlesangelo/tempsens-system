@@ -7,6 +7,31 @@ import Collapsible from "@/app/components/Collapsible";
 import TruncatedText from "@/app/components/TruncatedText";
 import { JobOrder, JobOrderHistoryEntry, joMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
+// Year tabs - starts at 2026 and grows forward as real years pass, newest
+// first, defaulting to the current year.
+function yearsFrom2026(): number[] {
+  const current = new Date().getFullYear();
+  const years: number[] = [];
+  for (let y = current; y >= 2026; y--) years.push(y);
+  return years;
+}
+function YearTabs({ years, selected, onSelect }: { years: number[]; selected: number; onSelect: (y: number) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+      {years.map((y) => (
+        <button
+          key={y}
+          className="btn secondary"
+          style={{ fontSize: "0.75rem", background: selected === y ? "var(--accent)" : undefined, color: selected === y ? "white" : undefined }}
+          onClick={() => onSelect(y)}
+        >
+          {y}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Shared between Sales Support (finish-costing-only) and Sales Support
 // Supervisor (both tables) - same underlying data regardless of who's
 // looking, since costing isn't scoped per-person.
@@ -17,6 +42,7 @@ export default function CostingTables({
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
+  const [finishCostingYear, setFinishCostingYear] = useState(new Date().getFullYear());
 
   async function load() {
     const res = await fetch(`/api/job-orders?status=completed&tab=${tab}`, { cache: "no-store" });
@@ -54,7 +80,7 @@ export default function CostingTables({
   }
 
   const toBeCosting = (completed ?? []).filter((jo) => !jo.costing_done);
-  const finishedCosting = (completed ?? []).filter((jo) => jo.costing_done);
+  const finishedCosting = (completed ?? []).filter((jo) => jo.costing_done && new Date(jo.jo_date).getFullYear() === finishCostingYear);
 
   const toBeCostingPaged = usePagedSearch(toBeCosting, joMatchesSearch);
   const finishedCostingPaged = usePagedSearch(finishedCosting, joMatchesSearch);
@@ -144,7 +170,11 @@ export default function CostingTables({
         </Collapsible>
       )}
 
-      <Collapsible title="Job Order Finish Costing" count={finishedCosting.length}>
+      <Collapsible
+        title="Job Order Finish Costing"
+        count={finishedCosting.length}
+        actions={<YearTabs years={yearsFrom2026()} selected={finishCostingYear} onSelect={setFinishCostingYear} />}
+      >
         {!completed ? <p className="subtle">Loading...</p> : finishedCosting.length === 0 ? <p className="subtle">None yet.</p> : (
           <>
             <SearchBox value={finishedCostingPaged.search} onChange={finishedCostingPaged.setSearch} />

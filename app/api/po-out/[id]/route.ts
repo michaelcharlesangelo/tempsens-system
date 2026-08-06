@@ -5,8 +5,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const CURRENCIES = ["IDR", "USD", "SGD", "EUR", "CNY", "JPY"];
-const STATUSES = ["production", "shipment", "arrived"];
-const STATUS_LABELS: Record<string, string> = { production: "Production", shipment: "Shipment", arrived: "Arrived" };
+const STATUSES = ["production", "ready", "shipment", "arrived"];
+const STATUS_LABELS: Record<string, string> = { production: "Production", ready: "Ready", shipment: "Shipment", arrived: "Arrived" };
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json();

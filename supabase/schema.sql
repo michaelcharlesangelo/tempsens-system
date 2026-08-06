@@ -398,7 +398,7 @@ create table if not exists po_out (
   unit_selling_price numeric not null default 0,
   unit_selling_price_currency text not null default 'IDR' check (unit_selling_price_currency in ('IDR','USD','SGD','EUR','CNY','JPY')),
   supplier text not null default '',
-  status text not null default 'production' check (status in ('production','shipment','arrived')),
+  status text not null default 'production' check (status in ('production','ready','shipment','arrived')),
   -- Filled in from the PO Out Recap (any page showing it) - estimated
   -- arrival/completion date for this line. Shown everywhere alongside the
   -- day count from po_date, e.g. "05/08/2026 (6)".
@@ -486,7 +486,23 @@ create table if not exists shipments (
   created_at timestamptz not null default now()
 );
 
+-- Shipment's own comment/status log - written on every /api/shipments/[id]/status
+-- POST regardless of whether the shipment has any PO Out rows linked to it
+-- yet (a comment posted before shipment_number is tied to any PO previously
+-- landed nowhere retrievable). Shown under the Shipment Plan table's Update
+-- Shipment Status panel, mirroring po_out_history.
+create table if not exists shipment_history (
+  id uuid primary key default gen_random_uuid(),
+  shipment_id uuid not null references shipments(id) on delete cascade,
+  changed_by text not null default '',
+  comment text not null default '',
+  status text,
+  changed_at timestamptz not null default now()
+);
+
+create index if not exists idx_shipment_history_shipment on shipment_history(shipment_id);
 alter table shipments enable row level security;
+alter table shipment_history enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- HS Code registry (app/hs-codes) - code + description + BM (import duty %).

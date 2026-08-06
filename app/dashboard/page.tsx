@@ -5,11 +5,39 @@ import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import TruncatedText from "@/app/components/TruncatedText";
 import ProjectRecapSection from "@/app/components/ProjectRecapSection";
+import ToggleSwitch from "@/app/components/ToggleSwitch";
 import {
-  Complaint, JobOrder, PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, PO_OUT_STATUSES, COMPLAINT_STATUSES,
+  Complaint, JobOrder, PoOut, Shipment, PO_OUT_STATUSES, COMPLAINT_STATUSES,
   FabricationItem,
   complaintMatchesSearch, joMatchesSearch, dashboardStatusLabel, fmtDate, fmtDateTime, daysBetweenDates,
 } from "@/lib/jobOrders";
+
+// Year tabs shared by every year-filterable section on this page - starts
+// at 2026 (the earliest year this data matters for) and grows forward as
+// real years pass, newest first, defaulting to the current year.
+function yearsFrom2026(): number[] {
+  const current = new Date().getFullYear();
+  const years: number[] = [];
+  for (let y = current; y >= 2026; y--) years.push(y);
+  return years;
+}
+
+function YearTabs({ years, selected, onSelect }: { years: number[]; selected: number; onSelect: (y: number) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+      {years.map((y) => (
+        <button
+          key={y}
+          className="btn secondary"
+          style={{ fontSize: "0.75rem", background: selected === y ? "var(--accent)" : undefined, color: selected === y ? "white" : undefined }}
+          onClick={() => onSelect(y)}
+        >
+          {y}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function fabricationRecapMatches(f: FabricationItem, term: string): boolean {
   return f.so_no.toLowerCase().includes(term) || f.description.toLowerCase().includes(term) || fmtDate(f.jo_date).includes(term);
@@ -79,6 +107,7 @@ const PO_COLUMNS: { key: string; label: string }[] = [
   { key: "unit", label: "Unit" },
   { key: "supplier", label: "Supplier" },
   { key: "status", label: "Status" },
+  { key: "etaJkt", label: "ETA JKT" },
 ];
 
 function poMatches(p: PoOut, term: string): boolean {
@@ -124,13 +153,23 @@ function estimationLabel(p: PoOut): string {
   return `${fmtDate(p.estimation)} (${daysBetweenDates(p.po_date, p.estimation)})`;
 }
 
+// Shown in the ETA JKT column once a PO is under Shipment status and Exim
+// has filled in that shipment's ETA JKT - looked up by matching the PO's
+// free-text shipment field to the Shipment Plan's shipment_number.
+function etaJktFor(p: PoOut, shipments: Shipment[]): string | null {
+  if (p.status !== "shipment" || !p.shipment) return null;
+  const match = shipments.find((s) => s.shipment_number === p.shipment);
+  return match?.eta_jkt ? fmtDate(match.eta_jkt) : null;
+}
+
 // Read-only view of the PO OUT RECAP table - no Edit, status badge only
 // opens the history (no way to change it from here, that's Exim's page).
 // Kept at module scope like the rest of the app's list-table components.
 function PoOutRecapSection() {
   const [pos, setPos] = useState<PoOut[] | null>(null);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [activeTab, setActiveTab] = useState<SupplierTabCategory | "ALL">("ALL");
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [hideArrived, setHideArrived] = useState(true);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
   const [historyOpenId, setHistoryOpenId] = useState<string | null>(null);
@@ -138,7 +177,7 @@ function PoOutRecapSection() {
 
   useEffect(() => {
     fetch("/api/po-out", { cache: "no-store" }).then((r) => r.json()).then((d) => setPos(d.pos ?? []));
-    fetch("/api/suppliers", { cache: "no-store" }).then((r) => r.json()).then((d) => setSuppliers(d.suppliers ?? []));
+    fetch("/api/shipments", { cache: "no-store" }).then((r) => r.json()).then((d) => setShipments(d.shipments ?? []));
   }, []);
 
   useEffect(() => {
@@ -158,8 +197,7 @@ function PoOutRecapSection() {
     });
   }
 
-  const supplierCategory = new Map(suppliers.map((s) => [s.name, s.tab_category]));
-  const filtered = (pos ?? []).filter((p) => activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab);
+  const filtered = (pos ?? []).filter((p) => (!hideArrived || p.status !== "arrived") && new Date(p.po_date).getFullYear() === year);
   const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(filtered, poMatches);
   const visibleCols = PO_COLUMNS.filter((c) => !hiddenCols.has(c.key));
 
@@ -190,35 +228,22 @@ function PoOutRecapSection() {
           </span>
         );
       }
+      case "etaJkt": return etaJktFor(p, shipments) ?? <span className="subtle">-</span>;
       default: return null;
     }
   }
 
   return (
     <div className="card">
-      <h2 style={{ margin: 0 }}>PO OUT RECAP ({pos?.length ?? "..."})</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <h2 style={{ margin: 0 }}>PO OUT RECAP ({pos?.length ?? "..."})</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <YearTabs years={yearsFrom2026()} selected={year} onSelect={setYear} />
+          <ToggleSwitch checked={hideArrived} onChange={setHideArrived} label="Hide Arrived" color="var(--good)" />
+        </div>
+      </div>
       {!pos ? <p className="subtle">Loading...</p> : pos.length === 0 ? <p className="subtle">None yet.</p> : (
         <>
-          <div style={{ display: "flex", gap: 2, margin: "10px 0 0", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-            <button
-              className="btn secondary"
-              style={{ fontSize: "0.75rem", borderRadius: "6px 6px 0 0", borderBottom: "none", background: activeTab === "ALL" ? "var(--accent)" : undefined, color: activeTab === "ALL" ? "white" : undefined }}
-              onClick={() => setActiveTab("ALL")}
-            >
-              All
-            </button>
-            {SUPPLIER_TAB_CATEGORIES.map((c) => (
-              <button
-                key={c.value}
-                className="btn secondary"
-                style={{ fontSize: "0.75rem", borderRadius: "6px 6px 0 0", borderBottom: "none", background: activeTab === c.value ? "var(--accent)" : undefined, color: activeTab === c.value ? "white" : undefined }}
-                onClick={() => setActiveTab(c.value)}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
             <SearchBox value={search} onChange={setSearch} />
             <div ref={columnsMenuRef} style={{ position: "relative" }}>
@@ -285,21 +310,37 @@ function PoOutRecapSection() {
 
 export default function DashboardPage() {
   const [activeJobOrders, setActiveJobOrders] = useState<JobOrder[] | null>(null);
-  const [yearlyByCategory, setYearlyByCategory] = useState<CategoryTotal[]>([]);
-  const [year, setYear] = useState<number | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [productionYear, setProductionYear] = useState(new Date().getFullYear());
   const [complaints, setComplaints] = useState<Complaint[] | null>(null);
   const [fabricationItems, setFabricationItems] = useState<FabricationItem[]>([]);
   const [fabricationOpen, setFabricationOpen] = useState(false);
+  const [hideFinishedJO, setHideFinishedJO] = useState(true);
+  const [joYear, setJoYear] = useState(new Date().getFullYear());
 
   useEffect(() => {
     fetch("/api/dashboard", { cache: "no-store" }).then((r) => r.json()).then((d) => {
       setActiveJobOrders(d.activeJobOrders ?? []);
-      setYearlyByCategory(d.yearlyByCategory ?? []);
-      setYear(d.year ?? null);
+      setCategories(d.categories ?? []);
     });
     fetch("/api/complaints", { cache: "no-store" }).then((r) => r.json()).then((d) => setComplaints(d.complaints ?? []));
     fetch("/api/fabrication", { cache: "no-store" }).then((r) => r.json()).then((d) => setFabricationItems(d.items ?? []));
   }, []);
+
+  // Client-computed so the Production bar graph's year tabs can recap any
+  // year without a separate API round trip - activeJobOrders already has
+  // every non-draft/pending/cancelled/rejected JO, completed or not.
+  const yearlyByCategory: CategoryTotal[] = (() => {
+    const byCategory = new Map<string, number>();
+    categories.forEach((c) => byCategory.set(c, 0));
+    (activeJobOrders ?? []).forEach((jo) => {
+      if (jo.status !== "completed" || !jo.finish_date) return;
+      if (new Date(jo.finish_date).getFullYear() !== productionYear) return;
+      const cat = jo.item_category || "Uncategorized";
+      byCategory.set(cat, (byCategory.get(cat) ?? 0) + Number(jo.quantity));
+    });
+    return Array.from(byCategory.entries()).map(([category, qty]) => ({ category, qty }));
+  })();
 
   async function viewPhoto(path: string) {
     const res = await fetch(`/api/complaints/x/photo?path=${encodeURIComponent(path)}`, { cache: "no-store" });
@@ -354,20 +395,18 @@ export default function DashboardPage() {
     });
   }
 
-  function ComplaintTable({ items, title, historyItems, historyTitle }: { items: Complaint[]; title: string; historyItems: Complaint[]; historyTitle: string }) {
-    const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch, 5);
-    const [historyOpen, setHistoryOpen] = useState(false);
-    const historyPaged = usePagedSearch(historyItems, complaintMatchesSearch, 5);
+  function ComplaintTable({ items, title }: { items: Complaint[]; title: string }) {
+    const [hideFinished, setHideFinished] = useState(true);
+    const visible = items.filter((c) => !hideFinished || c.status !== "done");
+    const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(visible, complaintMatchesSearch, 5);
     const [logOpenId, setLogOpenId] = useState<string | null>(null);
     return (
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ margin: 0 }}>{title} ({items.length})</h2>
-          <button className="btn secondary" onClick={() => setHistoryOpen((v) => !v)}>
-            {historyOpen ? "Hide History" : `History (${historyItems.length})`}
-          </button>
+          <ToggleSwitch checked={hideFinished} onChange={setHideFinished} label="Hide Finished" color="var(--good)" />
         </div>
-        {items.length === 0 ? <p className="subtle">None.</p> : (
+        {items.length === 0 ? <p className="subtle">None.</p> : totalCount === 0 ? <p className="subtle">Nothing to show for the selected filter.</p> : (
           <>
           <SearchBox value={search} onChange={setSearch} />
           <div style={{ overflowX: "auto" }}>
@@ -380,25 +419,6 @@ export default function DashboardPage() {
           </div>
           <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
           </>
-        )}
-        {historyOpen && (
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-            <h3 style={{ margin: "0 0 8px" }}>{historyTitle} ({historyItems.length})</h3>
-            {historyItems.length === 0 ? <p className="subtle">None yet.</p> : (
-              <>
-              <SearchBox value={historyPaged.search} onChange={historyPaged.setSearch} />
-              <div style={{ overflowX: "auto" }}>
-                <table className="data-table">
-                  <thead>
-                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Photos Update</th></tr>
-                  </thead>
-                  <tbody>{complaintRows(historyPaged.pageItems, logOpenId, setLogOpenId)}</tbody>
-                </table>
-              </div>
-              <Pager page={historyPaged.page} totalPages={historyPaged.totalPages} totalCount={historyPaged.totalCount} onChange={historyPaged.setPage} />
-              </>
-            )}
-          </div>
         )}
       </div>
     );
@@ -469,18 +489,17 @@ export default function DashboardPage() {
     );
   }
 
-  // Same auto-archive rule as the Complaints tab: done complaints drop off
-  // 7 days after resolution (or immediately if manually archived there).
-  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-  function isExpired(c: Complaint): boolean {
-    return c.status === "done" && !!c.resolved_at && Date.now() - new Date(c.resolved_at).getTime() > SEVEN_DAYS_MS;
-  }
-  const visibleComplaints = (complaints ?? []).filter((c) => !c.archived && !isExpired(c));
-  const historyComplaints = (complaints ?? []).filter((c) => c.archived || isExpired(c));
+  // Manually-archived complaints (Engineering's own housekeeping action)
+  // stay excluded regardless of the Hide Finished toggle; everything else
+  // is shown/hidden by status via that toggle instead of a time window.
+  const visibleComplaints = (complaints ?? []).filter((c) => !c.archived);
   const indonesia = visibleComplaints.filter((c) => !c.is_traded);
   const traded = visibleComplaints.filter((c) => c.is_traded);
-  const historyIndonesia = historyComplaints.filter((c) => !c.is_traded);
-  const historyTraded = historyComplaints.filter((c) => c.is_traded);
+
+  const joFiltered = (activeJobOrders ?? []).filter((jo) => {
+    if (hideFinishedJO && jo.status === "completed") return false;
+    return new Date(jo.jo_date).getFullYear() === joYear;
+  });
 
   return (
     <>
@@ -488,12 +507,16 @@ export default function DashboardPage() {
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ margin: 0 }}>Current Job Orders ({activeJobOrders?.length ?? "..."})</h2>
-          <button className="btn secondary" onClick={() => setFabricationOpen((v) => !v)}>
-            {fabricationOpen ? "Hide Fabrication JO" : "Fabrication JO"}
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <YearTabs years={yearsFrom2026()} selected={joYear} onSelect={setJoYear} />
+            <ToggleSwitch checked={hideFinishedJO} onChange={setHideFinishedJO} label="Hide Finished" color="var(--good)" />
+            <button className="btn secondary" onClick={() => setFabricationOpen((v) => !v)}>
+              {fabricationOpen ? "Hide Fabrication JO" : "Fabrication JO"}
+            </button>
+          </div>
         </div>
-        {!activeJobOrders ? <p className="subtle">Loading...</p> : activeJobOrders.length === 0 ? <p className="subtle">Nothing active right now.</p> : (
-          <CurrentJobOrders items={activeJobOrders} />
+        {!activeJobOrders ? <p className="subtle">Loading...</p> : joFiltered.length === 0 ? <p className="subtle">Nothing to show for the selected filters.</p> : (
+          <CurrentJobOrders items={joFiltered} />
         )}
         {fabricationOpen && <FabricationRecapSection items={fabricationItems} />}
       </div>
@@ -501,7 +524,10 @@ export default function DashboardPage() {
       <PoOutRecapSection />
 
       <div className="card">
-        <h2>{year ?? ""} Production</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <h2 style={{ margin: 0 }}>{productionYear} Production</h2>
+          <YearTabs years={yearsFrom2026()} selected={productionYear} onSelect={setProductionYear} />
+        </div>
         {yearlyByCategory.length === 0 ? <p className="subtle">No item categories set up yet.</p> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {(() => {
@@ -523,12 +549,12 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <ProjectRecapSection canManage={false} />
+      <ProjectRecapSection canManage={false} showYearTabs />
 
       {!complaints ? <p className="subtle">Loading...</p> : (
         <>
-          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" historyItems={historyIndonesia} historyTitle="History — Tempsens Indonesia" />
-          <ComplaintTable items={traded} title="Complaints — Traded Item" historyItems={historyTraded} historyTitle="History — Traded Item" />
+          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" />
+          <ComplaintTable items={traded} title="Complaints — Traded Item" />
         </>
       )}
     </>

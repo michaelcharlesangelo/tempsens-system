@@ -432,11 +432,12 @@ export type Currency = "IDR" | "USD" | "SGD" | "EUR" | "CNY" | "JPY";
 export const CURRENCY_SYMBOLS: Record<Currency, string> = { IDR: "Rp", USD: "$", SGD: "SGD", EUR: "€", CNY: "CNY", JPY: "¥" };
 export const PO_OUT_STATUSES: { value: PoOutStatus; label: string; color: string }[] = [
   { value: "production", label: "Production", color: "#eab308" },
+  { value: "ready", label: "Ready", color: "#06b6d4" },
   { value: "shipment", label: "Shipment", color: "#3b82f6" },
   { value: "arrived", label: "Arrived", color: "#22c55e" },
 ];
 
-export type PoOutStatus = "production" | "shipment" | "arrived";
+export type PoOutStatus = "production" | "ready" | "shipment" | "arrived";
 
 export type ShipmentStatus = "plan" | "shipment" | "arrived";
 export const SHIPMENT_STATUSES: { value: ShipmentStatus; label: string; color: string }[] = [
@@ -524,6 +525,15 @@ export interface FabricationItem {
   job_order?: { deadline: string | null; drawing_number: string | null } | null;
 }
 
+export interface ShipmentHistoryEntry {
+  id: string;
+  shipment_id: string;
+  changed_by: string;
+  comment: string;
+  status: ShipmentStatus | null;
+  changed_at: string;
+}
+
 export interface Shipment {
   id: string;
   shipment_number: string;
@@ -542,6 +552,7 @@ export interface Shipment {
   submitted_by: string;
   status: ShipmentStatus;
   created_at: string;
+  history: ShipmentHistoryEntry[];
 }
 
 // Splits `text` into [before, matched, after] around the first

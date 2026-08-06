@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { usePagedSearch } from "@/app/components/usePagedSearch";
 import { SearchBox, Pager } from "@/app/components/Pager";
 import TruncatedText from "@/app/components/TruncatedText";
+import ToggleSwitch from "@/app/components/ToggleSwitch";
 import { Complaint, JobOrder, COMPLAINT_STATUSES, complaintMatchesSearch, fmtDate, fmtDateTime } from "@/lib/jobOrders";
 
 interface SalesAccount { id: string; full_name: string; }
@@ -19,12 +20,11 @@ interface EditDraft {
 // force a remount every keystroke - see CLAUDE.md's "table components at
 // module scope" convention.
 function ComplaintTable({
-  items, title, historyItems, historyTitle,
+  items, title,
   viewPhoto, editingId, editDraft, startEdit, setEditDraft, saveEdit, deleteComplaint, saving,
   logOpenId, setLogOpenId,
 }: {
   items: Complaint[]; title: string;
-  historyItems: Complaint[]; historyTitle: string;
   viewPhoto: (path: string) => void;
   editingId: string | null; editDraft: EditDraft | null;
   startEdit: (c: Complaint) => void; setEditDraft: (d: EditDraft) => void;
@@ -32,15 +32,15 @@ function ComplaintTable({
   logOpenId: string | null; setLogOpenId: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(items, complaintMatchesSearch);
-  const historyPaged = usePagedSearch(historyItems, complaintMatchesSearch);
+  const [hideFinished, setHideFinished] = useState(true);
+  const visible = items.filter((c) => !hideFinished || c.status !== "done");
+  const { search, setSearch, page, setPage, totalPages, pageItems, totalCount } = usePagedSearch(visible, complaintMatchesSearch);
 
   // A plain function (not a nested component) - called directly inside
   // .map() below rather than as a JSX tag, so it doesn't introduce a new
   // component identity that would remount on every parent re-render.
-  function renderRow(c: Complaint, editable: boolean) {
-    const isEditing = editable && editingId === c.id;
+  function renderRow(c: Complaint) {
+    const isEditing = editingId === c.id;
     const d = editDraft;
     const meta = COMPLAINT_STATUSES.find((s) => s.value === c.status)!;
     return (
@@ -58,7 +58,7 @@ function ComplaintTable({
             ))}
           </td>
           <td>
-            <span className="pill" style={{ background: meta.color, color: "white", cursor: editable ? "pointer" : "default" }} onClick={() => editable && setLogOpenId(logOpenId === c.id ? null : c.id)}>
+            <span className="pill" style={{ background: meta.color, color: "white", cursor: "pointer" }} onClick={() => setLogOpenId(logOpenId === c.id ? null : c.id)}>
               {meta.label}
             </span>
           </td>
@@ -67,20 +67,18 @@ function ComplaintTable({
               <button key={i} className="btn secondary" style={{ fontSize: "0.7rem", padding: "3px 6px", marginRight: 4 }} onClick={() => viewPhoto(p)}>View{(c.engineering_photo_paths ?? []).length > 1 ? ` ${i + 1}` : ""}</button>
             ))}
           </td>
-          {editable && (
-            <td style={{ whiteSpace: "nowrap" }}>
-              {isEditing ? (
-                <>
-                  <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} disabled={saving} onClick={() => saveEdit(c.id)}>Save</button>{" "}
-                  <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => deleteComplaint(c.id)}>Delete</button>
-                </>
-              ) : (
-                <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startEdit(c)}>Edit</button>
-              )}
-            </td>
-          )}
+          <td style={{ whiteSpace: "nowrap" }}>
+            {isEditing ? (
+              <>
+                <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} disabled={saving} onClick={() => saveEdit(c.id)}>Save</button>{" "}
+                <button className="btn danger" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => deleteComplaint(c.id)}>Delete</button>
+              </>
+            ) : (
+              <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => startEdit(c)}>Edit</button>
+            )}
+          </td>
         </tr>
-        {editable && logOpenId === c.id && (
+        {logOpenId === c.id && (
           <tr>
             <td colSpan={10} style={{ background: "var(--panel-muted)" }}>
               <div style={{ padding: "8px 2px" }}>
@@ -105,14 +103,12 @@ function ComplaintTable({
           <span style={{ display: "inline-block", fontSize: "0.75em", transform: open ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
           {title} ({items.length})
         </h2>
-        <button className="btn secondary" onClick={() => setHistoryOpen((v) => !v)}>
-          {historyOpen ? "Hide History" : `History (${historyItems.length})`}
-        </button>
+        <ToggleSwitch checked={hideFinished} onChange={setHideFinished} label="Hide Finished" color="var(--good)" />
       </div>
 
       {open && (
         <div style={{ marginTop: 10 }}>
-          {items.length === 0 ? <p className="subtle">None.</p> : (
+          {items.length === 0 ? <p className="subtle">None.</p> : totalCount === 0 ? <p className="subtle">Nothing to show for the selected filter.</p> : (
             <>
               <SearchBox value={search} onChange={setSearch} />
               <div style={{ overflowX: "auto" }}>
@@ -121,33 +117,11 @@ function ComplaintTable({
                     <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Photos Update</th><th></th></tr>
                   </thead>
                   <tbody>
-                    {pageItems.map((c) => renderRow(c, true))}
+                    {pageItems.map((c) => renderRow(c))}
                   </tbody>
                 </table>
               </div>
               <Pager page={page} totalPages={totalPages} totalCount={totalCount} onChange={setPage} />
-            </>
-          )}
-        </div>
-      )}
-
-      {historyOpen && (
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-          <h3 style={{ margin: "0 0 8px" }}>{historyTitle} ({historyItems.length})</h3>
-          {historyItems.length === 0 ? <p className="subtle">None yet.</p> : (
-            <>
-              <SearchBox value={historyPaged.search} onChange={historyPaged.setSearch} />
-              <div style={{ overflowX: "auto" }}>
-                <table className="data-table">
-                  <thead>
-                    <tr><th>Date</th><th>Customer</th><th>SO No.</th><th>Item</th><th>Qty</th><th>Problem</th><th>Photos</th><th>Status</th><th>Photos Update</th></tr>
-                  </thead>
-                  <tbody>
-                    {historyPaged.pageItems.map((c) => renderRow(c, false))}
-                  </tbody>
-                </table>
-              </div>
-              <Pager page={historyPaged.page} totalPages={historyPaged.totalPages} totalCount={historyPaged.totalCount} onChange={historyPaged.setPage} />
             </>
           )}
         </div>
@@ -308,21 +282,12 @@ export default function ComplaintsPage() {
     load();
   }
 
-  // Done complaints drop off the main table 7 days after resolution even
-  // without Engineering explicitly finishing it, matching the Dashboard's
-  // auto-archive.
-  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-  function isExpired(c: Complaint): boolean {
-    return c.status === "done" && !!c.resolved_at && Date.now() - new Date(c.resolved_at).getTime() > SEVEN_DAYS_MS;
-  }
-
-  const visible = (complaints ?? []).filter((c) => !c.archived && !isExpired(c));
-  const history = (complaints ?? []).filter((c) => c.archived || isExpired(c));
-
+  // Manually-archived complaints (Engineering's own housekeeping action)
+  // stay excluded regardless of the Hide Finished toggle; everything else
+  // is shown/hidden by status via that toggle instead of a time window.
+  const visible = (complaints ?? []).filter((c) => !c.archived);
   const indonesia = visible.filter((c) => !c.is_traded);
   const traded = visible.filter((c) => c.is_traded);
-  const historyIndonesia = history.filter((c) => !c.is_traded);
-  const historyTraded = history.filter((c) => c.is_traded);
 
   const canSubmit = complaintType && customerName.trim() && !saving;
 
@@ -459,16 +424,8 @@ export default function ComplaintsPage() {
 
       {!complaints ? <p className="subtle">Loading...</p> : (
         <>
-          <ComplaintTable
-            items={indonesia} title="Complaints — Tempsens Indonesia"
-            historyItems={historyIndonesia} historyTitle="History — Tempsens Indonesia"
-            {...tableProps}
-          />
-          <ComplaintTable
-            items={traded} title="Complaints — Traded Item"
-            historyItems={historyTraded} historyTitle="History — Traded Item"
-            {...tableProps}
-          />
+          <ComplaintTable items={indonesia} title="Complaints — Tempsens Indonesia" {...tableProps} />
+          <ComplaintTable items={traded} title="Complaints — Traded Item" {...tableProps} />
         </>
       )}
     </>

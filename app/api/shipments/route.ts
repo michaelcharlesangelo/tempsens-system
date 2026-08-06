@@ -8,7 +8,11 @@ const BUCKET = "tempsens-files";
 
 export async function GET() {
   const admin = getSupabaseAdminClient();
-  const { data, error } = await admin.from("shipments").select("*").order("created_at", { ascending: false });
+  const { data, error } = await admin
+    .from("shipments")
+    .select("*, history:shipment_history(*)")
+    .order("created_at", { ascending: false })
+    .order("changed_at", { foreignTable: "shipment_history", ascending: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ shipments: data });
 }

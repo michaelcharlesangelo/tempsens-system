@@ -22,15 +22,28 @@ function m3For(lengthCm: number, widthCm: number, heightCm: number): number {
   return (lengthCm * widthCm * heightCm) / 1_000_000;
 }
 
-// Same convention as PO Out's own page - "." thousand separators as you
-// type, digits-only underneath so it parses back cleanly on submit.
+// Same convention as PO Out's own page - id-ID style "." thousand
+// separators as you type, "," for up to 2 decimal places.
 function formatPrice(value: string): string {
-  const digits = value.replace(/\D/g, "");
-  if (!digits) return "";
-  return Number(digits).toLocaleString("id-ID");
+  const commaIdx = value.indexOf(",");
+  const rawInt = commaIdx === -1 ? value : value.slice(0, commaIdx);
+  const intPart = rawInt.replace(/\D/g, "");
+  if (!intPart && commaIdx === -1) return "";
+  const formattedInt = intPart ? Number(intPart).toLocaleString("id-ID") : "0";
+  if (commaIdx === -1) return formattedInt;
+  const decPart = value.slice(commaIdx + 1).replace(/\D/g, "").slice(0, 2);
+  return `${formattedInt},${decPart}`;
 }
 function parsePrice(display: string): string {
-  return display.replace(/\D/g, "");
+  const commaIdx = display.indexOf(",");
+  const intPart = (commaIdx === -1 ? display : display.slice(0, commaIdx)).replace(/\D/g, "") || "0";
+  const decPart = (commaIdx === -1 ? "" : display.slice(commaIdx + 1)).replace(/\D/g, "");
+  return decPart ? `${intPart}.${decPart}` : intPart;
+}
+// Seeds the price input from a raw DB number (period-decimal) into the
+// same id-ID comma-decimal display formatPrice() produces while typing.
+function seedPrice(n: number): string {
+  return Number(n || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 });
 }
 
 interface SalesAccount { id: string; full_name: string; }
@@ -99,6 +112,15 @@ function daysSince(dateStr: string): number {
   const now = new Date();
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.max(0, Math.round((today - start) / (1000 * 60 * 60 * 24)));
+}
+
+// Shown to the left of the Edit button once a PO is under Shipment status
+// and Exim has filled in that shipment's ETA JKT - looked up by matching
+// the PO's free-text shipment field to the Shipment Plan's shipment_number.
+function etaJktFor(p: PoOut, shipments: Shipment[]): string | null {
+  if (p.status !== "shipment" || !p.shipment) return null;
+  const match = shipments.find((s) => s.shipment_number === p.shipment);
+  return match?.eta_jkt ? fmtDate(match.eta_jkt) : null;
 }
 
 function poMatches(p: PoOut, term: string): boolean {
@@ -212,7 +234,7 @@ function CurrencyInput({
         {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_SYMBOLS[c]}</option>)}
       </select>
       <input
-        type="text" inputMode="numeric" readOnly={readOnly} value={value}
+        type="text" inputMode="decimal" readOnly={readOnly} value={value}
         onChange={(e) => onValueChange?.(formatPrice(e.target.value))}
         style={{ border: "none", flex: 1, minWidth: 0, width: "100%", fontSize: compact ? "0.8rem" : undefined }}
       />
@@ -261,6 +283,7 @@ export default function EximPage() {
   const [hsCodes, setHsCodes] = useState<HsCode[]>([]);
   const [activeTab, setActiveTab] = useState<SupplierTabCategory | "ALL">("ALL");
   const [showProduction, setShowProduction] = useState(true);
+  const [showReady, setShowReady] = useState(true);
   const [showShipment, setShowShipment] = useState(true);
   const [showArrived, setShowArrived] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
@@ -363,7 +386,7 @@ export default function EximPage() {
     setEditShipmentDraft({
       shipmentNumber: s.shipment_number, supplier: s.supplier, shipmentVia: s.shipment_via, incoterms: s.incoterms,
       invoice: s.invoice, awbBl: s.awb_bl, atd: s.atd ? s.atd.slice(0, 10) : "", etaJkt: s.eta_jkt ? s.eta_jkt.slice(0, 10) : "",
-      sppb: s.sppb, delivery: s.delivery,
+      sppb: s.sppb ? s.sppb.slice(0, 10) : "", delivery: s.delivery ? s.delivery.slice(0, 10) : "",
     });
     setEditAwbBlFile(null);
     setEditPhotoFiles([]);
@@ -449,8 +472,8 @@ export default function EximPage() {
       estimation: p.estimation ? p.estimation.slice(0, 10) : "", urgent: p.urgent,
       poNumber: p.po_number, itemCode: p.item_code, sales: p.sales, customerName: p.customer_name,
       itemDescription: p.item_description, qty: String(p.qty), unit: p.unit,
-      unitPrice: formatPrice(String(p.unit_price)), unitPriceCurrency: p.unit_price_currency,
-      unitSellingPrice: formatPrice(String(p.unit_selling_price)), unitSellingPriceCurrency: p.unit_selling_price_currency,
+      unitPrice: seedPrice(p.unit_price), unitPriceCurrency: p.unit_price_currency,
+      unitSellingPrice: seedPrice(p.unit_selling_price), unitSellingPriceCurrency: p.unit_selling_price_currency,
       supplier: p.supplier, oc: p.oc, origin: p.origin,
     });
   }
@@ -683,7 +706,7 @@ export default function EximPage() {
       {
         key: "status",
         node: (() => {
-          const meta = { production: { label: "Production", color: "#eab308" }, shipment: { label: "Shipment", color: "#3b82f6" }, arrived: { label: "Arrived", color: "#22c55e" } }[p.status];
+          const meta = PO_OUT_STATUSES.find((s) => s.value === p.status)!;
           return (
             <span className="pill" style={{ background: meta.color, color: "white", cursor: "pointer" }} onClick={() => openUpdates(p)}>
               {meta.label}
@@ -708,7 +731,9 @@ export default function EximPage() {
         node: (
           <select value={p.shipment} onChange={(e) => updatePoField(p.id, { shipment: e.target.value })} style={{ fontSize: "0.8rem", minWidth: 120 }}>
             <option value="">Select...</option>
-            {(shipments ?? []).filter((s) => s.shipment_number).map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
+            {(shipments ?? [])
+              .filter((s) => s.shipment_number && (s.status !== "arrived" || s.shipment_number === p.shipment))
+              .map((s) => <option key={s.id} value={s.shipment_number}>{s.shipment_number}</option>)}
           </select>
         ),
       },
@@ -716,7 +741,7 @@ export default function EximPage() {
   }
 
   const supplierCategory = new Map(suppliers.map((s) => [s.name, s.tab_category]));
-  const statusVisible: Record<PoOutStatus, boolean> = { production: showProduction, shipment: showShipment, arrived: showArrived };
+  const statusVisible: Record<PoOutStatus, boolean> = { production: showProduction, ready: showReady, shipment: showShipment, arrived: showArrived };
   const filtered = (pos ?? []).filter((p) => (activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab) && statusVisible[p.status]);
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
@@ -770,8 +795,8 @@ export default function EximPage() {
                 <div className="form-row"><label>AWB/BL</label><span>:</span><input type="text" value={shipmentDraft.awbBl} onChange={(e) => setShipmentDraft({ ...shipmentDraft, awbBl: e.target.value })} /></div>
                 <div className="form-row"><label>ATD</label><span>:</span><DateField value={shipmentDraft.atd} onChange={(v) => setShipmentDraft({ ...shipmentDraft, atd: v })} /></div>
                 <div className="form-row"><label>ETA JKT</label><span>:</span><DateField value={shipmentDraft.etaJkt} onChange={(v) => setShipmentDraft({ ...shipmentDraft, etaJkt: v })} /></div>
-                <div className="form-row"><label>SPPB</label><span>:</span><input type="text" value={shipmentDraft.sppb} onChange={(e) => setShipmentDraft({ ...shipmentDraft, sppb: e.target.value })} /></div>
-                <div className="form-row"><label>Delivery</label><span>:</span><input type="text" value={shipmentDraft.delivery} onChange={(e) => setShipmentDraft({ ...shipmentDraft, delivery: e.target.value })} /></div>
+                <div className="form-row"><label>SPPB</label><span>:</span><DateField value={shipmentDraft.sppb} onChange={(v) => setShipmentDraft({ ...shipmentDraft, sppb: v })} /></div>
+                <div className="form-row"><label>Delivery</label><span>:</span><DateField value={shipmentDraft.delivery} onChange={(v) => setShipmentDraft({ ...shipmentDraft, delivery: v })} /></div>
               </div>
             </div>
 
@@ -828,10 +853,10 @@ export default function EximPage() {
                         <td>{isEditing && d ? <input type="text" value={d.incoterms} onChange={(e) => setEditShipmentDraft({ ...d, incoterms: e.target.value.toUpperCase() })} style={{ fontSize: "0.8rem", width: 80 }} /> : s.incoterms || <span className="subtle">-</span>}</td>
                         <td>{isEditing && d ? <input type="text" value={d.invoice} onChange={(e) => setEditShipmentDraft({ ...d, invoice: e.target.value })} style={{ fontSize: "0.8rem", width: 100 }} /> : s.invoice || <span className="subtle">-</span>}</td>
                         <td>{isEditing && d ? <input type="text" value={d.awbBl} onChange={(e) => setEditShipmentDraft({ ...d, awbBl: e.target.value })} style={{ fontSize: "0.8rem", width: 100 }} /> : s.awb_bl || <span className="subtle">-</span>}</td>
-                        <td>{isEditing && d ? <DateField value={d.atd} onChange={(v) => setEditShipmentDraft({ ...d, atd: v })} /> : fmtDate(s.atd)}</td>
-                        <td>{isEditing && d ? <DateField value={d.etaJkt} onChange={(v) => setEditShipmentDraft({ ...d, etaJkt: v })} /> : fmtDate(s.eta_jkt)}</td>
-                        <td>{isEditing && d ? <input type="text" value={d.sppb} onChange={(e) => setEditShipmentDraft({ ...d, sppb: e.target.value })} style={{ fontSize: "0.8rem", width: 80 }} /> : s.sppb || <span className="subtle">-</span>}</td>
-                        <td>{isEditing && d ? <input type="text" value={d.delivery} onChange={(e) => setEditShipmentDraft({ ...d, delivery: e.target.value })} style={{ fontSize: "0.8rem", width: 90 }} /> : s.delivery || <span className="subtle">-</span>}</td>
+                        <td>{isEditing && d ? <div style={{ minWidth: 112 }}><DateField value={d.atd} onChange={(v) => setEditShipmentDraft({ ...d, atd: v })} /></div> : fmtDate(s.atd)}</td>
+                        <td>{isEditing && d ? <div style={{ minWidth: 112 }}><DateField value={d.etaJkt} onChange={(v) => setEditShipmentDraft({ ...d, etaJkt: v })} /></div> : fmtDate(s.eta_jkt)}</td>
+                        <td>{isEditing && d ? <div style={{ minWidth: 112 }}><DateField value={d.sppb} onChange={(v) => setEditShipmentDraft({ ...d, sppb: v })} /></div> : fmtDate(s.sppb)}</td>
+                        <td>{isEditing && d ? <div style={{ minWidth: 112 }}><DateField value={d.delivery} onChange={(v) => setEditShipmentDraft({ ...d, delivery: v })} /></div> : fmtDate(s.delivery)}</td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           {isEditing ? (
                             <>
@@ -893,6 +918,13 @@ export default function EximPage() {
                                 <button className="btn secondary" disabled={savingShipmentStatusId === s.id} onClick={() => saveShipmentStatus(s)}>
                                   {savingShipmentStatusId === s.id ? "Saving..." : "Save"}
                                 </button>
+                              </div>
+                              <div style={{ marginTop: 12 }}>
+                                {(s.history ?? []).length === 0 ? <p className="subtle" style={{ margin: 0 }}>No updates yet.</p> : s.history.map((h) => (
+                                  <div key={h.id} style={{ fontSize: "0.82rem", padding: "3px 0" }}>
+                                    <b>{h.changed_by}</b> <span className="subtle">({fmtDateTime(h.changed_at)})</span>{h.comment ? `: ${h.comment}` : ""}
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           </td>
@@ -1080,8 +1112,9 @@ export default function EximPage() {
         actions={
           <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
             <ToggleSwitch checked={showProduction} onChange={setShowProduction} label="Production" color={PO_OUT_STATUSES[0].color} />
-            <ToggleSwitch checked={showShipment} onChange={setShowShipment} label="Shipment" color={PO_OUT_STATUSES[1].color} />
-            <ToggleSwitch checked={showArrived} onChange={setShowArrived} label="Arrived" color={PO_OUT_STATUSES[2].color} />
+            <ToggleSwitch checked={showReady} onChange={setShowReady} label="Ready" color={PO_OUT_STATUSES[1].color} />
+            <ToggleSwitch checked={showShipment} onChange={setShowShipment} label="Shipment" color={PO_OUT_STATUSES[2].color} />
+            <ToggleSwitch checked={showArrived} onChange={setShowArrived} label="Arrived" color={PO_OUT_STATUSES[3].color} />
             <button
               className="btn secondary" style={{ fontSize: "0.75rem" }}
               onClick={() => exportPoOutRecapToExcel("exim-po-out-recap", sorted, EXIM_COLUMNS, eximCellText, suppliers)}
@@ -1162,6 +1195,9 @@ export default function EximPage() {
                         <tr>
                           {cells.map((c) => <td key={c.key}>{c.node}</td>)}
                           <td style={{ whiteSpace: "nowrap" }}>
+                            {!isEditingFields && etaJktFor(p, shipments ?? []) && (
+                              <span className="subtle" style={{ fontSize: "0.75rem", marginRight: 8 }}>ETA JKT: {etaJktFor(p, shipments ?? [])}</span>
+                            )}
                             {isEditingFields ? (
                               <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveFieldsEdit(p.id)}>Save</button>
                             ) : (

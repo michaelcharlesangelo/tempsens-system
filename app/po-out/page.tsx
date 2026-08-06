@@ -8,20 +8,36 @@ import DateField from "@/app/components/DateField";
 import ToggleSwitch from "@/app/components/ToggleSwitch";
 import TruncatedText from "@/app/components/TruncatedText";
 import {
-  PoOut, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, CURRENCY_SYMBOLS, PoOutStatus, PO_OUT_STATUSES,
+  PoOut, Shipment, Supplier, SupplierTabCategory, SUPPLIER_TAB_CATEGORIES, Currency, CURRENCY_SYMBOLS, PoOutStatus, PO_OUT_STATUSES,
   fmtDate, fmtDateTime, daysBetweenDates, exportPoOutRecapToExcel,
 } from "@/lib/jobOrders";
 import { getCurrentRole } from "@/lib/roles";
 
-// Same convention as Form page's Budget field - "." thousand separators as
-// you type, digits-only underneath so it parses back cleanly on submit.
+// id-ID style: "." thousand separators as you type, "," for up to 2
+// decimal places (e.g. "1.234,56"). The comma is kept even with nothing
+// typed after it yet, so the user can keep typing decimal digits.
 function formatPrice(value: string): string {
-  const digits = value.replace(/\D/g, "");
-  if (!digits) return "";
-  return Number(digits).toLocaleString("id-ID");
+  const commaIdx = value.indexOf(",");
+  const rawInt = commaIdx === -1 ? value : value.slice(0, commaIdx);
+  const intPart = rawInt.replace(/\D/g, "");
+  if (!intPart && commaIdx === -1) return "";
+  const formattedInt = intPart ? Number(intPart).toLocaleString("id-ID") : "0";
+  if (commaIdx === -1) return formattedInt;
+  const decPart = value.slice(commaIdx + 1).replace(/\D/g, "").slice(0, 2);
+  return `${formattedInt},${decPart}`;
 }
 function parsePrice(display: string): string {
-  return display.replace(/\D/g, "");
+  const commaIdx = display.indexOf(",");
+  const intPart = (commaIdx === -1 ? display : display.slice(0, commaIdx)).replace(/\D/g, "") || "0";
+  const decPart = (commaIdx === -1 ? "" : display.slice(commaIdx + 1)).replace(/\D/g, "");
+  return decPart ? `${intPart}.${decPart}` : intPart;
+}
+// Seeds the price input from a raw DB number (period-decimal) into the
+// same id-ID comma-decimal display formatPrice() produces while typing -
+// passing it through formatPrice() itself would mis-split on the "."
+// decimal point as if it were a thousands separator.
+function seedPrice(n: number): string {
+  return Number(n || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 });
 }
 
 interface SalesAccount { id: string; full_name: string; }
@@ -37,7 +53,7 @@ function blank(): Draft {
   return {
     poDate: new Date().toISOString().slice(0, 10), deadline: "", estimation: "", urgent: false, poNumber: "", itemCode: "",
     sales: "", customerName: "", itemDescription: "", qty: "1", unit: "pcs",
-    unitPrice: "", unitPriceCurrency: "IDR", unitSellingPrice: "", unitSellingPriceCurrency: "IDR", supplier: "",
+    unitPrice: "", unitPriceCurrency: "USD", unitSellingPrice: "", unitSellingPriceCurrency: "IDR", supplier: "",
   };
 }
 
@@ -65,6 +81,15 @@ function daysSince(dateStr: string): number {
 function estimationLabel(p: PoOut): string {
   if (!p.estimation) return "-";
   return `${fmtDate(p.estimation)} (${daysBetweenDates(p.po_date, p.estimation)})`;
+}
+
+// Shown to the left of the Edit button once a PO is under Shipment status
+// and Exim has filled in that shipment's ETA JKT - looked up by matching
+// the PO's free-text shipment field to the Shipment Plan's shipment_number.
+function etaJktFor(p: PoOut, shipments: Shipment[]): string | null {
+  if (p.status !== "shipment" || !p.shipment) return null;
+  const match = shipments.find((s) => s.shipment_number === p.shipment);
+  return match?.eta_jkt ? fmtDate(match.eta_jkt) : null;
 }
 
 type SortKey = "po_number" | "item_code" | "sales" | "customer_name" | "supplier";
@@ -175,7 +200,7 @@ function CurrencyInput({
         {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((c) => <option key={c} value={c}>{CURRENCY_SYMBOLS[c]}</option>)}
       </select>
       <input
-        type="text" inputMode="numeric" readOnly={readOnly} value={value}
+        type="text" inputMode="decimal" readOnly={readOnly} value={value}
         onChange={(e) => onValueChange?.(formatPrice(e.target.value))}
         style={{ border: "none", flex: 1, minWidth: 0, width: "100%", fontSize: compact ? "0.8rem" : undefined }}
       />
@@ -186,6 +211,7 @@ function CurrencyInput({
 export default function PoOutPage() {
   const [pos, setPos] = useState<PoOut[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [shipments, setShipments] = useState<Shipment[]>([]);
   const [salesAccounts, setSalesAccounts] = useState<SalesAccount[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState(blank());
@@ -204,6 +230,7 @@ export default function PoOutPage() {
   // Arrived starts off - it'll pile up fast once shipments actually land,
   // and by then it's no longer the thing Sales Support needs eyes on daily.
   const [showProduction, setShowProduction] = useState(true);
+  const [showReady, setShowReady] = useState(true);
   const [showShipment, setShowShipment] = useState(true);
   const [showArrived, setShowArrived] = useState(false);
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
@@ -222,10 +249,16 @@ export default function PoOutPage() {
     const data = await res.json();
     setSuppliers(data.suppliers ?? []);
   }
+  async function loadShipments() {
+    const res = await fetch("/api/shipments", { cache: "no-store" });
+    const data = await res.json();
+    setShipments(data.shipments ?? []);
+  }
 
   useEffect(() => {
     load();
     loadSuppliers();
+    loadShipments();
     fetch("/api/production-accounts?forSales=true", { cache: "no-store" }).then((r) => r.json()).then((d) => setSalesAccounts(d.accounts ?? []));
   }, []);
 
@@ -290,8 +323,8 @@ export default function PoOutPage() {
       estimation: p.estimation ? p.estimation.slice(0, 10) : "", urgent: p.urgent,
       poNumber: p.po_number, itemCode: p.item_code, sales: p.sales, customerName: p.customer_name,
       itemDescription: p.item_description, qty: String(p.qty), unit: p.unit,
-      unitPrice: formatPrice(String(p.unit_price)), unitPriceCurrency: p.unit_price_currency,
-      unitSellingPrice: formatPrice(String(p.unit_selling_price)), unitSellingPriceCurrency: p.unit_selling_price_currency,
+      unitPrice: seedPrice(p.unit_price), unitPriceCurrency: p.unit_price_currency,
+      unitSellingPrice: seedPrice(p.unit_selling_price), unitSellingPriceCurrency: p.unit_selling_price_currency,
       supplier: p.supplier,
     });
   }
@@ -334,7 +367,7 @@ export default function PoOutPage() {
   }
 
   const supplierCategory = new Map(suppliers.map((s) => [s.name, s.tab_category]));
-  const statusVisible: Record<PoOutStatus, boolean> = { production: showProduction, shipment: showShipment, arrived: showArrived };
+  const statusVisible: Record<PoOutStatus, boolean> = { production: showProduction, ready: showReady, shipment: showShipment, arrived: showArrived };
   const filtered = (pos ?? []).filter((p) => (activeTab === "ALL" || supplierCategory.get(p.supplier) === activeTab) && statusVisible[p.status]);
   const sorted = sortKey
     ? [...filtered].sort((a, b) => {
@@ -516,8 +549,9 @@ export default function PoOutPage() {
         actions={
           <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
             <ToggleSwitch checked={showProduction} onChange={setShowProduction} label="Production" color={PO_OUT_STATUSES[0].color} />
-            <ToggleSwitch checked={showShipment} onChange={setShowShipment} label="Shipment" color={PO_OUT_STATUSES[1].color} />
-            <ToggleSwitch checked={showArrived} onChange={setShowArrived} label="Arrived" color={PO_OUT_STATUSES[2].color} />
+            <ToggleSwitch checked={showReady} onChange={setShowReady} label="Ready" color={PO_OUT_STATUSES[1].color} />
+            <ToggleSwitch checked={showShipment} onChange={setShowShipment} label="Shipment" color={PO_OUT_STATUSES[2].color} />
+            <ToggleSwitch checked={showArrived} onChange={setShowArrived} label="Arrived" color={PO_OUT_STATUSES[3].color} />
             <button
               className="btn secondary" style={{ fontSize: "0.75rem" }}
               onClick={() => exportPoOutRecapToExcel("po-out-recap", sorted, COLUMNS.filter((c) => !hiddenCols.has(c.key)), poCellText, suppliers)}
@@ -605,6 +639,9 @@ export default function PoOutPage() {
                         <tr>
                           {cells.map((c) => <td key={c.key}>{c.node}</td>)}
                           <td style={{ whiteSpace: "nowrap" }}>
+                            {!isEditing && etaJktFor(p, shipments) && (
+                              <span className="subtle" style={{ fontSize: "0.75rem", marginRight: 8 }}>ETA JKT: {etaJktFor(p, shipments)}</span>
+                            )}
                             {isEditing ? (
                               <>
                                 <button className="btn secondary" style={{ fontSize: "0.72rem", padding: "3px 8px" }} onClick={() => saveRowEdit(p.id)}>Save</button>{" "}
